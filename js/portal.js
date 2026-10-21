@@ -301,8 +301,21 @@
       audienceBox, form));
 
     var canApprove = M.auth.can(session, 'campaigns.approve');
-    append(root, panel('Campaigns', null,
-      table([
+    // Campaign list: status chips instead of a heading (the page is already titled Campaign Studio).
+    var cState = campaignsView.state || (campaignsView.state = { filter: 'all' });
+    var CAMPAIGN_FILTERS = [['all', 'All'], ['pending_approval', 'Waiting for approval'], ['approved', 'Approved'], ['sent', 'Sent'], ['rejected', 'Rejected']];
+    var cChips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter campaigns by status' });
+    var cList = h('div');
+    function drawCampaigns() {
+      cChips.textContent = '';
+      CAMPAIGN_FILTERS.forEach(function (f) {
+        var n = S().campaigns.filter(function (c) { return f[0] === 'all' || c.status === f[0]; }).length;
+        append(cChips, h('button', { type: 'button', class: 'chip' + (cState.filter === f[0] ? ' active' : ''), 'aria-pressed': String(cState.filter === f[0]),
+          onclick: function () { cState.filter = f[0]; drawCampaigns(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(n) })));
+      });
+      var rows = S().campaigns.filter(function (c) { return cState.filter === 'all' || c.status === cState.filter; });
+      cList.textContent = '';
+      append(cList, table([
         { label: 'Campaign', render: function (c) { return h('span', null, h('strong', { text: c.title }), h('br'), h('small', { text: c.message.slice(0, 90) + (c.message.length > 90 ? '…' : '') })); } },
         { label: 'Product', render: function (c) { var p = M.byId('products', c.productId); return p ? p.title : '—'; } },
         { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
@@ -327,7 +340,10 @@
           }
           return '—';
         } }
-      ], S().campaigns, 'No campaigns yet.')));
+      ], rows, cState.filter === 'all' ? 'No campaigns yet.' : 'No campaigns with this status.'));
+    }
+    drawCampaigns();
+    append(root, h('section', { class: 'panel' }, h('div', { class: 'user-toolbar' }, cChips), cList));
   }
 
   function groupBuyAdminView(root) {

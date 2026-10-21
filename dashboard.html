@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MEOD Portal</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/portal.css">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <meta name="theme-color" content="#054f12">
+</head>
+<body class="portal" data-no-assist>
+  <div class="demo-banner">Prototype: synthetic data stored in this browser only. Nothing is sent to Shopify or WhatsApp.</div>
+  <nav class="mobile-nav" data-mobile-nav aria-label="Portal"></nav>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm home" width="106" height="30"></a>
+      <div class="role-badge" data-role-badge></div>
+      <nav data-side-nav aria-label="Portal"></nav>
+      <div class="sidebar-foot">
+        <div data-user-name style="margin-bottom:8px"></div>
+        <button type="button" data-sign-out>Sign out</button> ·
+        <a href="index.html">Public site</a>
+      </div>
+    </aside>
+    <main class="main" id="main">
+      <div class="topbar">
+        <div><h1 data-title></h1><p data-subtitle></p></div>
+        <div class="toolbar" data-top-actions></div>
+      </div>
+      <div data-view></div>
+    </main>
+  </div>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/assist.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/portal.js"></script>
+</body>
+</html>

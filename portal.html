@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — MEOD Portal</title>
+  <meta name="description" content="Sign in to the MEOD portal for customers, group-buy leaders and MEOD staff.">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/portal.css">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <meta name="theme-color" content="#054f12">
+</head>
+<body class="portal" data-no-assist>
+  <div class="demo-banner">Prototype: demo accounts and synthetic data only. Sign-in runs in your browser and is not secure.</div>
+
+  <div class="login-wrap">
+    <aside class="login-art">
+      <img class="login-bg" src="assets/img/farmer-vertical.webp" srcset="assets/img/farmer-vertical-500.webp 500w, assets/img/farmer-vertical.webp 900w" sizes="(max-width: 900px) 100vw, 55vw" alt="">
+      <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm home" width="106" height="30"></a>
+      <div>
+        <span class="eyebrow">MEOD Portal · powered by Tyllage</span>
+        <h1>Grow with us</h1>
+        <ul data-role-pitch></ul>
+      </div>
+      <small style="opacity:.75">13 Neo Tiew Harvest Lane, Singapore 719838</small>
+    </aside>
+
+    <main class="login-panel" id="main">
+      <div class="login-card">
+        <h2>Welcome back</h2>
+        <p class="muted">Choose who you are, then sign in.</p>
+
+        <div class="role-tabs" role="tablist" aria-label="Account type">
+          <button type="button" role="tab" data-role-tab="customer" aria-selected="true">Customer</button>
+          <button type="button" role="tab" data-role-tab="leader" aria-selected="false">Group leader</button>
+          <button type="button" role="tab" data-role-tab="staff" aria-selected="false">MEOD staff</button>
+        </div>
+
+        <form id="login-form" novalidate>
+          <label>Email <input name="email" type="email" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <p class="form-error" data-login-error hidden></p>
+          <button class="btn btn-forest" type="submit" style="justify-content:center">Sign in</button>
+        </form>
+
+        <div class="demo-accounts">
+          <h3>Demo accounts (one click)</h3>
+          <div class="demo-grid" data-demo-grid></div>
+        </div>
+
+        <a class="back-link" href="index.html">← Back to meod.com.sg</a>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

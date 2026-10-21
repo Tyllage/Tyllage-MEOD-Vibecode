@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pesticide-Free Vegetables Singapore | MEOD Farm</title>
+  <meta name="description" content="Asian greens, lettuces, mushrooms and herbs harvested every morning at MEOD Farm.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <meta name="theme-color" content="#054f12">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="container nav" aria-label="Main">
+      <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm home" width="106" height="30"></a>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="about.html">About</a></li>
+        <li><a href="produce.html" aria-current="page">Our Produce</a></li>
+        <li><a href="produce.html#farm-more">Farm &amp; More</a></li>
+        <li><a href="experiences.html">Experiences</a></li>
+        <li><a href="contact.html">Contact Us</a></li>
+        <li class="mobile-only"><a href="https://meodfresh.com/" target="_blank" rel="noopener">Our Store ↗</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a class="btn btn-sm btn-outline portal-btn" href="portal.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span data-portal-label>Portal</span>
+        </a>
+        <a class="btn btn-sm btn-gold store-btn" href="https://meodfresh.com/" target="_blank" rel="noopener">Our Store</a>
+        <button class="menu-toggle" type="button" aria-controls="nav-links" aria-expanded="false" aria-label="Open menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero page-hero">
+      <img class="hero-bg" src="assets/img/hero-farm.webp" srcset="assets/img/hero-farm-640.webp 640w, assets/img/hero-farm.webp 1200w" sizes="100vw" alt="" fetchpriority="high">
+      <div class="container">
+        <span class="eyebrow badge">Our produce</span>
+        <h1>Harvest every<br>morning</h1>
+        <p class="lead" style="color:rgba(255,255,255,.9)">100% pesticide-free Asian greens, red and green lettuces, chef's specialities, herbs, mushrooms, and a range that keeps growing.</p>
+      </div>
+    </section>
+
+    <section class="bg-cream" id="greens">
+      <div class="container">
+        <div class="catalog-head reveal">
+          <div>
+            <span class="eyebrow dark">Our greens</span>
+            <h2 class="section-title">Every vegetable has a story</h2>
+            <p class="lead">With a nutritional profile to match. Browse what's growing this week.</p>
+          </div>
+          <label class="catalog-search">
+            <span class="sr-only">Search produce</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" placeholder="Search kai lan, kale, 菜心…" data-produce-search autocomplete="off">
+          </label>
+        </div>
+
+        <div class="catalog-bar">
+          <div class="filters" role="toolbar" aria-label="Filter produce">
+            <button class="chip active" type="button" data-filter="all" aria-pressed="true">All <span class="chip-count" data-chip-count="all"></span></button>
+            <button class="chip" type="button" data-filter="asian-greens" aria-pressed="false">Asian Greens <span class="chip-count" data-chip-count="asian-greens"></span></button>
+            <button class="chip" type="button" data-filter="lettuces" aria-pressed="false">Lettuces &amp; Salads <span class="chip-count" data-chip-count="lettuces"></span></button>
+            <button class="chip" type="button" data-filter="fungi" aria-pressed="false">Fungi <span class="chip-count" data-chip-count="fungi"></span></button>
+            <button class="chip" type="button" data-filter="herbs" aria-pressed="false">Herbs <span class="chip-count" data-chip-count="herbs"></span></button>
+            <button class="chip" type="button" data-filter="farm-more" aria-pressed="false">Farm &amp; More <span class="chip-count" data-chip-count="farm-more"></span></button>
+          </div>
+          <label class="toggle"><input type="checkbox" data-instock-only> <span>In stock only</span></label>
+        </div>
+
+        <p class="result-count" data-result-count aria-live="polite"></p>
+        <div class="harvest-row catalog-grid" id="produce-grid" data-produce-grid></div>
+        <div class="catalog-more" data-produce-more hidden>
+          <button class="btn btn-outline" type="button" data-more-toggle aria-controls="produce-grid" aria-expanded="false">Show more</button>
+          <small data-more-note></small>
+        </div>
+        <div class="catalog-empty" data-produce-empty hidden>
+          <strong>No greens match that.</strong>
+          <span>Try another name, or clear the filters.</span>
+          <button class="btn btn-sm btn-outline" type="button" data-clear-filters>Clear filters</button>
+        </div>
+        <p class="sync-note">Prices shown are indicative. Availability updates from our store.</p>
+      </div>
+    </section>
+
+    <section class="bg-forest journey">
+      <div class="container">
+        <div class="center reveal">
+          <span class="eyebrow">From our farm to your table</span>
+          <h2 class="section-title">Seed to plate, the MEOD way</h2>
+        </div>
+        <ol class="journey-steps">
+          <li class="journey-step reveal">
+            <span class="journey-num">01</span>
+            <span class="icon-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22V12"/><path d="M12 12C12 7 8 4 3 4c0 5 4 8 9 8z"/><path d="M12 12c0-4 3-7 8-7 0 4-3 7-8 7z"/></svg></span>
+            <h3>Seeded in our nursery</h3>
+            <p>Every crop starts in our Kranji nursery, nurtured from seed.</p>
+          </li>
+          <li class="journey-step reveal">
+            <span class="journey-num">02</span>
+            <span class="icon-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.7c3 3.6 6 7 6 10.3a6 6 0 0 1-12 0c0-3.3 3-6.7 6-10.3z"/></svg></span>
+            <h3>Grown without soil</h3>
+            <p>Our Mobile Gulley System and Nutrient Film Technique feed every plant precisely.</p>
+          </li>
+          <li class="journey-step reveal">
+            <span class="journey-num">03</span>
+            <span class="icon-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 18a5 5 0 0 0-10 0"/><path d="M12 2v7"/><path d="m4.2 10.2 1.4 1.4"/><path d="M1 18h2"/><path d="M21 18h2"/><path d="m18.4 11.6 1.4-1.4"/><path d="M23 22H1"/><path d="m8 6 4-4 4 4"/></svg></span>
+            <h3>Harvested at dawn</h3>
+            <p>Picked early every morning, so leaves stay crisp and full of nutrients.</p>
+          </li>
+          <li class="journey-step reveal">
+            <span class="journey-num">04</span>
+            <span class="icon-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></span>
+            <h3>Delivered fresh</h3>
+            <p>Order online and we deliver on Tuesdays, Thursdays and Saturdays.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="farm-more bg-stony" id="farm-more">
+      <div class="container">
+        <div class="fm-head reveal">
+          <div>
+            <span class="eyebrow dark">Farm &amp; More</span>
+            <h2 class="section-title">Made from our harvest</h2>
+            <p class="lead">Ready-to-eat products that boost energy, health and overall wellness, made from greens grown on our farm by people you trust.</p>
+          </div>
+          <a class="btn btn-forest" href="https://meodfresh.com/" target="_blank" rel="noopener">Shop Farm &amp; More ↗</a>
+        </div>
+
+        <div class="fm-bento">
+          <article class="fm-tile fm-feature reveal">
+            <img src="assets/img/gelato-bowls.webp" srcset="assets/img/gelato-bowls-640.webp 640w, assets/img/gelato-bowls.webp 1200w" sizes="(max-width: 900px) 100vw, 640px" alt="Three bowls of Goodness Gracious Gelato" width="1200" height="669" loading="lazy">
+            <img class="fm-badge" src="assets/img/ggg-logo.webp" alt="Goodness Gracious Gelato logo" width="240" height="240" loading="lazy">
+            <div class="fm-overlay">
+              <span class="fm-tag">Featured · Goodness Gracious Gelato</span>
+              <h3>Greens you can scoop</h3>
+              <p>Small-batch gelato made with greens from our own farm. Creamy, a little unexpected and seriously good.</p>
+              <ul class="fm-flavours" aria-label="Flavours">
+                <li><img src="assets/img/gelato-kale-macadamia.webp" alt="" width="600" height="600" loading="lazy"><span>Kale Macadamia</span></li>
+                <li><img src="assets/img/gelato-kale-banana.webp" alt="" width="600" height="600" loading="lazy"><span>Kale Banana</span></li>
+                <li><img src="assets/img/gelato-mango.webp" alt="" width="600" height="600" loading="lazy"><span>Mango</span></li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="fm-tile reveal">
+            <img src="assets/img/product-pesto.webp" alt="Jars of green pesto with fresh basil" width="600" height="600" loading="lazy">
+            <div class="fm-overlay">
+              <span class="fm-tag">Spreads</span>
+              <h3>Farm Pesto</h3>
+              <p>Fresh pesto blended from our basil and leafy greens.</p>
+            </div>
+          </article>
+
+          <article class="fm-tile reveal">
+            <img src="assets/img/product-crackers.webp" alt="A stack of veggie crackers on a plate" width="600" height="600" loading="lazy">
+            <div class="fm-overlay">
+              <span class="fm-tag">Snacks</span>
+              <h3>Veggie Crackers</h3>
+              <p>Crunchy, wholesome crackers with greens baked in.</p>
+            </div>
+          </article>
+
+          <article class="fm-tile reveal">
+            <img src="assets/img/product-vegepowder.webp" alt="Jars of vegetable powder with dried mushrooms and goji" width="600" height="600" loading="lazy">
+            <div class="fm-overlay">
+              <span class="fm-tag">Pantry</span>
+              <h3>Vege Powder</h3>
+              <p>Dried farm veg and mushrooms ground into an everyday seasoning.</p>
+            </div>
+          </article>
+
+          <article class="fm-tile reveal">
+            <img src="assets/img/product-gelato.webp" alt="A tub of Kale Macadamia gelato" width="600" height="600" loading="lazy">
+            <div class="fm-overlay">
+              <span class="fm-tag">Frozen</span>
+              <h3>Gelato Tubs</h3>
+              <p>Take home a tub of your favourite Goodness Gracious flavour.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-berry buy-band">
+      <div class="container">
+        <div class="buy-inner reveal">
+          <div>
+            <span class="eyebrow">Get our greens</span>
+            <h2 class="section-title">Wherever you shop</h2>
+            <p class="lead">Order online from MEOD Fresh, find us at your supermarket, or buy together with your neighbours.</p>
+          </div>
+          <div class="buy-options">
+            <a class="buy-option primary" href="https://meodfresh.com/" target="_blank" rel="noopener"><strong>MEOD Fresh</strong><span>Our online store ↗</span></a>
+            <span class="buy-option"><strong>RedMart</strong><span>Online grocer</span></span>
+            <span class="buy-option"><strong>Cold Storage</strong><span>Supermarkets</span></span>
+            <a class="buy-option" href="index.html#group-buy"><strong>Group buys</strong><span>Save with your neighbours →</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm" width="106" height="30" loading="lazy"></a>
+          <p>13 Neo Tiew Harvest Lane<br>Singapore 719838</p>
+          <p>WhatsApp +65 8133 0358<br><a href="mailto:info@meod.com.sg">info@meod.com.sg</a></p>
+        </div>
+        <div>
+          <h4>Explore</h4>
+          <ul>
+            <li><a href="about.html">About</a></li>
+            <li><a href="produce.html">Our Produce</a></li>
+            <li><a href="experiences.html">Experiences</a></li>
+            <li><a href="contact.html">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Shop</h4>
+          <ul>
+            <li><a href="https://meodfresh.com/" target="_blank" rel="noopener">MEOD Fresh store</a></li>
+            <li><a href="index.html#group-buy">Group buys</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> MEOD Farm. Prototype by Tyllage — demo data only.</span>
+        <span>Since 2014 · SG Fresh Produce Certified</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/assist.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

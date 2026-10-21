@@ -24,15 +24,18 @@ Then open http://localhost:5173. `npx serve .` or VS Code Live Server work too.
 
 > **Seeing an old version after an update?** Browsers cache the JS and CSS. Do a hard refresh (**Ctrl + Shift + R**, or **Cmd + Shift + R** on Mac).
 
-## Deploy to Railway
+## Deploy to GitHub Pages
 
-`railway.json` uses the **Railpack** builder. Railpack finds `index.html` in the repo root and serves the folder as a static site. To deploy:
+The site is plain static files with relative paths, so it runs on GitHub Pages as it is. There's no build step.
 
 1. Push to GitHub.
-2. In Railway, create a **New Project → Deploy from GitHub repo**.
-3. Under **Settings → Networking**, generate a domain.
+2. In the repo, go to **Settings → Pages**.
+3. Under **Build and deployment**, set **Source** to *Deploy from a branch*, choose **main** and **/ (root)**, and save.
+4. After a minute the site is live at `https://<your-username>.github.io/<repo-name>/`. The portal is at `…/portal.html`.
 
-The prototype needs no environment variables. We haven't deployed it yet, so check the first deploy's logs.
+Every push to `main` redeploys automatically.
+
+> **Heads-up:** the GitHub Pages site is public. It only ever holds the synthetic demo data in each visitor's browser, but the demo accounts and password are visible to anyone. Never connect real data or API keys to it.
 
 ---
 
@@ -134,7 +137,6 @@ js/portal.js      all portal screens
 
 assets/           MEOD-supplied originals (logo SVG, photos)
 assets/img/       optimised WebP copies the site actually loads
-railway.json      Railway deploy config
 ```
 
 **Script order:** public pages load `data.js → assist.js → main.js`. `dashboard.html` loads `data.js → assist.js → auth.js → portal.js`.

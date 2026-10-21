@@ -37,8 +37,9 @@ Only the latest commit on `main` is maintained.
 | Authorisation | Permission matrix in `js/auth.js` | Enforced on the server for every request; least-privilege roles |
 | Data storage | `localStorage` in the browser, including customer profile photos, addresses and phone numbers | PostgreSQL with restricted network access, encrypted backups, retention policy; photos in private object storage |
 | File uploads | Profile photo checked and re-encoded in the browser only | Server-side type sniffing, size limits, re-encoding, malware scanning |
-| Secrets | None used | Kept only in Railway env vars; never in git or chat (see list below) |
-| Headers | Host defaults | CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors` |
+| Hosting | Public static site on GitHub Pages | Static front end on Pages is fine; the backend (API, database, webhooks) runs on a separate server host |
+| Secrets | None used | Kept only in the backend host's environment variables; never in git, the front end, or chat (see list below) |
+| Headers | GitHub Pages defaults (custom response headers aren't supported) | CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors` |
 | Audit | Editable client log | Append-only server log |
 | AI | Rule-based mock | OpenAI project key with spend limits; send minimum fields; redact PII; AI never writes to the DB or changes prices |
 | WhatsApp | Mock | Verified webhook signatures, dedupe, consent and template checks, opt-out handling |
@@ -46,7 +47,7 @@ Only the latest commit on `main` is maintained.
 
 ## Secrets for the production build (from the Deployment Plan)
 
-Set these in Railway, never in the repo:
+Set these as environment variables on the **backend** host, never in the repo. GitHub Pages only serves public static files, so it must never hold any of them:
 
 - `DATABASE_URL`
 - `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_WEBHOOK_SECRET`

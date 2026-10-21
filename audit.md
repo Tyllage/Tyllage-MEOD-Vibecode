@@ -66,7 +66,7 @@ It also lists what must change before any real data is used.
 | 3.1 | Sign-in, roles and permissions run in the browser. Anyone can edit `sessionStorage` and act as admin. | **Critical (by design for demo)** | Server-side auth (hashed passwords, httpOnly secure cookies), server-side role checks on every request |
 | 3.2 | All data lives in `localStorage`, per browser, and anyone using that device can read it. This now includes customer **profile photos, addresses and phone numbers**. | High | PostgreSQL behind an API; no PII on the client beyond the signed-in user; photos in object storage |
 | 3.3 | Demo password is in source | Low (demo only) | Remove the demo accounts; seed from env-only secrets |
-| 3.4 | No Content-Security-Policy or security headers | Medium | Add CSP, HSTS, `X-Content-Type-Options` and `Referrer-Policy` at the host or server |
+| 3.4 | No Content-Security-Policy or security headers; GitHub Pages can't set custom headers (it does serve HTTPS) | Medium | Add a CSP `<meta>` tag to each page now; set full headers (CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`) on the production host |
 | 3.5 | Fonts and the map come from third parties (Google Fonts, Google Maps embed). Images are self-hosted. | Low | Self-host fonts; review the Maps embed's privacy notice |
 | 3.6 | Audit log can be edited client-side | Medium | Append-only, server-side log |
 | 3.7 | Ticket summaries only redact numbers of 4+ digits | Low | Proper PII redaction before storing or sending to an LLM |

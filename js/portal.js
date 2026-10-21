@@ -875,16 +875,21 @@
       var t = REC_TYPES[r.type] || REC_TYPES.fresh;
       var media = h('div', { class: 'rec-media' }, thumb(r.product));
       if (r.match) append(media, h('span', { class: 'rec-match', title: 'How closely this fits your buying pattern' }, h('strong', { text: r.match + '%' }), ' match'));
-      return h('article', { class: 'rec rec-' + r.type },
+      var pickOpts = { pick: { match: r.match, reason: r.reason, type: r.type } };
+      append(media, h('span', { class: 'shop-peek', 'aria-hidden': 'true', text: 'View details' }));
+      var card = h('article', { class: 'rec clickable rec-' + r.type },
         media,
         h('div', { class: 'rec-body' },
           h('span', { class: 'rec-type' }, svgIcon(t.icon), t.label),
-          h('strong', { class: 'rec-title', text: r.product.title }),
+          h('button', { type: 'button', class: 'rec-title', text: r.product.title, 'aria-haspopup': 'dialog', 'aria-label': r.product.title + ' — view details', onclick: function () { openProduct(r.product, pickOpts); } }),
           h('p', { class: 'rec-reason', text: r.reason }),
           h('div', { class: 'rec-foot' },
             h('span', { class: 'rec-price', text: money(r.product.priceCents) }),
             h('button', { class: 'btn btn-sm btn-forest rec-add', type: 'button', text: '+ Add', 'aria-label': 'Add ' + r.product.title + ' to cart',
               onclick: function () { addToCart(r.product.id); location.hash = 'shop'; } }))));
+      // Clicking anywhere on the card opens details, except its buttons.
+      card.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(r.product, pickOpts); });
+      return card;
     }));
   }
 
@@ -974,6 +979,108 @@
     return c.groupCode ? S().events.filter(function (e) { return e.code === c.groupCode; })[0] || null : null;
   }
 
+  // ---- Product details dialog (used by Shop and Smart picks) ----
+  // opts.pick = { match, reason, type } when opened from a recommendation;
+  // opts.onCartChange = called after the cart is updated (Shop redraws its grid and cart).
+  var CARE_TIPS = {
+    'asian-greens': { store: 'Keep refrigerated, loosely wrapped in the crisper. Best within 3–4 days.', cook: 'Quick stir-fry with garlic, blanch with oyster sauce, or add to soups at the end.' },
+    lettuces: { store: 'Refrigerate in a breathable bag or box. Best within 4–5 days.', cook: 'Rinse just before eating. Great in salads, wraps and sandwiches.' },
+    fungi: { store: 'Refrigerate in a paper bag, not plastic. Best within 5 days.', cook: 'Wipe clean rather than soak. Sauté, grill, or simmer in soups and stews.' },
+    herbs: { store: 'Stand stems in a glass of water; keep basil at room temperature, mint in the fridge.', cook: 'Add at the end of cooking, or fresh into salads, drinks and pesto.' },
+    'farm-more': { store: 'Follow the storage note on the pack. Gelato stays frozen at −18 °C.', cook: 'Ready to enjoy — made with greens grown on our farm.' }
+  };
+
+  function pairsFor(p) {
+    // Products that share baskets with this one in past orders; fall back to the same category.
+    var counts = {};
+    S().orders.forEach(function (o) {
+      if (!o.items.some(function (i) { return i.productId === p.id; })) return;
+      o.items.forEach(function (i) { if (i.productId !== p.id) counts[i.productId] = (counts[i.productId] || 0) + 1; });
+    });
+    var inStock = function (x) { var st = M.stockStatus(x); return st.known && x.stock.qty > 0; };
+    var list = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })
+      .map(function (id) { return M.byId('products', id); }).filter(function (x) { return x && inStock(x); });
+    S().products.forEach(function (x) { if (list.length < 3 && x.id !== p.id && x.category === p.category && inStock(x) && list.indexOf(x) === -1) list.push(x); });
+    return { items: list.slice(0, 3), fromBaskets: Object.keys(counts).length > 0 };
+  }
+
+  function openProduct(p, opts) {
+    opts = opts || {};
+    // Only one product dialog at a time: close and remove any others right away.
+    document.querySelectorAll('.product-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var s = M.stockStatus(p);
+    var inCart = cart[p.id] || 0;
+    var qty = inCart || 1;
+    var maxQty = s.known ? s.qty : 0;
+    var tips = CARE_TIPS[p.category] || CARE_TIPS['asian-greens'];
+    var pairs = pairsFor(p);
+    var dlg = h('dialog', { class: 'receipt-dialog product-dialog', 'aria-labelledby': 'pd-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+
+    var qtyLabel = h('span', { text: String(qty) });
+    var minus = h('button', { type: 'button', 'aria-label': 'One less', text: '−' });
+    var plus = h('button', { type: 'button', 'aria-label': 'One more', text: '+' });
+    var addBtn = h('button', { class: 'btn btn-forest pd-add', type: 'button' });
+    function sync() {
+      qtyLabel.textContent = String(qty);
+      minus.disabled = qty <= 1;
+      plus.disabled = qty >= maxQty;
+      addBtn.disabled = !maxQty;
+      addBtn.textContent = !maxQty ? (s.key === 'stale' ? 'Can\'t confirm stock' : 'Sold out')
+        : (inCart ? 'Update cart · ' : 'Add to cart · ') + money(p.priceCents * qty);
+    }
+    minus.addEventListener('click', function () { if (qty > 1) { qty--; sync(); } });
+    plus.addEventListener('click', function () { if (qty < maxQty) { qty++; sync(); } });
+    addBtn.addEventListener('click', function () {
+      cart[p.id] = qty;
+      saveCart();
+      if (opts.onCartChange) opts.onCartChange();
+      toast(qty + ' × ' + p.title + (inCart ? ' updated in' : ' added to') + ' your cart.');
+      closeDialog();
+    });
+
+    var stockLine = s.known
+      ? (s.qty > 0 ? s.qty + ' available · synced ' + ago(p.stock.updatedAt) : 'Sold out · synced ' + ago(p.stock.updatedAt))
+      : 'We can\'t confirm stock right now — last sync ' + ago(p.stock.updatedAt) + '. Try again shortly.';
+    var nutrients = String(p.nutrients || '').split('•').map(function (x) { return x.trim(); }).filter(Boolean);
+
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'pd-layout' },
+        h('div', { class: 'pd-media' }, thumb(p), stockBadge(p)),
+        h('div', { class: 'pd-info' },
+          h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
+          h('h2', { id: 'pd-title', text: p.title }),
+          h('small', { class: 'pd-sub', text: p.subtitle }),
+          h('strong', { class: 'pd-price', text: money(p.priceCents) }),
+          opts.pick ? h('div', { class: 'pd-why' }, svgIcon('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>'),
+            h('span', null, h('strong', { text: 'Picked for you' + (opts.pick.match ? ' · ' + opts.pick.match + '% match' : '') }), h('small', { text: opts.pick.reason }))) : null,
+          h('p', { class: 'pd-stock ' + s.key }, iconCircle(ICONS.box, 'bare'), stockLine),
+          p.blurb ? h('p', { class: 'pd-blurb', text: p.blurb }) : null,
+          h('ul', { class: 'pd-tags' },
+            p.meodGrown ? [h('li', { text: '100% pesticide-free' }), h('li', { text: 'Harvested in Kranji' })] : h('li', { text: 'Made by MEOD' }),
+            nutrients.map(function (n) { return h('li', { class: 'nutri', text: n }); })),
+          h('div', { class: 'pd-buy' },
+            h('div', { class: 'qty', 'aria-label': 'Quantity' }, minus, qtyLabel, plus),
+            addBtn),
+          inCart ? h('small', { class: 'pd-incart', text: inCart + ' already in your cart' }) : null)),
+      h('div', { class: 'pd-extra' },
+        h('div', { class: 'pd-tip' }, iconCircle(ICONS.clock, 'soft'), h('span', null, h('strong', { text: 'Storage' }), h('small', { text: tips.store }))),
+        h('div', { class: 'pd-tip' }, iconCircle(ICONS.leaf, 'soft'), h('span', null, h('strong', { text: 'How to enjoy' }), h('small', { text: tips.cook })))),
+      pairs.items.length ? h('div', { class: 'pd-pairs' },
+        h('strong', { text: pairs.fromBaskets ? 'Often bought together' : 'More ' + M.CATEGORIES[p.category].label.toLowerCase() }),
+        h('div', { class: 'pd-pair-list' }, pairs.items.map(function (x) {
+          return h('button', { type: 'button', class: 'pd-pair', onclick: function () { openProduct(x, { onCartChange: opts.onCartChange }); } },
+            h('span', { class: 'cart-thumb' }, thumb(x)), h('span', null, h('b', { text: x.title }), h('small', { text: money(x.priceCents) })));
+        }))) : null);
+
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) closeDialog(); });
+    document.body.appendChild(dlg);
+    sync();
+    dlg.showModal();
+  }
+
   function shopView(root) {
     var c = me();
     var state = shopView.state || (shopView.state = { filter: 'all', q: '', inStock: false });
@@ -1010,101 +1117,7 @@
     stockToggle.addEventListener('change', function () { state.inStock = stockToggle.checked; drawGrid(); });
     var searchBox = h('label', { class: 'shop-search' }, iconCircle(ICONS.search, 'bare'), search);
 
-    // ---- Product details dialog ----
-    var CARE_TIPS = {
-      'asian-greens': { store: 'Keep refrigerated, loosely wrapped in the crisper. Best within 3–4 days.', cook: 'Quick stir-fry with garlic, blanch with oyster sauce, or add to soups at the end.' },
-      lettuces: { store: 'Refrigerate in a breathable bag or box. Best within 4–5 days.', cook: 'Rinse just before eating. Great in salads, wraps and sandwiches.' },
-      fungi: { store: 'Refrigerate in a paper bag, not plastic. Best within 5 days.', cook: 'Wipe clean rather than soak. Sauté, grill, or simmer in soups and stews.' },
-      herbs: { store: 'Stand stems in a glass of water; keep basil at room temperature, mint in the fridge.', cook: 'Add at the end of cooking, or fresh into salads, drinks and pesto.' },
-      'farm-more': { store: 'Follow the storage note on the pack. Gelato stays frozen at −18 °C.', cook: 'Ready to enjoy — made with greens grown on our farm.' }
-    };
-
-    function pairsFor(p) {
-      // Products that share baskets with this one in past orders; fall back to the same category.
-      var counts = {};
-      S().orders.forEach(function (o) {
-        if (!o.items.some(function (i) { return i.productId === p.id; })) return;
-        o.items.forEach(function (i) { if (i.productId !== p.id) counts[i.productId] = (counts[i.productId] || 0) + 1; });
-      });
-      var inStock = function (x) { var st = M.stockStatus(x); return st.known && x.stock.qty > 0; };
-      var list = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })
-        .map(function (id) { return M.byId('products', id); }).filter(function (x) { return x && inStock(x); });
-      S().products.forEach(function (x) { if (list.length < 3 && x.id !== p.id && x.category === p.category && inStock(x) && list.indexOf(x) === -1) list.push(x); });
-      return { items: list.slice(0, 3), fromBaskets: Object.keys(counts).length > 0 };
-    }
-
-    function openProduct(p) {
-      // Only one product dialog at a time: close and remove any others right away.
-      document.querySelectorAll('.product-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
-      var s = M.stockStatus(p);
-      var inCart = cart[p.id] || 0;
-      var qty = inCart || 1;
-      var maxQty = s.known ? s.qty : 0;
-      var tips = CARE_TIPS[p.category] || CARE_TIPS['asian-greens'];
-      var pairs = pairsFor(p);
-      var dlg = h('dialog', { class: 'receipt-dialog product-dialog', 'aria-labelledby': 'pd-title' });
-      function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
-
-      var qtyLabel = h('span', { text: String(qty) });
-      var minus = h('button', { type: 'button', 'aria-label': 'One less', text: '−' });
-      var plus = h('button', { type: 'button', 'aria-label': 'One more', text: '+' });
-      var addBtn = h('button', { class: 'btn btn-forest pd-add', type: 'button' });
-      function sync() {
-        qtyLabel.textContent = String(qty);
-        minus.disabled = qty <= 1;
-        plus.disabled = qty >= maxQty;
-        addBtn.disabled = !maxQty;
-        addBtn.textContent = !maxQty ? (s.key === 'stale' ? 'Can\'t confirm stock' : 'Sold out')
-          : (inCart ? 'Update cart · ' : 'Add to cart · ') + money(p.priceCents * qty);
-      }
-      minus.addEventListener('click', function () { if (qty > 1) { qty--; sync(); } });
-      plus.addEventListener('click', function () { if (qty < maxQty) { qty++; sync(); } });
-      addBtn.addEventListener('click', function () {
-        setQty(p.id, qty);
-        toast(qty + ' × ' + p.title + (inCart ? ' updated in' : ' added to') + ' your cart.');
-        closeDialog();
-      });
-
-      var stockLine = s.known
-        ? (s.qty > 0 ? s.qty + ' available · synced ' + ago(p.stock.updatedAt) : 'Sold out · synced ' + ago(p.stock.updatedAt))
-        : 'We can\'t confirm stock right now — last sync ' + ago(p.stock.updatedAt) + '. Try again shortly.';
-      var nutrients = String(p.nutrients || '').split('•').map(function (x) { return x.trim(); }).filter(Boolean);
-
-      append(dlg,
-        h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
-        h('div', { class: 'pd-layout' },
-          h('div', { class: 'pd-media' }, thumb(p), stockBadge(p)),
-          h('div', { class: 'pd-info' },
-            h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
-            h('h2', { id: 'pd-title', text: p.title }),
-            h('small', { class: 'pd-sub', text: p.subtitle }),
-            h('strong', { class: 'pd-price', text: money(p.priceCents) }),
-            h('p', { class: 'pd-stock ' + s.key }, iconCircle(ICONS.box, 'bare'), stockLine),
-            p.blurb ? h('p', { class: 'pd-blurb', text: p.blurb }) : null,
-            h('ul', { class: 'pd-tags' },
-              p.meodGrown ? [h('li', { text: '100% pesticide-free' }), h('li', { text: 'Harvested in Kranji' })] : h('li', { text: 'Made by MEOD' }),
-              nutrients.map(function (n) { return h('li', { class: 'nutri', text: n }); })),
-            h('div', { class: 'pd-buy' },
-              h('div', { class: 'qty', 'aria-label': 'Quantity' }, minus, qtyLabel, plus),
-              addBtn),
-            inCart ? h('small', { class: 'pd-incart', text: inCart + ' already in your cart' }) : null)),
-        h('div', { class: 'pd-extra' },
-          h('div', { class: 'pd-tip' }, iconCircle(ICONS.clock, 'soft'), h('span', null, h('strong', { text: 'Storage' }), h('small', { text: tips.store }))),
-          h('div', { class: 'pd-tip' }, iconCircle(ICONS.leaf, 'soft'), h('span', null, h('strong', { text: 'How to enjoy' }), h('small', { text: tips.cook })))),
-        pairs.items.length ? h('div', { class: 'pd-pairs' },
-          h('strong', { text: pairs.fromBaskets ? 'Often bought together' : 'More ' + M.CATEGORIES[p.category].label.toLowerCase() }),
-          h('div', { class: 'pd-pair-list' }, pairs.items.map(function (x) {
-            return h('button', { type: 'button', class: 'pd-pair', onclick: function () { openProduct(x); } },
-              h('span', { class: 'cart-thumb' }, thumb(x)), h('span', null, h('b', { text: x.title }), h('small', { text: money(x.priceCents) })));
-          }))) : null);
-
-      dlg.addEventListener('close', function () { dlg.remove(); });
-      dlg.addEventListener('click', function (e) { if (e.target === dlg) closeDialog(); });
-      document.body.appendChild(dlg);
-      sync();
-      dlg.showModal();
-    }
-
+    var shopOpts = { onCartChange: function () { drawGrid(); drawCart(); } };
     function drawGrid() {
       var list = S().products.filter(function (p) {
         if (state.filter !== 'all' && p.category !== state.filter) return false;
@@ -1131,11 +1144,11 @@
           media,
           h('div', { class: 'shop-body' },
             h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
-            h('button', { type: 'button', class: 'shop-title', text: p.title, 'aria-haspopup': 'dialog', 'aria-label': p.title + ' — view details', onclick: function () { openProduct(p); } }),
+            h('button', { type: 'button', class: 'shop-title', text: p.title, 'aria-haspopup': 'dialog', 'aria-label': p.title + ' — view details', onclick: function () { openProduct(p, shopOpts); } }),
             h('small', { text: p.subtitle }),
             h('div', { class: 'shop-foot' }, h('span', { class: 'shop-price', text: money(p.priceCents) }), control)));
         // Clicking anywhere on the card opens details, except its own buttons (+ Add, qty).
-        card.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(p); });
+        card.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(p, shopOpts); });
         return card;
       })));
     }

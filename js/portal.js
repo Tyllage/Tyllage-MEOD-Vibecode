@@ -828,21 +828,68 @@
   function me() { return customer(session.customerId); }
 
   function thumb(p) {
-    if (!p.image) return h('div', { class: 'thumb', 'aria-hidden': 'true', text: M.CATEGORIES[p.category].emoji });
-    return h('div', { class: 'thumb' + (p.category === 'farm-more' ? ' cover' : '') }, h('img', { src: p.image, alt: '', loading: 'lazy', width: 420, height: 420 }));
+    if (p.image) return h('div', { class: 'thumb' + (p.category === 'farm-more' ? ' cover' : '') }, h('img', { src: p.image, alt: '', loading: 'lazy', width: 420, height: 420 }));
+    // Same line drawings as the public catalogue (static markup from data.js).
+    var t = h('div', { class: 'thumb art', 'aria-hidden': 'true' });
+    t.style.setProperty('--tint', M.CATEGORIES[p.category].color);
+    t.innerHTML = '<svg viewBox="0 0 64 64">' + (M.CATEGORY_ART[p.category] || '') + '</svg>';
+    return t;
+  }
+
+  var REC_TYPES = {
+    restock: { label: 'Restock', icon: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>' },
+    pairs: { label: 'Pairs well', icon: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>' },
+    taste: { label: 'Your taste', icon: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.8 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>' },
+    fresh: { label: 'Fresh pick', icon: '<path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 16-9 0 12-4 16-9 16z"/><path d="M4 20c4-4 7-7 11-10"/>' }
+  };
+  function svgIcon(paths) {
+    var s = h('span', { class: 'rec-icon', 'aria-hidden': 'true' });
+    s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    return s;
   }
 
   function recGrid(list) {
     if (!list.length) return h('p', { class: 'empty', text: 'Nothing to suggest right now.' });
     return h('div', { class: 'rec-grid' }, list.map(function (r) {
-      return h('div', { class: 'rec' },
-        thumb(r.product),
-        h('strong', { text: r.product.title }),
-        h('small', { text: r.reason }),
-        h('div', { class: 'row', style: 'display:flex;justify-content:space-between;align-items:center' },
-          h('span', { text: money(r.product.priceCents) }),
-          mini('Add to cart', function () { addToCart(r.product.id); location.hash = 'shop'; })));
+      var t = REC_TYPES[r.type] || REC_TYPES.fresh;
+      var media = h('div', { class: 'rec-media' }, thumb(r.product));
+      if (r.match) append(media, h('span', { class: 'rec-match', title: 'How closely this fits your buying pattern' }, h('strong', { text: r.match + '%' }), ' match'));
+      return h('article', { class: 'rec rec-' + r.type },
+        media,
+        h('div', { class: 'rec-body' },
+          h('span', { class: 'rec-type' }, svgIcon(t.icon), t.label),
+          h('strong', { class: 'rec-title', text: r.product.title }),
+          h('p', { class: 'rec-reason', text: r.reason }),
+          h('div', { class: 'rec-foot' },
+            h('span', { class: 'rec-price', text: money(r.product.priceCents) }),
+            h('button', { class: 'btn btn-sm btn-forest rec-add', type: 'button', text: '+ Add', 'aria-label': 'Add ' + r.product.title + ' to cart',
+              onclick: function () { addToCart(r.product.id); location.hash = 'shop'; } }))));
     }));
+  }
+
+  function picksPanel(c) {
+    var personal = c.consentPersonalisation;
+    var head = h('div', { class: 'picks-head' },
+      h('div', null,
+        h('span', { class: 'picks-eyebrow' }, svgIcon('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'), personal ? 'Smart picks' : 'Fresh this week'),
+        h('h2', { text: personal ? 'Picked for you, ' + c.name.split(' ')[0] : 'What\'s fresh this week' }),
+        h('p', { text: personal
+          ? 'Based on what you buy, when you last bought it, and what goes well with your usual basket. Only items in stock.'
+          : 'Personalised picks are off. Turn them on in Preferences to get suggestions based on your orders.' })));
+
+    var profile = personal ? M.tasteProfile(c).slice(0, 4) : [];
+    if (profile.length) {
+      append(head, h('div', { class: 'taste', 'aria-label': 'Your taste profile' },
+        h('span', { class: 'taste-title', text: 'Your taste' }),
+        profile.map(function (t) {
+          var bar = h('span', { class: 'taste-bar' }, h('span', { class: 'taste-fill' }));
+          bar.firstChild.style.width = t.pct + '%';
+          return h('div', { class: 'taste-row' }, h('span', { class: 'taste-label', text: t.label }), bar, h('span', { class: 'taste-pct', text: t.pct + '%' }));
+        })));
+    } else if (!personal) {
+      append(head, h('a', { class: 'btn btn-sm btn-outline', href: '#preferences', text: 'Turn on smart picks' }));
+    }
+    return h('section', { class: 'panel picks' }, head, recGrid(M.recommendFor(c, 4)));
   }
 
   function customerOverview(root) {
@@ -854,8 +901,7 @@
       kpi('Latest order', last ? last.ref : '—', last ? last.status.replace('_', ' ') : null),
       kpi('Group buy', c.groupCode || 'Not joined', c.groupCode ? '5% off applied at checkout' : 'Join with a leader code'),
       kpi('Messages', c.consentMarketing ? 'On' : 'Off', 'Change in Preferences')));
-    append(root, panel('Picked for you', c.consentPersonalisation ? 'Based on what you have bought before. Only items in stock are shown.' : 'Personalised picks are off, so here is what\'s fresh this week.',
-      recGrid(M.recommendFor(c, 4))));
+    append(root, picksPanel(c));
   }
 
   var cart = {};

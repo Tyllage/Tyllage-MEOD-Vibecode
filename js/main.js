@@ -52,14 +52,7 @@
   } catch (e) { /* ignore */ }
 
   /* ---------- Produce grid (home: featured, produce page: full catalogue) ---------- */
-  // Line illustrations for products without a photo (static markup, no data).
-  var CATEGORY_ART = {
-    'asian-greens': '<path d="M32 58V30"/><path d="M32 40c-10-2-16-10-16-22 9 1 15 7 16 16"/><path d="M32 36c9-3 14-11 13-22-8 2-13 8-13 17"/><path d="M32 48c-7-1-12-5-14-11"/><path d="M32 46c6-1 11-5 13-10"/>',
-    lettuces: '<path d="M14 40c0-12 8-22 18-22s18 10 18 22"/><path d="M10 42c4 10 12 16 22 16s18-6 22-16"/><path d="M22 30c3 5 3 12 0 18"/><path d="M42 30c-3 5-3 12 0 18"/><path d="M32 22v34"/>',
-    fungi: '<path d="M10 32c0-12 10-20 22-20s22 8 22 20H10z"/><path d="M25 32v16a7 7 0 0 0 14 0V32"/><circle cx="22" cy="24" r="2"/><circle cx="36" cy="20" r="2"/><circle cx="44" cy="27" r="1.5"/>',
-    herbs: '<path d="M32 58V14"/><path d="M32 22c-6 0-10-4-10-9 6 0 10 4 10 9z"/><path d="M32 22c6 0 10-4 10-9-6 0-10 4-10 9z"/><path d="M32 36c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 36c8 0 13-5 13-11-8 0-13 5-13 11z"/><path d="M32 50c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 50c8 0 13-5 13-11-8 0-13 5-13 11z"/>',
-    'farm-more': '<rect x="18" y="22" width="28" height="34" rx="5"/><path d="M20 14h24v8H20z"/><path d="M18 34h28"/>'
-  };
+  var CATEGORY_ART = M.CATEGORY_ART;
 
   function produceTile(p) {
     var cat = M.CATEGORIES[p.category];

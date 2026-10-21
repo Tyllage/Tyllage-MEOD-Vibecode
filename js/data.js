@@ -71,6 +71,15 @@
     'Vege Powder': 'assets/img/product-vegepowder.webp'
   };
 
+  // Line illustrations for products without a photo (static markup, no data).
+  var CATEGORY_ART = {
+    'asian-greens': '<path d="M32 58V30"/><path d="M32 40c-10-2-16-10-16-22 9 1 15 7 16 16"/><path d="M32 36c9-3 14-11 13-22-8 2-13 8-13 17"/><path d="M32 48c-7-1-12-5-14-11"/><path d="M32 46c6-1 11-5 13-10"/>',
+    lettuces: '<path d="M14 40c0-12 8-22 18-22s18 10 18 22"/><path d="M10 42c4 10 12 16 22 16s18-6 22-16"/><path d="M22 30c3 5 3 12 0 18"/><path d="M42 30c-3 5-3 12 0 18"/><path d="M32 22v34"/>',
+    fungi: '<path d="M10 32c0-12 10-20 22-20s22 8 22 20H10z"/><path d="M25 32v16a7 7 0 0 0 14 0V32"/><circle cx="22" cy="24" r="2"/><circle cx="36" cy="20" r="2"/><circle cx="44" cy="27" r="1.5"/>',
+    herbs: '<path d="M32 58V14"/><path d="M32 22c-6 0-10-4-10-9 6 0 10 4 10 9z"/><path d="M32 22c6 0 10-4 10-9-6 0-10 4-10 9z"/><path d="M32 36c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 36c8 0 13-5 13-11-8 0-13 5-13 11z"/><path d="M32 50c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 50c8 0 13-5 13-11-8 0-13 5-13 11z"/>',
+    'farm-more': '<rect x="18" y="22" width="28" height="34" rx="5"/><path d="M20 14h24v8H20z"/><path d="M18 34h28"/>'
+  };
+
   function minutesAgo(m) { return new Date(Date.now() - m * 60000).toISOString(); }
   function daysFromNow(d) { return new Date(Date.now() + d * 864e5).toISOString(); }
 
@@ -250,31 +259,114 @@
       .filter(function (e) { return e && (!leaderId || e.leaderId === leaderId); });
   }
 
+  // Tyllage Recommend: score in-stock products from the customer's own buying
+  // behaviour. Signals (all explainable, no sensitive-trait inference):
+  //   restock  - bought before and not reordered for a while
+  //   pairs    - often in the same basket as their items (other customers' orders)
+  //   taste    - category affinity, recent orders weighted more
+  //   fresh    - small boost for farm-grown produce
+  // Personalisation off -> generic fresh picks only.
+  var DAY = 864e5;
+  function liveOrders(customerId) {
+    return state.orders.filter(function (o) { return o.status !== 'cancelled' && (!customerId || o.customerId === customerId); });
+  }
+
+  function tasteProfile(customer) {
+    var weights = {}, total = 0;
+    liveOrders(customer.id).forEach(function (o) {
+      var recency = Math.exp(-(Date.now() - new Date(o.createdAt).getTime()) / (30 * DAY));
+      o.items.forEach(function (i) {
+        var p = byId('products', i.productId);
+        if (!p) return;
+        var w = i.qty * (0.4 + recency);
+        weights[p.category] = (weights[p.category] || 0) + w;
+        total += w;
+      });
+    });
+    return Object.keys(weights)
+      .map(function (k) { return { category: k, label: CATEGORIES[k].label, pct: Math.round(weights[k] / total * 100) }; })
+      .sort(function (a, b) { return b.pct - a.pct; });
+  }
+
   function recommendFor(customer, limit) {
     limit = limit || 4;
     var available = state.products.filter(function (p) { var s = stockStatus(p); return s.known && s.qty > 0; });
     if (!customer || !customer.consentPersonalisation) {
       return available.filter(function (p) { return p.meodGrown; }).slice(0, limit)
-        .map(function (p) { return { product: p, reason: 'Freshly harvested this week' }; });
+        .map(function (p, i) { return { product: p, type: 'fresh', reason: 'Freshly harvested this week', match: null, rank: i }; });
     }
-    var bought = {}, seedByCategory = {};
-    state.orders.filter(function (o) { return o.customerId === customer.id; }).forEach(function (o) {
+
+    var mine = liveOrders(customer.id);
+    var lastBought = {}, boughtTitle = {};
+    mine.forEach(function (o) {
       o.items.forEach(function (i) {
-        bought[i.productId] = true;
-        var prod = byId('products', i.productId);
-        if (prod && !seedByCategory[prod.category]) seedByCategory[prod.category] = prod.title;
+        var t = new Date(o.createdAt).getTime();
+        if (!lastBought[i.productId] || t > lastBought[i.productId]) lastBought[i.productId] = t;
+        boughtTitle[i.productId] = i.title;
       });
     });
-    var picks = [];
-    available.forEach(function (p) {
-      if (!bought[p.id] && seedByCategory[p.category]) {
-        picks.push({ product: p, reason: 'You bought ' + seedByCategory[p.category] + ' before — try more ' + CATEGORIES[p.category].label.toLowerCase() });
+
+    // Co-purchase: other customers' baskets that share an item with this customer.
+    var pairs = {};
+    liveOrders().forEach(function (o) {
+      if (o.customerId === customer.id) return;
+      var shared = o.items.filter(function (i) { return lastBought[i.productId]; });
+      if (!shared.length) return;
+      o.items.forEach(function (i) {
+        if (lastBought[i.productId]) return;
+        var entry = pairs[i.productId] || (pairs[i.productId] = { count: 0, with: shared[0].title });
+        entry.count += 1;
+      });
+    });
+
+    var taste = {};
+    tasteProfile(customer).forEach(function (t) { taste[t.category] = t.pct; });
+
+    var scored = available.map(function (p) {
+      var signals = [];
+      var days = lastBought[p.id] ? Math.round((Date.now() - lastBought[p.id]) / DAY) : null;
+      if (days !== null && days >= 5) {
+        signals.push({ type: 'restock', score: 40 + Math.min(days, 30), reason: 'You last bought this ' + days + ' days ago — time to restock?' });
       }
+      if (pairs[p.id]) {
+        signals.push({ type: 'pairs', score: 28 + pairs[p.id].count * 8, reason: 'Often bought with ' + pairs[p.id].with });
+      }
+      if (taste[p.category] && days === null) {
+        signals.push({ type: 'taste', score: taste[p.category] * 0.6, reason: 'You love ' + CATEGORIES[p.category].label.toLowerCase() + ' — ' + taste[p.category] + '% of your basket' });
+      }
+      var score = signals.reduce(function (s, x) { return s + x.score; }, 0) + (p.meodGrown ? 4 : 0);
+      var best = signals.sort(function (a, b) { return b.score - a.score; })[0];
+      return {
+        product: p,
+        type: best ? best.type : 'fresh',
+        reason: best ? best.reason : 'Freshly harvested this week',
+        score: score
+      };
+    }).filter(function (r) { return r.score > 4; });
+
+    scored.sort(function (a, b) { return b.score - a.score; });
+    var top = scored.length ? scored[0].score : 1;
+    // Keep variety: at most two picks per reason type in the first slots.
+    var picked = [], perType = {};
+    scored.forEach(function (r) {
+      if (picked.length >= limit) return;
+      if ((perType[r.type] || 0) >= 2) return;
+      perType[r.type] = (perType[r.type] || 0) + 1;
+      picked.push(r);
     });
+    scored.forEach(function (r) { if (picked.length < limit && picked.indexOf(r) === -1) picked.push(r); });
+    // Top up with fresh farm-grown items so the row is always full.
     available.forEach(function (p) {
-      if (bought[p.id]) picks.push({ product: p, reason: 'One of your past picks — in stock now' });
+      if (picked.length >= limit || !p.meodGrown || lastBought[p.id]) return;
+      if (picked.some(function (r) { return r.product.id === p.id; })) return;
+      picked.push({ product: p, type: 'fresh', reason: 'Freshly harvested this week', score: 4 });
     });
-    return picks.slice(0, limit);
+    return picked.map(function (r, i) {
+      // Rank nudges ties apart so equal scores don't all read the same.
+      r.match = Math.max(60, Math.min(98, Math.round(60 + (r.score / top) * 38) - i * 2));
+      r.rank = i;
+      return r;
+    });
   }
 
   function withinHumanHours(date) {
@@ -304,7 +396,7 @@
     state: state, RULES: RULES, CATEGORIES: CATEGORIES, DEMO_PASSWORD: DEMO_PASSWORD,
     save: save, reset: reset, nextId: nextId, byId: byId,
     stockStatus: stockStatus, findProduct: findProduct, priceOrder: priceOrder,
-    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor,
+    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
     withinHumanHours: withinHumanHours, audit: audit,
     money: money, maskName: maskName, maskPhone: maskPhone
   };

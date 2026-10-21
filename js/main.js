@@ -267,7 +267,7 @@
     var fab = el('button', { class: 'assist-fab', type: 'button', 'aria-label': 'Open Ask MEOD chat', 'aria-expanded': 'false' });
     fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
 
-    var panel = el('section', { class: 'assist-panel', role: 'dialog', 'aria-label': 'Ask MEOD chat' });
+    var panel = el('div', { class: 'assist-panel', role: 'dialog', 'aria-label': 'Ask MEOD chat' });
     panel.innerHTML =
       '<div class="assist-head"><div><strong>Ask MEOD</strong><small>Stock • Delivery • Group buys • EN / 中文 / BM</small></div>' +
       '<button class="assist-close" type="button" aria-label="Close chat">&times;</button></div>' +

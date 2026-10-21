@@ -67,7 +67,7 @@
   function kpi(label, value, note) { return h('div', { class: 'kpi' }, h('span', { text: label }), h('strong', { text: value }), note ? h('small', { text: note }) : null); }
   function panel(title, hint) {
     var rest = Array.prototype.slice.call(arguments, 2);
-    return h('section', { class: 'panel' }, h('h2', { text: title }), hint ? h('p', { class: 'hint', text: hint }) : null, rest);
+    return h('section', { class: 'panel' }, title ? h('h2', { text: title }) : null, hint ? h('p', { class: 'hint', text: hint }) : null, rest);
   }
   function mini(label, onclick, opts) {
     opts = opts || {};
@@ -418,22 +418,110 @@
       ], S().customers)));
   }
 
+  var ROLE_META = {
+    admin: { label: 'Admin', tone: 'red' },
+    staff: { label: 'Sales staff', tone: 'blue' },
+    leader: { label: 'Group leader', tone: 'amber' },
+    customer: { label: 'Customer', tone: 'green' }
+  };
+
+  function initials(name) {
+    return String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w[0].toUpperCase(); }).join('');
+  }
+
+  function lastSignIn(email) {
+    var hit = S().audit.filter(function (a) { return a.actor === email && a.event === 'auth.sign_in'; })[0];
+    return hit ? ago(hit.at) : 'Never';
+  }
+
+  function linkedTo(u) {
+    if (u.leaderId) { var l = M.byId('leaders', u.leaderId); return l ? l.name + ' · ' + l.area : u.leaderId; }
+    if (u.customerId) { var c = customer(u.customerId); return c ? c.name + ' (' + c.id + ')' : u.customerId; }
+    return 'MEOD team';
+  }
+
   function usersView(root) {
-    append(root, panel('Users & roles', 'Turning off an account blocks its next sign-in. Role changes would be made on the server in production.',
-      table([
-        { label: 'Email', render: function (u) { return u.email; } },
-        { label: 'Name', render: function (u) { return u.name; } },
-        { label: 'Role', render: function (u) { return badge(u.role, u.role === 'admin' ? 'red' : u.role === 'staff' ? 'blue' : u.role === 'leader' ? 'amber' : 'green'); } },
-        { label: 'Linked to', render: function (u) { return u.customerId || u.leaderId || '—'; } },
-        { label: 'Status', render: function (u) { return u.disabled ? badge('disabled', 'grey') : badge('active', 'green'); } },
+    var users = S().users;
+    var count = function (role) { return users.filter(function (u) { return u.role === role; }).length; };
+    var state = usersView.state || (usersView.state = { role: 'all', q: '' });
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Total users', String(users.length), users.filter(function (u) { return u.disabled; }).length + ' disabled'),
+      kpi('MEOD team', String(count('admin') + count('staff')), count('admin') + ' admin · ' + count('staff') + ' staff'),
+      kpi('Group leaders', String(count('leader'))),
+      kpi('Customers', String(count('customer')))));
+
+    var list = h('div');
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter by role' });
+    var search = h('input', { type: 'search', class: 'user-search', placeholder: 'Search name or email', 'aria-label': 'Search users', value: state.q });
+
+    function drawChips() {
+      chips.textContent = '';
+      [['all', 'All', users.length]].concat(Object.keys(ROLE_META).map(function (r) { return [r, ROLE_META[r].label, count(r)]; }))
+        .forEach(function (c) {
+          append(chips, h('button', { type: 'button', class: 'chip' + (state.role === c[0] ? ' active' : ''), 'aria-pressed': String(state.role === c[0]),
+            onclick: function () { state.role = c[0]; drawChips(); drawList(); } }, c[1] + ' ', h('span', { class: 'chip-count', text: String(c[2]) })));
+        });
+    }
+
+    function drawList() {
+      var q = state.q.toLowerCase();
+      var rows = users.filter(function (u) {
+        return (state.role === 'all' || u.role === state.role) &&
+          (!q || (u.name + ' ' + u.email).toLowerCase().indexOf(q) > -1);
+      });
+      list.textContent = '';
+      append(list, table([
+        { label: 'User', render: function (u) {
+          return h('div', { class: 'user-cell' },
+            h('span', { class: 'avatar av-' + u.role, 'aria-hidden': 'true', text: initials(u.name) }),
+            h('span', null, h('strong', { text: u.name }), u.email === session.email ? h('span', { class: 'you-tag', text: 'You' }) : null,
+              h('small', { text: u.email })));
+        } },
+        { label: 'Role', render: function (u) { return badge(ROLE_META[u.role].label, ROLE_META[u.role].tone); } },
+        { label: 'Linked to', render: linkedTo },
+        { label: 'Last sign-in', render: function (u) { return lastSignIn(u.email); } },
+        { label: 'Status', render: function (u) {
+          return h('span', { class: 'status-dot ' + (u.disabled ? 'off' : 'on'), text: u.disabled ? 'Disabled' : 'Active' });
+        } },
         { label: '', render: function (u) {
-          if (u.email === session.email) return h('small', { text: 'You' });
+          if (u.email === session.email) return '';
           return mini(u.disabled ? 'Enable' : 'Disable', function () {
             u.disabled = !u.disabled;
             commit(u.disabled ? 'user.disabled' : 'user.enabled', u.email, u.email + (u.disabled ? ' disabled.' : ' enabled.'));
           }, { danger: !u.disabled });
         } }
-      ], S().users)));
+      ], rows, 'No users match that.'));
+    }
+
+    search.addEventListener('input', function () { state.q = search.value.trim(); drawList(); });
+    drawChips();
+    drawList();
+
+    append(root, h('section', { class: 'panel' },
+      h('div', { class: 'user-toolbar' }, chips, search),
+      list,
+      h('p', { class: 'form-note', style: 'margin-top:12px', text: 'Disabling an account blocks its next sign-in. You can’t disable your own account.' })));
+
+    // Permissions overview, read from the same matrix the portal enforces.
+    var PERMS = [
+      ['inventory', 'View stock, orders and inbox'],
+      ['orders.update', 'Update order status and refunds'],
+      ['campaigns', 'Draft campaigns'],
+      ['campaigns.approve', 'Approve campaigns'],
+      ['groupbuy.manage', 'Create and close group buys'],
+      ['customers.pii', 'See full customer details'],
+      ['users', 'Manage users, audit log and settings'],
+      ['leader', 'Group leader dashboard'],
+      ['customer', 'Shop, orders and preferences']
+    ];
+    var roles = Object.keys(ROLE_META);
+    append(root, panel('What each role can do', null,
+      table([{ label: 'Permission', render: function (p) { return p[1]; } }].concat(roles.map(function (r) {
+        return { label: ROLE_META[r].label, render: function (p) {
+          return M.auth.can({ role: r }, p[0]) ? h('span', { class: 'perm yes', 'aria-label': 'Yes', text: '✓' }) : h('span', { class: 'perm no', 'aria-label': 'No', text: '—' });
+        } };
+      })), PERMS)));
   }
 
   function auditView(root) {

@@ -65,8 +65,11 @@
         }))));
   }
   function kpi(label, value, note) { return h('div', { class: 'kpi' }, h('span', { text: label }), h('strong', { text: value }), note ? h('small', { text: note }) : null); }
+  var currentTitle = '';
   function panel(title, hint) {
     var rest = Array.prototype.slice.call(arguments, 2);
+    // Skip the heading when it would just repeat the page title above it.
+    if (title && title.toLowerCase() === currentTitle.toLowerCase()) title = null;
     return h('section', { class: 'panel' }, title ? h('h2', { text: title }) : null, hint ? h('p', { class: 'hint', text: hint }) : null, rest);
   }
   function mini(label, onclick, opts) {
@@ -139,7 +142,7 @@
       h('option', { value: 'all', text: 'All categories' }),
       Object.keys(M.CATEGORIES).map(function (k) { return h('option', { value: k, text: M.CATEGORIES[k].label, selected: filter === k }); }));
     var rows = S().products.filter(function (p) { return filter === 'all' || p.category === filter; });
-    append(root, panel('Catalogue & stock', 'Shopify is the master for products, prices and stock. This view is read-only; run a sync to refresh it.',
+    append(root, panel(null, 'Shopify is the master for products, prices and stock. This view is read-only; run a sync to refresh it.',
       h('div', { class: 'toolbar', style: 'margin-bottom:14px' }, sel,
         h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: '↻ Run Shopify sync (mock)', onclick: function () {
           S().products.forEach(function (p) { p.stock.syncStatus = 'ok'; p.stock.updatedAt = new Date().toISOString(); });
@@ -293,7 +296,7 @@
       commit('campaign.submitted', id, 'Campaign sent for approval.');
     });
 
-    append(root, panel('Campaign Studio', 'Pick a product. The system finds past buyers who agreed to marketing, and AI drafts the message. An admin who did not write it must approve before it can be sent.',
+    append(root, panel('New campaign', 'Pick a product. The system finds past buyers who agreed to marketing, and AI drafts the message. An admin who did not write it must approve before it can be sent.',
       audienceBox, form));
 
     var canApprove = M.auth.can(session, 'campaigns.approve');
@@ -400,22 +403,89 @@
     return table(cols, entries, 'No group orders yet.');
   }
 
+  var LANG_LABEL = { en: 'English', zh: '中文', ms: 'Bahasa Melayu', ta: 'தமிழ் Tamil' };
+
   function customersView(root) {
     var pii = M.auth.can(session, 'customers.pii');
-    append(root, panel('Customers', pii ? 'Admin view, with full details. Only export what a task actually needs.' : 'Names and phone numbers are masked for sales staff.',
-      table([
-        { label: 'ID', render: function (c) { return c.id; } },
-        { label: 'Name', render: function (c) { return pii ? c.name : M.maskName(c.name); } },
-        { label: 'Phone', render: function (c) { return pii ? c.phone : M.maskPhone(c.phone); } },
-        { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
-        { label: 'Marketing', render: function (c) { return c.consentMarketing ? badge('opted in', 'green') : badge('no consent', 'grey'); } },
-        { label: 'Personalised', render: function (c) { return c.consentPersonalisation ? badge('yes', 'green') : badge('off', 'grey'); } },
-        { label: 'Orders', num: true, render: function (c) { return String(S().orders.filter(function (o) { return o.customerId === c.id; }).length); } },
-        { label: 'Spend', num: true, render: function (c) {
-          return money(S().orders.filter(function (o) { return o.customerId === c.id && o.status !== 'cancelled'; })
-            .reduce(function (s, o) { return s + o.totalCents - (o.refundedCents || 0); }, 0));
-        } }
-      ], S().customers)));
+    var all = S().customers;
+    var state = customersView.state || (customersView.state = { filter: 'all', q: '' });
+    var ordersOf = function (c) { return S().orders.filter(function (o) { return o.customerId === c.id; }); };
+    var spendOf = function (c) {
+      return ordersOf(c).filter(function (o) { return o.status !== 'cancelled'; })
+        .reduce(function (s, o) { return s + o.totalCents - (o.refundedCents || 0); }, 0);
+    };
+    var totalSpend = all.reduce(function (s, c) { return s + spendOf(c); }, 0);
+    var optedIn = all.filter(function (c) { return c.consentMarketing; }).length;
+    var personalised = all.filter(function (c) { return c.consentPersonalisation; }).length;
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Customers', String(all.length), all.filter(function (c) { return c.groupCode; }).length + ' in a group buy'),
+      kpi('Promotions opted in', Math.round(optedIn / (all.length || 1) * 100) + '%', optedIn + ' of ' + all.length + ' customers'),
+      kpi('Personalised picks', String(personalised), (all.length - personalised) + ' turned off'),
+      kpi('Total spend', money(totalSpend), 'Avg ' + money(Math.round(totalSpend / (all.length || 1))) + ' per customer')));
+
+    var FILTERS = [
+      ['all', 'All', function () { return true; }],
+      ['promo', 'Promotions on', function (c) { return c.consentMarketing; }],
+      ['noconsent', 'No consent', function (c) { return !c.consentMarketing; }],
+      ['nopersonal', 'Personalisation off', function (c) { return !c.consentPersonalisation; }],
+      ['group', 'In a group buy', function (c) { return Boolean(c.groupCode); }]
+    ];
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter customers' });
+    var search = h('input', { type: 'search', class: 'user-search', placeholder: pii ? 'Search name, ID or phone' : 'Search ID', 'aria-label': 'Search customers', value: state.q });
+    var list = h('div');
+
+    function drawChips() {
+      chips.textContent = '';
+      FILTERS.forEach(function (f) {
+        append(chips, h('button', { type: 'button', class: 'chip' + (state.filter === f[0] ? ' active' : ''), 'aria-pressed': String(state.filter === f[0]),
+          onclick: function () { state.filter = f[0]; drawChips(); drawList(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(all.filter(f[2]).length) })));
+      });
+    }
+
+    function drawList() {
+      var test = FILTERS.filter(function (f) { return f[0] === state.filter; })[0][2];
+      var q = state.q.toLowerCase();
+      var rows = all.filter(function (c) {
+        if (!test(c)) return false;
+        if (!q) return true;
+        // Staff can only search by ID, so masked fields can't be probed.
+        var hay = pii ? [c.id, c.name, c.phone].join(' ') : c.id;
+        return hay.toLowerCase().indexOf(q) > -1;
+      });
+      list.textContent = '';
+      append(list, table([
+        { label: 'Customer', render: function (c) {
+          return h('div', { class: 'user-cell' },
+            h('span', { class: 'avatar av-customer', 'aria-hidden': 'true', text: initials(c.name) }),
+            h('span', null, h('strong', { text: pii ? c.name : M.maskName(c.name) }), h('small', { text: c.id + ' · ' + (pii ? c.phone : M.maskPhone(c.phone)) })));
+        } },
+        { label: 'Language', render: function (c) { return h('span', { class: 'lang-tag', text: LANG_LABEL[c.language] || c.language }); } },
+        { label: 'Consent', render: function (c) {
+          return h('span', { class: 'consent-stack' },
+            h('span', { class: 'status-dot ' + (c.consentMarketing ? 'on' : 'off'), text: 'Promotions' }),
+            h('span', { class: 'status-dot ' + (c.consentPersonalisation ? 'on' : 'off'), text: 'Personalised' }));
+        } },
+        { label: 'Group buy', render: function (c) { return c.groupCode ? h('span', { class: 'code-box', text: c.groupCode }) : '—'; } },
+        { label: 'Orders', render: function (c) {
+          var os = ordersOf(c);
+          var last = os.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })[0];
+          return h('span', { class: 'when' }, h('strong', { text: os.length + (os.length === 1 ? ' order' : ' orders') }), h('small', { text: last ? 'Last ' + ago(last.createdAt) : 'No orders yet' }));
+        } },
+        { label: 'Spend', num: true, render: function (c) { return h('strong', { class: 'spend', text: money(spendOf(c)) }); } }
+      ], rows, 'No customers match that.'));
+    }
+
+    search.addEventListener('input', function () { state.q = search.value.trim(); drawList(); });
+    drawChips();
+    drawList();
+
+    append(root, h('section', { class: 'panel' },
+      h('div', { class: 'user-toolbar' }, chips, search),
+      list,
+      h('p', { class: 'form-note', style: 'margin-top:12px', text: pii
+        ? 'Admin view with full details. Only export what a task actually needs.'
+        : 'Names and phone numbers are masked for sales staff. Use the customer ID to follow up.' })));
   }
 
   var ROLE_META = {
@@ -524,34 +594,178 @@
       })), PERMS)));
   }
 
+  // Audit log: readable labels and categories for the raw event codes.
+  var AUDIT_CATS = {
+    auth: { label: 'Access', tone: 'blue' },
+    order: { label: 'Orders', tone: 'green' },
+    campaign: { label: 'Campaigns', tone: 'amber' },
+    ticket: { label: 'Support', tone: 'red' },
+    booking: { label: 'Support', tone: 'red' },
+    groupbuy: { label: 'Group buys', tone: 'amber' },
+    user: { label: 'Users', tone: 'red' },
+    inventory: { label: 'Stock', tone: 'grey' },
+    consent: { label: 'Privacy', tone: 'grey' },
+    profile: { label: 'Privacy', tone: 'grey' }
+  };
+  var AUDIT_LABELS = {
+    'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
+    'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
+    'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
+    'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
+    'campaign.rejected': 'Rejected a campaign', 'campaign.sent': 'Sent a campaign',
+    'ticket.created': 'Opened a support ticket', 'ticket.assigned': 'Took a ticket', 'ticket.resolved': 'Resolved a ticket',
+    'booking.created': 'New farm-visit booking', 'booking.confirmed': 'Confirmed a booking', 'booking.declined': 'Declined a booking',
+    'groupbuy.created': 'Created a group buy', 'groupbuy.open': 'Reopened a group buy', 'groupbuy.closed': 'Closed a group buy',
+    'groupbuy.joined': 'Joined a group buy', 'groupbuy.left': 'Left a group buy',
+    'user.disabled': 'Disabled a user', 'user.enabled': 'Enabled a user',
+    'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language'
+  };
+  function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
+  function auditLabel(event) {
+    if (AUDIT_LABELS[event]) return AUDIT_LABELS[event];
+    var m = /^consent\.(\w+)\.(granted|withdrawn)$/.exec(event);
+    if (m) return (m[2] === 'granted' ? 'Opted in to ' : 'Opted out of ') + (m[1] === 'consentMarketing' ? 'promotions' : 'personalised picks');
+    return event;
+  }
+  function actorCell(actor) {
+    var u = S().users.filter(function (x) { return x.email === actor; })[0];
+    var system = !u;
+    return h('div', { class: 'user-cell' },
+      h('span', { class: 'avatar ' + (system ? 'av-system' : 'av-' + u.role), 'aria-hidden': 'true', text: system ? (actor === 'assist-bot' ? 'AI' : 'WEB') : initials(u.name) }),
+      h('span', null,
+        h('strong', { text: system ? (actor === 'assist-bot' ? 'Ask MEOD bot' : 'Public website') : u.name }),
+        h('small', { text: system ? 'Automated' : actor })));
+  }
+
   function auditView(root) {
-    append(root, panel('Audit log', 'Every sign-in and every change, with who made it. In production this would be append-only and kept on the server.',
-      table([
-        { label: 'When', render: function (a) { return new Date(a.at).toLocaleString('en-SG'); } },
-        { label: 'Actor', render: function (a) { return a.actor; } },
-        { label: 'Event', render: function (a) { return h('code', { text: a.event }); } },
-        { label: 'Target', render: function (a) { return a.target || '—'; } }
-      ], S().audit.slice(0, 100))));
+    var log = S().audit;
+    var state = auditView.state || (auditView.state = { cat: 'all', q: '' });
+    var today = new Date().toDateString();
+    var isSystem = function (a) { return !S().users.some(function (u) { return u.email === a.actor; }); };
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Events today', String(log.filter(function (a) { return new Date(a.at).toDateString() === today; }).length), log.length + ' in total'),
+      kpi('Sign-ins', String(log.filter(function (a) { return a.event === 'auth.sign_in'; }).length)),
+      kpi('Changes', String(log.filter(function (a) { return !/^auth\./.test(a.event); }).length), 'Orders, campaigns, users…'),
+      kpi('Bot & website', String(log.filter(isSystem).length), 'Automated actions')));
+
+    var cats = [];
+    log.forEach(function (a) { var c = auditCat(a.event).label; if (cats.indexOf(c) === -1) cats.push(c); });
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter by category' });
+    var search = h('input', { type: 'search', class: 'user-search', placeholder: 'Search person, event or target', 'aria-label': 'Search audit log', value: state.q });
+    var list = h('div');
+
+    function drawChips() {
+      chips.textContent = '';
+      [['all', log.length]].concat(cats.map(function (c) { return [c, log.filter(function (a) { return auditCat(a.event).label === c; }).length]; }))
+        .forEach(function (c) {
+          append(chips, h('button', { type: 'button', class: 'chip' + (state.cat === c[0] ? ' active' : ''), 'aria-pressed': String(state.cat === c[0]),
+            onclick: function () { state.cat = c[0]; drawChips(); drawList(); } }, (c[0] === 'all' ? 'All' : c[0]) + ' ', h('span', { class: 'chip-count', text: String(c[1]) })));
+        });
+    }
+
+    function drawList() {
+      var q = state.q.toLowerCase();
+      var rows = log.filter(function (a) {
+        if (state.cat !== 'all' && auditCat(a.event).label !== state.cat) return false;
+        if (!q) return true;
+        return [a.actor, a.event, auditLabel(a.event), a.target].join(' ').toLowerCase().indexOf(q) > -1;
+      }).slice(0, 100);
+      list.textContent = '';
+      append(list, table([
+        { label: 'When', render: function (a) {
+          return h('span', { class: 'when' }, h('strong', { text: ago(a.at) }), h('small', { text: new Date(a.at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) }));
+        } },
+        { label: 'Who', render: function (a) { return actorCell(a.actor); } },
+        { label: 'What happened', render: function (a) {
+          var c = auditCat(a.event);
+          return h('span', { class: 'what' }, badge(c.label, c.tone), h('span', { text: auditLabel(a.event) }));
+        } },
+        { label: 'On', render: function (a) { return a.target ? h('span', { class: 'code-box', text: a.target }) : '—'; } }
+      ], rows, 'No events match that.'));
+    }
+
+    search.addEventListener('input', function () { state.q = search.value.trim(); drawList(); });
+    drawChips();
+    drawList();
+
+    append(root, h('section', { class: 'panel' },
+      h('div', { class: 'user-toolbar' }, chips, search),
+      list,
+      h('p', { class: 'form-note', style: 'margin-top:12px', text: 'Newest first, last 100 events shown. In production this log is append-only and kept on the server.' })));
+  }
+
+  var SETTING_ICONS = {
+    tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+    truck: '<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+    coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    headset: '<path d="M3 14v-2a9 9 0 0 1 18 0v2"/><path d="M21 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2z"/><path d="M3 16a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z"/>',
+    trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>'
+  };
+  function settingIcon(name) {
+    var span = h('span', { class: 'icon-circle' });
+    span.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + SETTING_ICONS[name] + '</svg>';
+    return span;
+  }
+  function settingCard(icon, label, value, note, extra) {
+    return h('article', { class: 'setting-card' },
+      settingIcon(icon),
+      h('div', null,
+        h('span', { class: 'setting-label', text: label }),
+        h('strong', { class: 'setting-value', text: value }),
+        h('p', { text: note }),
+        extra || null));
   }
 
   function settingsView(root) {
     var R = M.RULES;
-    append(root, panel('Commercial rules', 'Example values only, kept in js/data.js. MEOD must confirm each one, and in production they live on the server.',
-      table([{ label: 'Rule', render: function (r) { return r[0]; } }, { label: 'Value', render: function (r) { return h('strong', { text: r[1] }); } }], [
-        ['Group-leader commission', (R.commissionRate * 100) + '% of net merchandise'],
-        ['Group-buy discount', (R.groupDiscountRate * 100) + '%'],
-        ['Free delivery from', money(R.freeDeliveryThresholdCents)],
-        ['Delivery fee below threshold', money(R.deliveryFeeCents)],
-        ['Stock treated as stale after', R.stockStaleAfterMinutes / 60 + ' hours'],
-        ['Human support hours', 'Mon–Sat ' + R.humanHours.start + ':00–' + R.humanHours.end + ':00 SGT']
-      ])));
-    append(root, panel('Demo data', 'Puts every order, ticket, booking and campaign in this browser back to the starting data.',
-      h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Reset demo data', onclick: function () {
-        if (!confirm('Reset all demo data in this browser?')) return;
-        M.reset();
-        toast('Demo data reset.');
-        render();
-      } })));
+    var fmt = function (h24) { return (h24 % 12 || 12) + (h24 < 12 ? 'am' : 'pm'); };
+    var hours = fmt(R.humanHours.start) + ' – ' + fmt(R.humanHours.end);
+    var online = M.withinHumanHours();
+
+    append(root, h('p', { class: 'callout', text: 'These are example values kept in js/data.js. MEOD needs to confirm each one; in production they live on the server and changes are audited.' }));
+
+    var groups = [
+      ['Pricing & delivery', [
+        settingCard('tag', 'Group-buy discount', (R.groupDiscountRate * 100) + '%', 'Taken off the subtotal when a member checks out with a valid group code.'),
+        settingCard('truck', 'Free delivery from', money(R.freeDeliveryThresholdCents), 'Orders at or above this (after discounts) ship free.'),
+        settingCard('coins', 'Delivery fee', money(R.deliveryFeeCents), 'Charged on orders below the free-delivery threshold.')
+      ]],
+      ['Group buys', [
+        settingCard('users', 'Leader commission', (R.commissionRate * 100) + '%', 'Of net merchandise (subtotal minus discount, delivery excluded). Counts once paid; refunds reverse it.')
+      ]],
+      ['Stock & support', [
+        settingCard('clock', 'Stock goes stale after', (R.stockStaleAfterMinutes / 60) + ' hours', 'Older syncs show as “Checking stock” and can’t be ordered or confirmed by the bot.'),
+        settingCard('headset', 'Human support hours · Mon–Sat (SGT)', hours, 'Outside these hours the bot tells customers the team will reply when back.',
+          h('span', { class: 'status-dot ' + (online ? 'on' : 'off'), text: online ? 'Team online now' : 'Team offline now' }))
+      ]]
+    ];
+    groups.forEach(function (g) {
+      append(root, h('div', { class: 'settings-group' },
+        h('h2', { class: 'settings-heading', text: g[0] }),
+        h('div', { class: 'setting-grid' }, g[1])));
+    });
+
+    var counts = [
+      ['Orders', S().orders.length], ['Tickets', S().tickets.length],
+      ['Bookings', S().bookings.length], ['Campaigns', S().campaigns.length], ['Audit events', S().audit.length]
+    ];
+    append(root, h('div', { class: 'settings-group' },
+      h('h2', { class: 'settings-heading', text: 'Danger zone' }),
+      h('article', { class: 'setting-card danger-card' },
+        settingIcon('trash'),
+        h('div', null,
+          h('span', { class: 'setting-label', text: 'Reset demo data' }),
+          h('p', { text: 'Puts everything stored in this browser back to the starting data. Other browsers are not affected.' }),
+          h('ul', { class: 'stored-counts' }, counts.map(function (c) { return h('li', null, h('strong', { text: String(c[1]) }), ' ' + c[0]); }))),
+        h('button', { class: 'mini danger reset-btn', type: 'button', text: 'Reset demo data', onclick: function () {
+          if (!confirm('Reset all demo data in this browser?')) return;
+          M.reset();
+          toast('Demo data reset.');
+          render();
+        } }))));
   }
 
   /* ---------------- leader views ---------------- */
@@ -607,7 +821,7 @@
       append(root, h('p', { class: 'callout green', text: 'How ' + first.ref + ' was worked out: subtotal ' + money(o.subtotalCents) + ' − group discount ' + money(o.discountCents) +
         ' = eligible base ' + money(first.baseCents) + ' × ' + (first.rate * 100) + '% = ' + money(first.amountCents) + '. Delivery is not included. A refund takes back the same amount.' }));
     }
-    append(root, panel('My commission', 'Payouts follow the terms agreed with MEOD.', ledgerTable(entries, false)));
+    append(root, panel(null, 'Payouts follow the terms agreed with MEOD.', ledgerTable(entries, false)));
   }
 
   /* ---------------- customer views ---------------- */
@@ -840,6 +1054,7 @@
 
     $('[data-role-badge]').textContent = { admin: 'Admin', staff: 'Sales staff', leader: 'Group leader', customer: 'Customer' }[session.role];
     $('[data-user-name]').textContent = session.name;
+    currentTitle = view.title;
     $('[data-title]').textContent = view.title;
     $('[data-subtitle]').textContent = view.sub || '';
     document.title = view.title + ' — MEOD Portal';

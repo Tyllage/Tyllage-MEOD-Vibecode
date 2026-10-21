@@ -35,26 +35,29 @@ Only the latest commit on `main` is maintained.
 |---|---|---|
 | Authentication | Client-side demo accounts, shared demo password | Server-side auth, hashed passwords, httpOnly `Secure` `SameSite` cookies, rate-limited login, MFA for admin |
 | Authorisation | Permission matrix in `js/auth.js` | Enforced on the server for every request; least-privilege roles |
-| Data storage | `localStorage` in the browser | PostgreSQL with restricted network access, encrypted backups, retention policy |
+| Data storage | `localStorage` in the browser, including customer profile photos, addresses and phone numbers | PostgreSQL with restricted network access, encrypted backups, retention policy; photos in private object storage |
+| File uploads | Profile photo checked and re-encoded in the browser only | Server-side type sniffing, size limits, re-encoding, malware scanning |
 | Secrets | None used | Kept only in Railway env vars; never in git or chat (see list below) |
 | Headers | Host defaults | CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors` |
 | Audit | Editable client log | Append-only server log |
 | AI | Rule-based mock | OpenAI project key with spend limits; send minimum fields; redact PII; AI never writes to the DB or changes prices |
 | WhatsApp | Mock | Verified webhook signatures, dedupe, consent and template checks, opt-out handling |
+| Delivery tracking | Simulated by `trackingFor()` in `js/data.js` | Shopify fulfilment or courier / driver-app webhooks with signature checks; show customers only their own orders; never expose drivers' personal numbers |
 
 ## Secrets for the production build (from the Deployment Plan)
 
 Set these in Railway, never in the repo:
 
 - `DATABASE_URL`
-- `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ACCESS_TOKEN`
+- `SHOPIFY_SHOP_DOMAIN`, `SHOPIFY_ACCESS_TOKEN`, `SHOPIFY_WEBHOOK_SECRET`
 - `META_WABA_ID`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `JWT_SECRET`, `SESSION_SECRET`
 - `PUBLIC_SITE_URL`, `CORS_ORIGIN`
+- Delivery provider credentials, if MEOD uses a courier or driver app (for example `DELIVERY_API_KEY`, `DELIVERY_WEBHOOK_SECRET`)
 
 ## Rules for contributors
 
 - Never commit real names, phone numbers, addresses, emails or order data. Use the `+65 8000 00xx` range and `.test` emails.
-- Render user or data content with `textContent`. Don't put it in `innerHTML`.
+- Render user or data content with `textContent`. Only fixed icon or illustration markup written in the code may go through `innerHTML`.
 - Don't add third-party scripts without a review.

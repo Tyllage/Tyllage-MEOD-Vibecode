@@ -18,81 +18,119 @@ It also lists what must change before any real data is used.
 
 | Proposal module / requirement | Where in prototype | Status |
 |---|---|---|
-| **SalesDesk**: stock snapshots with source and last sync | Portal → Stock (`portal.js › inventoryView`) | ✅ Mock |
-| SalesDesk: searchable order history | Portal → Orders (status filter) | ✅ Filter only, no free-text search |
-| SalesDesk: escalation inbox | Portal → Inbox (tickets + farm bookings) | ✅ |
+| **SalesDesk**: stock snapshots with source and last sync | Portal → Stock (`portal.js › inventoryView`); SalesDesk stock alerts | ✅ Mock |
+| SalesDesk: searchable order history | Staff Orders (status filter); customer My orders (status filter) | ⚠️ Filters only; no free-text order search for staff |
+| SalesDesk: escalation inbox | Portal → Inbox (tickets + farm bookings); "Needs a human" on SalesDesk | ✅ |
 | SalesDesk: promo approvals | Campaign Studio approve/reject | ✅ |
 | SalesDesk: group-buy settlement report | Portal → Group buys → Commission ledger | ✅ |
 | **Sync**: Shopify products, stock and orders, idempotent webhooks | "Run Shopify sync (mock)" button | ⚠️ Simulated; no API calls |
-| **Assist**: language detect, intent classify, backend lookups, human handover | `js/assist.js`, chat widget, portal Ask MEOD | ✅ Rule-based; EN/中文/BM; Tamil falls back to English |
-| Assist: no invented availability; stale → "cannot confirm" | `stockStatus()` fail-closed | ✅ |
-| Assist: verify identity before giving order details | Guests are told to sign in; signed-in customers get their own order | ✅ Demo-level |
-| **Recommend**: in-stock only, explains why, opt-out respected | `recommendFor()` | ✅ |
+| **Assist**: language detection, intent classification, backend lookups, human handover | `js/assist.js`; site chat widget; portal Ask MEOD | ✅ Rule-based; EN/中文/BM; Tamil falls back to English |
+| Assist: no invented availability; stale stock → "cannot confirm" | `stockStatus()` fail-closed | ✅ |
+| Assist: verify identity before giving order details | Guests are told to sign in; signed-in customers get only their own order and its tracking status | ✅ Demo-level |
+| **Recommend**: in-stock only, explains why, opt-out respected | `recommendFor()` / `tasteProfile()`: restock, co-purchase, taste and fresh signals, each with a reason and match % | ✅ Rule-based scoring, no LLM |
 | **Campaign Studio**: product-first audience, consented cohort, preview, approval | Campaign Studio | ✅ Four-eyes approval; consent re-checked at send time |
-| **GroupBuy**: leader code/link, discount captured, gross/net basis, refund handling | Group buys, leader portal, customer join | ✅ |
-| Growth Insights dashboards | SalesDesk KPI tiles | ⚠️ Basic KPIs only; no conversion or repeat-purchase charts |
-| Roles: admin / staff / leader / customer / AI | `auth.js` permission matrix | ✅ Client-side only (see 3.1) |
+| **GroupBuy**: leader code/link, discount captured, gross/net basis, refund handling | Group buys (staff), leader portal, customer Group buy page and cart code box | ✅ |
+| Customer order status | My orders: tracker, **mock delivery tracking** (`trackingFor()`), receipts, reorder | ⚠️ Tracking is simulated; real source depends on the delivery provider (§6 Q8) |
+| Customer profile and consent | Preferences: photo, contact email, mobile, delivery address, consent switches with timestamp, language | ✅ |
+| Growth Insights dashboards | SalesDesk, Customers and Users summary tiles | ⚠️ Basic KPIs only; no conversion or repeat-purchase charts |
+| Roles: admin / staff / leader / customer / AI | `auth.js` permission matrix; Users page shows a matching permission grid | ✅ Client-side only (see 3.1) |
 | Leader sees masked member PII | Leader → Group orders | ✅ |
-| Staff sees pseudonymous / masked customers | Orders and Customers views | ✅ Admin sees full details |
-| Audit log of actor, event, object, timestamp | Portal → Audit log | ✅ Not tamper-proof |
-| Consent flag + timestamp | Customer → Preferences | ✅ |
+| Staff sees pseudonymous / masked customers | Orders and Customers views; staff search is ID-only | ✅ Admin sees full details |
+| Audit log of actor, event, object, timestamp | Portal → Audit log (categories, search, plain-English labels) | ✅ Not tamper-proof |
 | Synthetic fixtures; no real phone numbers | `js/data.js` uses the +65 8000 00xx range and `.test` emails | ✅ |
-| Public site stays the storefront (no second checkout) | "Place order" creates a *pending payment* order; copy says payment goes through Shopify | ✅ |
+| Public site stays the storefront (no second checkout) | "Place order" creates a *pending payment* order; copy says payment is on MEOD Fresh | ✅ |
 
 ## 2. Public site vs meod.com.sg
 
 | Kept | Changed / added |
 |---|---|
-| Palette, hero "More Than A Farm", stats, What We Do, Promise, Growing, Get our greens, Visit | **Portal** button in nav, **harvest strip** with stock, **group buy** band, **Ask MEOD** widget |
-| Page set: About, Produce, Experiences, Contact | Produce filter chips and stock badges; booking form with validation that saves to the staff inbox |
-| Copy themes and facts (6 ha, since 2014, 13 Neo Tiew Harvest Lane) | Copy shortened and reworded; footer Portal column |
+| Palette, "More Than A Farm" hero, stats, What We Do, Promise, Growing, Get our greens, Visit | **Portal** button in nav, **Picked this morning** strip with stock, **Buy together** group-buy band, **Ask MEOD** chat, scroll-to-top |
+| Page set: About, Produce, Experiences, Contact | Produce: searchable catalogue with filters and Show more, Seed to plate, Farm & More photo grid, Where to buy. About: fact cards. Experiences: photo cards, visit facts, booking form. Contact: contact cards and a map panel |
+| Copy themes and facts (6 ha, since 2014, 13 Neo Tiew Harvest Lane, WhatsApp +65 8133 0358) | Copy shortened and reworded; footer kept site-only, with no portal links |
 
-**Fonts.** MEOD uses *Befalow* and *TT Commons*, which are licensed fonts. The prototype substitutes Google Fonts *Caveat Brush* and *Figtree*. Swap them in once MEOD provides font licences.
+**Fonts.** MEOD uses *Befalow* and *TT Commons*, which are licensed fonts. The prototype uses Google Fonts *Caveat Brush* and *Figtree* instead. Swap them in once MEOD provides font licences.
 
-**Images.** MEOD-supplied originals are in `assets/`. The site uses optimised WebP copies in `assets/img/` (6.8 MB down to about 1.5 MB). Large photos have a smaller version for phones, chosen with `srcset`. The MEOD logo (`assets/meod-light.svg`) replaces the text wordmark, and the round logo is the favicon. Nothing loads from meod.com.sg any more.
+**Images.** MEOD-supplied originals are in `assets/`. The site uses optimised WebP copies in `assets/img/`, cutting 6.8 MB down to about 1.5 MB. Large photos have a phone-size version, chosen with `srcset`. The MEOD logo (`assets/meod-light.svg`) replaces the text wordmark, and the round logo is the favicon. Nothing loads from meod.com.sg.
+
+**Copy to confirm with MEOD:**
+
+- Farm & More product names (Farm Pesto, Veggie Crackers, Vege Powder, Gelato Tubs) and all prices
+- Experience descriptions and tags
+- The "SG Fresh" fact-card wording
+- The Tue / Thu / Sat delivery schedule, which came from the research doc
 
 ## 3. Security & privacy findings
 
 | # | Finding | Severity | Action before real data |
 |---|---|---|---|
-| 3.1 | Sign-in, roles and permissions run in the browser. Anyone can edit `sessionStorage` and act as admin. | **Critical (by design for demo)** | Server-side auth (hashed passwords, httpOnly secure cookies), server-side RBAC on every request |
-| 3.2 | All data lives in `localStorage`, per browser, and is readable by anyone using that device | High | PostgreSQL behind an API; no PII on the client beyond the current user |
+| 3.1 | Sign-in, roles and permissions run in the browser. Anyone can edit `sessionStorage` and act as admin. | **Critical (by design for demo)** | Server-side auth (hashed passwords, httpOnly secure cookies), server-side role checks on every request |
+| 3.2 | All data lives in `localStorage`, per browser, and anyone using that device can read it. This now includes customer **profile photos, addresses and phone numbers**. | High | PostgreSQL behind an API; no PII on the client beyond the signed-in user; photos in object storage |
 | 3.3 | Demo password is in source | Low (demo only) | Remove the demo accounts; seed from env-only secrets |
 | 3.4 | No Content-Security-Policy or security headers | Medium | Add CSP, HSTS, `X-Content-Type-Options` and `Referrer-Policy` at the host or server |
-| 3.5 | Fonts and the map come from third-party origins (Google Fonts, Google Maps embed). Images are now self-hosted. | Low | Self-host fonts; review the Maps embed's privacy notice |
+| 3.5 | Fonts and the map come from third parties (Google Fonts, Google Maps embed). Images are self-hosted. | Low | Self-host fonts; review the Maps embed's privacy notice |
 | 3.6 | Audit log can be edited client-side | Medium | Append-only, server-side log |
-| 3.7 | Ticket summaries redact numbers of 4+ digits only | Low | Proper PII redaction before storing or sending to an LLM |
-| ✅ | All dynamic portal content is rendered with `textContent` (the `h()` helper). No user data goes through `innerHTML`. | — | Keep this rule (see CONTRIBUTING) |
-| ✅ | Booking form validates on the client | — | Validate again on the server |
+| 3.7 | Ticket summaries only redact numbers of 4+ digits | Low | Proper PII redaction before storing or sending to an LLM |
+| 3.8 | Profile photo upload is checked only on the client (type, 5 MB limit, re-encoded to a 192 px JPEG) | Medium (once real) | Server-side type sniffing, size limits, re-encoding and malware scanning |
+| 3.9 | Delivery tracking is simulated; the driver "Message" button opens MEOD's public WhatsApp | Info | Real provider via signed webhooks; never expose driver personal numbers |
+| ✅ | All user and data content is rendered with `textContent` (the `h()` helper). `innerHTML` only receives **static** icon and illustration markup defined in the code. | — | Keep this rule (see CONTRIBUTING) |
+| ✅ | Booking and profile forms validate input on the client | — | Validate again on the server |
 
 ## 4. Accessibility spot-check
 
-- ✅ Skip link, landmark elements, `aria-current` on nav, labelled form fields, `aria-live` chat log, Esc closes the chat
-- ✅ `prefers-reduced-motion` disables reveal animations
-- ✅ No horizontal scroll at 375 px on any public page or the portal shop
-- ✅ Portal tables turn into labelled cards under 640 px; the shop and product grids use two columns on phones
-- ✅ Checked at 320, 375, 768, 1024 and 1440 px across all public pages, and at 375 px for every portal view of every role
-- ⚠️ Colour contrast not formally measured; gold on white is used only for buttons with dark text
+- ✅ Skip link, landmark elements, `aria-current` on nav, labelled form fields, `aria-live` chat logs; Esc closes the chat
+- ✅ Native `<dialog>` for the receipt and edit-profile pop-ups (focus is kept inside; Esc closes them)
+- ✅ Consent toggles are real checkboxes with `role="switch"`; the language picker is a radio group
+- ✅ `prefers-reduced-motion` turns off reveal, typing, pulse and hover animations
+- ✅ No horizontal scroll at 320–1900 px on public pages, or at 375 px on any portal screen for any role
+- ✅ Portal tables turn into labelled cards under 640 px
+- ⚠️ Colour contrast not formally measured; gold on white is only used for buttons with dark text
+- ⚠️ The route map is decorative; the timeline next to it carries the same information as text
 
 ## 5. Verification performed (21 Oct 2026)
 
-Run manually in the browser against `py -m http.server`:
+All checks were run manually in the browser against a local static server.
 
-- Every portal view renders for admin with no console errors.
-- Leader and customer are redirected away from admin-only routes such as `#users`.
-- Commission ledger matches hand calculation (seed total S$4.16). Marking #MF5007 paid accrues S$0.78 (S$15.58 × 5%).
-- Admin cannot approve a campaign they created.
-- Customer flow:
-  1. Invite code is pre-filled from the link.
-  2. Join succeeds.
-  3. Cart totals are correct: S$25.00 − S$1.25 + S$8.00 = S$31.75.
-  4. Stale product (Mizuna) can't be added.
-  5. The order is created as pending payment.
-  6. Ask MEOD returns that order.
-- Public chat: the complaint "My veg arrived wilted" creates a ticket that appears in the staff inbox.
-- Booking form: empty submit shows all four errors; a valid submit stores the booking and shows a reference.
+**Staff and admin**
 
-No automated test suite yet. That's a follow-up.
+- Every portal screen renders for each role with no console errors. Leaders and customers are redirected away from admin-only routes such as `#users`.
+- Commission ledger matches a hand calculation (seed total S$4.16). Marking #MF5007 paid accrues S$0.78 (S$15.58 × 5%).
+- An admin can't approve a campaign they created.
+- Staff see masked customer names and phones. Their customer search is ID-only, so searching "aster" returns nothing.
+- SalesDesk panel footers ("Open inbox", "View stock") line up at the bottom of side-by-side panels.
+
+**Customer shopping**
+
+- Invite code pre-fills; joining applies 5%. Cart total S$25.00 − S$1.25 + S$8.00 = S$31.75.
+- Stale stock (Mizuna) can't be added.
+- The cart code box joins a group buy. The free-delivery bar shows the remaining amount.
+- Placing an order creates it as pending payment.
+
+**Customer orders and tracking**
+
+- Receipt totals match the order. Reorder adds only in-stock items.
+- Get help opens Ask MEOD with the order number filled in.
+- Tracking:
+  - Delivered orders show proof of delivery.
+  - The demo order shows *Out for delivery* with the driver, arrival window and a van on the route.
+  - Paid orders show the next Tue / Thu / Sat window.
+  - Ask MEOD reports the tracking status.
+
+**Customer picks and profile**
+
+- Smart picks give each demo customer varied reasons (restock, pairs well, taste), always fill four slots, and switch to fresh picks when personalisation is off.
+- Profile form:
+  - Rejects a bad email, an 8-digit number not starting with 8/9, a short street and a non-6-digit postal code.
+  - Accepts a valid update and tidies the phone (+65 9123 4567) and unit (#05-12).
+  - Stores the uploaded photo at about 2 KB.
+  - Shows the new address in the cart.
+
+**Public site**
+
+- Catalogue search finds Chinese names (菜心 → HK Cai Xin). Show more reveals two full rows at a time on 4- and 5-column layouts, and three on phones. Price rows line up in every row.
+- Public chat: "My veg arrived wilted" creates a ticket that appears in the staff inbox.
+- Booking form: an empty submit shows all four errors; a valid submit stores the booking and shows a reference.
+
+There's no automated test suite yet; that's a follow-up.
 
 ## 6. Open questions for MEOD (from proposal §9)
 
@@ -104,7 +142,19 @@ No automated test suite yet. That's a follow-up.
 6. Human support hours to state in the bot
 7. Brand assets (fonts, logo SVG, photos) and permission to reuse them
 8. Who delivers: in-house drivers, a courier (e.g. Ninja Van, Lalamove) or Shopify fulfilment? This decides the real source behind the mock delivery tracking (`trackingFor()` in `js/data.js`).
+9. Real Farm & More product names, prices and the current delivery schedule
 
 ## 7. Changelog
 
-- **21 Oct 2026, images & responsive pass.** Switched to MEOD-supplied images (optimised WebP with phone-size versions). Added a Farm & More showcase (gelato, pesto, crackers, vege powder) and a Goodness Gracious Gelato flavour strip. Added product photos to the catalogue and the portal shop. Mobile card tables, a full-width chat panel on phones, svh hero heights and a tablet three-column grid. Demo storage key bumped to v2, so the new catalogue loads.
+- **21 Oct 2026, images & responsive pass.** Switched to MEOD-supplied images (optimised WebP with phone-size versions). Added a Farm & More showcase and a Goodness Gracious Gelato flavour strip, plus product photos in the catalogue and portal shop. Mobile card tables, full-width chat on phones, svh hero heights, tablet three-column grid. Demo storage key bumped to v2 so the new catalogue loads.
+- **21 Oct 2026, public site redesign.**
+  - Removed the footer portal column and the "Group leader sign in" button.
+  - Rebuilt About (fact cards), Experiences (photo cards and visit facts), Contact (contact cards and map panel) and Produce (catalogue with search, filters and Show more; Seed to plate; Farm & More grid; Where to buy).
+  - Added scroll-to-top.
+  - Fixed the chat panel inheriting section padding.
+- **21 Oct 2026, portal redesign.**
+  - Staff and admin: Users, Audit log, Customers and Settings redesigned with summary tiles, filter chips and search. Duplicate panel headings removed. SalesDesk panel footers aligned.
+  - Customer pages: Shop, My orders, Group buy, Preferences and Ask MEOD redesigned. Smart picks scoring added.
+  - Orders: receipts, reorder and get-help actions.
+  - Preferences: profile editing (photo, contact details, address).
+  - Delivery: mock delivery tracking with an additive data migration (`migrate()`).

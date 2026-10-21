@@ -723,3 +723,9 @@ label.pill-btn { cursor: pointer; }
   .route-map { aspect-ratio: 600 / 260; }
 }
 @media (prefers-reduced-motion: reduce) { .live-van::after, .route-map .rm-pulse, .track-panel { animation: none; } }
+
+/* Panels side by side: keep footers aligned at the bottom */
+.two-col > .panel { display: flex; flex-direction: column; }
+.panel-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid #f0ebe3; display: flex; justify-content: flex-end; }
+.two-col > .panel > .table-wrap, .two-col > .panel > .empty { margin-bottom: 14px; }
+a.pill-btn { text-decoration: none; }

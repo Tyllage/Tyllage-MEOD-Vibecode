@@ -127,13 +127,14 @@
           { label: 'Summary', render: function (t) { return t.summary; } },
           { label: 'Age', render: function (t) { return ago(t.createdAt); } }
         ], openTickets.slice(0, 5), 'No open tickets 🎉'),
-        h('p', null, h('a', { class: 'card-link', href: '#inbox', text: 'Open inbox →' }))),
+        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inbox', text: 'Open inbox →' }))),
       panel('Stock alerts', 'Stale syncs are shown as unknown, never as available.',
         table([
           { label: 'Product', render: function (p) { return p.title; } },
           { label: 'Status', render: stockBadge },
           { label: 'Last sync', render: function (p) { return ago(p.stock.updatedAt); } }
-        ], alerts, 'All stock is fresh.'))));
+        ], alerts, 'All stock is fresh.'),
+        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inventory', text: 'View stock →' })))));
   }
 
   function inventoryView(root) {

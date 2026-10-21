@@ -618,7 +618,7 @@
     'groupbuy.created': 'Created a group buy', 'groupbuy.open': 'Reopened a group buy', 'groupbuy.closed': 'Closed a group buy',
     'groupbuy.joined': 'Joined a group buy', 'groupbuy.left': 'Left a group buy',
     'user.disabled': 'Disabled a user', 'user.enabled': 'Enabled a user',
-    'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language'
+    'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -1094,6 +1094,10 @@
           location.hash = 'orders';
         } }),
         h('p', { class: 'cart-note' }, iconCircle(ICONS.clock, 'bare'), 'Delivery on Tue, Thu & Sat · free from ' + money(M.RULES.freeDeliveryThresholdCents)));
+      var addr = formatAddress(c.address);
+      cartBox.insertBefore(h('div', { class: 'cart-address' + (addr ? '' : ' missing') }, iconCircle(ICONS.pin, 'bare'),
+        h('span', null, h('small', { text: addr ? 'Deliver to' : 'No delivery address' }), h('strong', { text: addr || 'Add one before you order' })),
+        h('a', { href: '#preferences', text: addr ? 'Change' : 'Add' })), cartBox.querySelector('.cart-checkout'));
     }
 
     drawChips();
@@ -1179,16 +1183,108 @@
   }
 
   /* ----- My orders ----- */
+  /* ----- Delivery tracking UI ----- */
+  function hm(iso) { return new Date(iso).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }); }
+  function windowText(t) { return t.windowStart ? hm(t.windowStart) + ' – ' + hm(t.windowEnd) : ''; }
+  var TRACK_STEPS = [['placed', 'Placed'], ['confirmed', 'Paid'], ['picked_up', 'Packed'], ['out_for_delivery', 'On the way'], ['delivered', 'Delivered']];
+
   function orderTracker(o) {
-    if (o.status === 'cancelled' || o.status === 'refunded') {
+    var t = M.trackingFor(o);
+    if (t.state === 'closed') {
       return h('div', { class: 'tracker ended' }, iconCircle(ICONS.x, 'bare'),
         h('span', { text: o.status === 'refunded' ? 'Refunded ' + money(o.refundedCents || o.netCents) + ' to your original payment method' : 'This order was cancelled' }));
     }
-    var steps = [['Placed', true], ['Paid', o.status !== 'pending_payment'], ['Delivered', o.status === 'fulfilled']];
-    var currentIdx = steps.filter(function (s) { return s[1]; }).length - 1;
-    return h('ol', { class: 'tracker', 'aria-label': 'Order progress' }, steps.map(function (s, i) {
-      return h('li', { class: (s[1] ? 'done' : '') + (i === currentIdx ? ' current' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: s[0] }));
+    var done = {};
+    t.events.forEach(function (e) { if (e.at) done[e.status] = true; });
+    var lastDone = -1;
+    TRACK_STEPS.forEach(function (s, i) { if (done[s[0]]) lastDone = i; });
+    return h('ol', { class: 'tracker', 'aria-label': 'Delivery progress' }, TRACK_STEPS.map(function (s, i) {
+      return h('li', { class: (done[s[0]] ? 'done' : '') + (i === lastDone && t.state !== 'delivered' ? ' current' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: s[1] }));
     }));
+  }
+
+  // Stylised route: farm -> van -> home. Static SVG markup; position the van once it is in the DOM.
+  function routeMap(t) {
+    var wrap = h('div', { class: 'route-map ' + t.state });
+    wrap.innerHTML =
+      '<svg viewBox="0 0 600 230" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Delivery route from MEOD Farm to your address">' +
+      '<defs><pattern id="rm-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#d8e8cf" stroke-width="1"/></pattern></defs>' +
+      '<rect width="600" height="230" fill="#eef6e8"/><rect width="600" height="230" fill="url(#rm-grid)"/>' +
+      '<path d="M0 190 C140 170 220 210 320 175 S520 150 600 165" fill="none" stroke="#cfe2c3" stroke-width="16" stroke-linecap="round"/>' +
+      '<path d="M90 0 C120 80 70 150 110 230" fill="none" stroke="#dbe9d2" stroke-width="10"/>' +
+      '<path d="M430 0 C410 70 470 140 440 230" fill="none" stroke="#dbe9d2" stroke-width="10"/>' +
+      '<ellipse cx="250" cy="70" rx="70" ry="34" fill="#cfe6f2"/>' +
+      '<path class="rm-route" d="M70 160 C170 40 300 210 400 110 S520 60 540 70" fill="none" stroke="#9fbf8f" stroke-width="5" stroke-dasharray="2 12" stroke-linecap="round" pathLength="100"/>' +
+      '<path class="rm-done" d="M70 160 C170 40 300 210 400 110 S520 60 540 70" fill="none" stroke="#3f8f2f" stroke-width="6" stroke-linecap="round" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="' + (100 - t.progress * 100) + '"/>' +
+      '<g transform="translate(70 160)"><circle r="20" fill="#054f12"/><path d="M-6 6c0-7 4-12 12-12 0 8-5 12-12 12zM-6 6l7-7" stroke="#e6b964" stroke-width="2.4" fill="none" stroke-linecap="round"/></g>' +
+      '<text x="70" y="200" text-anchor="middle" class="rm-label">MEOD Farm</text>' +
+      '<g transform="translate(540 70)"><circle r="20" fill="#e6b964"/><path d="M-8 2l8-7 8 7v8h-16z" fill="none" stroke="#054f12" stroke-width="2.4" stroke-linejoin="round"/></g>' +
+      '<text x="540" y="110" text-anchor="middle" class="rm-label">You</text>' +
+      '<g class="rm-van"><circle r="24" class="rm-pulse"/><circle r="17" fill="#fff" stroke="#054f12" stroke-width="2.5"/>' +
+      '<path d="M-8 4V-5h9v9M1 -2h4l3 3v5H1" fill="none" stroke="#054f12" stroke-width="2" stroke-linejoin="round"/><circle cx="-4" cy="6" r="2" fill="#054f12"/><circle cx="5" cy="6" r="2" fill="#054f12"/></g>' +
+      '</svg>';
+    var placed = false;
+    function placeVan() {
+      if (placed || !wrap.isConnected) return;
+      placed = true;
+      var path = wrap.querySelector('.rm-route');
+      var van = wrap.querySelector('.rm-van');
+      if (!path || !van || !path.getTotalLength) return;
+      var p = path.getPointAtLength(path.getTotalLength() * t.progress);
+      van.setAttribute('transform', 'translate(' + p.x + ' ' + p.y + ')');
+      if (t.state !== 'out_for_delivery') van.style.display = t.state === 'delivered' || t.progress < 0.3 ? 'none' : '';
+    }
+    // Needs the SVG in the DOM to measure the path; rAF can stall in background tabs, so also try a timeout.
+    requestAnimationFrame(placeVan);
+    setTimeout(placeVan, 30);
+    return wrap;
+  }
+
+  function trackingPanel(o) {
+    var t = M.trackingFor(o);
+    var c = customer(o.customerId);
+    var addr = c ? formatAddress(c.address) : '';
+    var events = t.events.slice();
+    var lastDoneIdx = -1;
+    events.forEach(function (e, i) { if (e.at) lastDoneIdx = i; });
+
+    var side;
+    if (t.state === 'out_for_delivery') {
+      side = h('div', { class: 'driver-card' },
+        h('span', { class: 'avatar av-staff', 'aria-hidden': 'true', text: initials(t.driver) }),
+        h('span', { class: 'driver-text' }, h('strong', { text: t.driver }), h('small', { text: 'Your MEOD driver · ' + t.stopsAway + ' stops away' })),
+        h('a', { class: 'pill-btn', href: 'https://wa.me/6581330358', target: '_blank', rel: 'noopener', text: 'Message' }));
+    } else if (t.state === 'delivered') {
+      side = h('div', { class: 'proof-card' },
+        h('div', { class: 'proof-photo', 'aria-hidden': 'true' }, iconCircle('<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>', 'soft')),
+        h('span', null, h('strong', { text: 'Proof of delivery' }), h('small', { text: t.proof.receivedBy + ' · ' + hm(events[events.length - 1].at) + ' · photo on file' })));
+    } else {
+      side = h('div', { class: 'proof-card' }, iconCircle(ICONS.clock, 'soft'),
+        h('span', null, h('strong', { text: t.state === 'awaiting' ? 'Waiting for payment' : 'Delivery window' }),
+          h('small', { text: t.state === 'awaiting' ? 'Pay on MEOD Fresh to lock in the next delivery day.' : t.sub })));
+    }
+
+    return h('div', { class: 'track-panel' },
+      h('div', { class: 'track-head' },
+        h('div', null,
+          h('span', { class: 'track-state ' + t.state, text: t.headline }),
+          h('strong', { class: 'track-eta', text: t.state === 'out_for_delivery' ? 'Arriving ' + windowText(t) : (t.sub || '') })),
+        h('small', { class: 'track-no' }, 'Tracking no. ', h('span', { class: 'code-box', text: t.trackingNo }))),
+      h('div', { class: 'track-body' },
+        h('div', { class: 'track-visual' },
+          routeMap(t),
+          side,
+          h('div', { class: 'track-address' }, iconCircle(ICONS.pin, 'bare'), h('span', { text: addr ? 'Delivering to ' + addr : 'Delivering to the address on your order' }))),
+        h('ol', { class: 'timeline' }, events.map(function (e, i) {
+          var cls = e.at ? 'done' : 'todo';
+          if (i === lastDoneIdx && t.state !== 'delivered') cls += ' current';
+          if (i === lastDoneIdx + 1 && t.state === 'out_for_delivery') cls += ' next';
+          return h('li', { class: cls },
+            h('span', { class: 'tl-dot', 'aria-hidden': 'true' }),
+            h('span', { class: 'tl-text' },
+              h('strong', { text: e.label }),
+              h('small', { text: e.at ? date(e.at) + ', ' + hm(e.at) + (e.detail ? ' · ' + e.detail : '') : (i === lastDoneIdx + 1 && t.state === 'out_for_delivery' ? 'Expected ' + windowText(t) : 'Pending') })));
+        }))));
   }
 
   function customerOrdersView(root) {
@@ -1212,6 +1308,18 @@
     ];
     var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter orders' });
     var list = h('div', { class: 'order-list' });
+    var live = mine.filter(function (o) { return M.trackingFor(o).state === 'out_for_delivery'; })[0];
+    if (state.open === undefined) state.open = live ? live.id : null;
+    if (live) {
+      var lt = M.trackingFor(live);
+      append(root, h('section', { class: 'live-banner' },
+        h('span', { class: 'live-van', 'aria-hidden': 'true' }, iconCircle(ICONS.truck, 'bare')),
+        h('div', null, h('strong', { text: 'Your order ' + live.ref + ' is on its way!' }), h('small', { text: lt.sub + ' · arriving ' + windowText(lt) })),
+        h('button', { class: 'btn btn-sm btn-gold', type: 'button', text: 'Track live', onclick: function () {
+          state.open = live.id; state.filter = 'all'; draw();
+          var card = list.querySelector('[data-order="' + live.id + '"]'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } })));
+    }
 
     function draw() {
       chips.textContent = '';
@@ -1229,7 +1337,8 @@
       }
       rows.forEach(function (o) {
         var ev = eventFor(o);
-        append(list, h('article', { class: 'order-card' },
+        var openTrack = state.open === o.id;
+        append(list, h('article', { class: 'order-card' + (openTrack ? ' tracking-open' : ''), 'data-order': o.id },
           h('div', { class: 'order-top' },
             h('div', null, h('strong', { class: 'order-ref', text: o.ref }), h('small', { text: date(o.createdAt) + (ev ? ' · ' : '') }), ev ? h('span', { class: 'code-box', text: ev.code }) : null),
             h('div', { class: 'order-total' }, h('strong', { text: money(o.totalCents) }), statusBadge(o.status))),
@@ -1240,9 +1349,11 @@
           h('div', { class: 'order-bottom' },
             orderTracker(o),
             h('div', { class: 'pill-row' },
+              o.status !== 'cancelled' && o.status !== 'refunded' ? pill(openTrack ? 'Hide tracking' : 'Track', function () { state.open = openTrack ? null : o.id; draw(); }, ICONS.truck) : null,
               pill('Receipt', function () { showReceipt(o); }, ICON_RECEIPT),
               o.status !== 'cancelled' ? pill('Reorder', function () { reorder(o); }, ICON_REORDER) : null,
-              pill('Get help', function () { assistantView.prefill = 'Question about order ' + o.ref + ': '; location.hash = 'assistant'; }, ICON_HELP)))));
+              pill('Get help', function () { assistantView.prefill = 'Question about order ' + o.ref + ': '; location.hash = 'assistant'; }, ICON_HELP))),
+          openTrack ? trackingPanel(o) : null));
       });
     }
     draw();
@@ -1322,6 +1433,135 @@
       })) : h('p', { class: 'empty', text: 'No group buys are open right now.' })));
   }
 
+  /* ----- Profile: photo, contact details and delivery address ----- */
+  function avatarFor(c, extraClass) {
+    var cls = 'avatar av-customer' + (extraClass ? ' ' + extraClass : '');
+    if (c.photo) return h('img', { class: cls + ' has-photo', src: c.photo, alt: '' });
+    return h('span', { class: cls, 'aria-hidden': 'true', text: initials(c.name) });
+  }
+  function formatAddress(a) {
+    if (!a || !a.street) return '';
+    return a.street + (a.unit ? ', ' + a.unit : '') + ', Singapore ' + a.postal;
+  }
+
+  // Shrink an uploaded image to a 192px square JPEG so it fits comfortably in browser storage.
+  function readPhoto(file, done) {
+    if (!/^image\//.test(file.type)) { toast('Please choose an image file.'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast('That image is over 5 MB — please pick a smaller one.'); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var size = 192, side = Math.min(img.width, img.height);
+        var canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        canvas.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+        done(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = function () { toast('We couldn\'t read that image.'); };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function editProfile(c) {
+    var draftPhoto = c.photo || null;
+    var addr = c.address || {};
+    var dlg = h('dialog', { class: 'receipt-dialog profile-dialog', 'aria-labelledby': 'profile-dialog-title' });
+
+    var preview = h('div', { class: 'photo-preview' });
+    function drawPreview() {
+      preview.textContent = '';
+      append(preview, draftPhoto ? h('img', { src: draftPhoto, alt: 'Your profile photo' }) : h('span', { text: initials(c.name) }));
+      removeBtn.hidden = !draftPhoto;
+    }
+    var fileInput = h('input', { type: 'file', accept: 'image/*', class: 'sr-only', id: 'profile-photo-input' });
+    fileInput.addEventListener('change', function () {
+      if (fileInput.files[0]) readPhoto(fileInput.files[0], function (data) { draftPhoto = data; drawPreview(); });
+      fileInput.value = '';
+    });
+    var removeBtn = h('button', { type: 'button', class: 'pill-btn danger-pill', text: 'Remove', onclick: function () { draftPhoto = null; drawPreview(); } });
+
+    function field(label, input, hint) {
+      return h('label', { class: 'pf-field' }, h('span', { text: label }), input, hint ? h('small', { class: 'pf-hint', text: hint }) : null, h('small', { class: 'pf-error', 'aria-live': 'polite' }));
+    }
+    var email = h('input', { type: 'email', name: 'email', value: c.email || '', autocomplete: 'email', required: true });
+    var phone = h('input', { type: 'tel', name: 'phone', value: c.phone || '', autocomplete: 'tel', required: true, placeholder: '+65 8123 4567' });
+    var street = h('input', { name: 'street', value: addr.street || '', autocomplete: 'address-line1', placeholder: 'Blk 123 Punggol Field' });
+    var unit = h('input', { name: 'unit', value: addr.unit || '', autocomplete: 'address-line2', placeholder: '#05-12' });
+    var postal = h('input', { name: 'postal', value: addr.postal || '', autocomplete: 'postal-code', inputmode: 'numeric', maxlength: 6, placeholder: '820123' });
+
+    var form = h('form', { class: 'profile-form', novalidate: true },
+      h('div', { class: 'pf-photo' }, preview,
+        h('div', null,
+          h('strong', { text: 'Profile photo' }),
+          h('small', { text: 'JPG or PNG, up to 5 MB. We crop it to a square.' }),
+          h('div', { class: 'pill-row' },
+            h('label', { class: 'pill-btn', for: 'profile-photo-input', tabindex: '0', text: 'Upload photo',
+              onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } } }),
+            removeBtn),
+          fileInput)),
+      h('fieldset', { class: 'pf-group' }, h('legend', { text: 'Contact details' }),
+        field('Email', email, 'For receipts and order updates. Your sign-in email stays the same.'),
+        field('Mobile number', phone, 'Singapore mobile, used for WhatsApp updates.')),
+      h('fieldset', { class: 'pf-group' }, h('legend', { text: 'Delivery address' }),
+        field('Street & block', street),
+        h('div', { class: 'pf-row' }, field('Unit (optional)', unit), field('Postal code', postal))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: function () { dlg.close(); } }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Save changes' })));
+
+    function setError(input, msg) {
+      var box = input.closest('.pf-field').querySelector('.pf-error');
+      box.textContent = msg || '';
+      input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+      return !msg;
+    }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var digits = phone.value.replace(/\D/g, '').replace(/^65(?=\d{8}$)/, '');
+      var hasAddress = street.value.trim() || unit.value.trim() || postal.value.trim();
+      var ok = [
+        setError(email, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim()) ? '' : 'Enter a valid email address.'),
+        setError(phone, /^[89]\d{7}$/.test(digits) ? '' : 'Enter an 8-digit Singapore mobile starting with 8 or 9.'),
+        setError(street, !hasAddress || street.value.trim().length >= 4 ? '' : 'Enter your block and street.'),
+        setError(unit, !unit.value.trim() || /^#?\d{1,3}-\d{1,5}[A-Za-z]?$/.test(unit.value.trim()) ? '' : 'Use a format like #05-12.'),
+        setError(postal, !hasAddress || /^\d{6}$/.test(postal.value.trim()) ? '' : 'Singapore postal codes have 6 digits.')
+      ].every(Boolean);
+      if (!ok) { var bad = form.querySelector('[aria-invalid="true"]'); if (bad) bad.focus(); return; }
+
+      c.email = email.value.trim();
+      c.phone = '+65 ' + digits.slice(0, 4) + ' ' + digits.slice(4);
+      c.address = hasAddress ? { street: street.value.trim(), unit: unit.value.trim() ? '#' + unit.value.trim().replace(/^#/, '') : '', postal: postal.value.trim() } : null;
+      var photoChanged = (c.photo || null) !== draftPhoto;
+      c.photo = draftPhoto;
+      dlg.close();
+      if (photoChanged) M.audit(session.email, 'profile.photo', c.id);
+      commit('profile.updated', c.id, 'Profile saved.');
+    });
+
+    append(dlg, h('div', { class: 'receipt' }, h('h2', { id: 'profile-dialog-title', class: 'pf-title', text: 'Edit profile' }), form));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    drawPreview();
+    dlg.showModal();
+  }
+
+  function profileCard(c) {
+    var address = formatAddress(c.address);
+    return h('section', { class: 'profile-card' },
+      h('button', { type: 'button', class: 'avatar-edit', 'aria-label': 'Change profile photo', onclick: function () { editProfile(c); } },
+        avatarFor(c, 'profile-avatar'), h('span', { class: 'avatar-cam', 'aria-hidden': 'true' }, iconCircle('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', 'bare'))),
+      h('div', { class: 'profile-main' },
+        h('strong', { text: c.name }),
+        h('small', { text: c.id + ' · Member' }),
+        h('div', { class: 'profile-meta' },
+          h('span', null, iconCircle(ICONS.chat, 'bare'), c.phone),
+          c.email ? h('span', null, iconCircle(ICONS.globe, 'bare'), c.email) : null,
+          h('span', null, iconCircle(ICONS.pin, 'bare'), address || 'No delivery address yet'))),
+      h('button', { type: 'button', class: 'btn btn-sm btn-gold profile-edit', text: 'Edit profile', onclick: function () { editProfile(c); } }));
+  }
+
   /* ----- Preferences ----- */
   function preferencesView(root) {
     var c = me();
@@ -1338,14 +1578,7 @@
     }
     var LANGS = [['en', 'English'], ['zh', '中文'], ['ms', 'Bahasa Melayu'], ['ta', 'தமிழ்']];
 
-    append(root, h('section', { class: 'profile-card' },
-      h('span', { class: 'avatar av-customer profile-avatar', 'aria-hidden': 'true', text: initials(c.name) }),
-      h('div', null,
-        h('strong', { text: c.name }),
-        h('small', { text: c.id + ' · Member' }),
-        h('div', { class: 'profile-meta' },
-          h('span', null, iconCircle(ICONS.chat, 'bare'), c.phone),
-          c.email ? h('span', null, iconCircle(ICONS.globe, 'bare'), c.email) : null))));
+    append(root, profileCard(c));
 
     append(root, h('div', { class: 'two-col prefs-layout' },
       h('section', { class: 'panel' },

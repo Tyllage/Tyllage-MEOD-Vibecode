@@ -180,15 +180,123 @@
     };
   }
 
+  /* ---------- Delivery tracking (mock adapter) ----------
+   * Stand-in for a real tracking source. Event statuses follow Shopify's
+   * fulfillment event names (confirmed, picked_up, out_for_delivery,
+   * delivered …) so this function can later read Shopify fulfillment
+   * webhooks, or a courier / driver app such as Detrack, without the UI
+   * changing. Everything here is derived from the order — nothing is stored.
+   */
+  var DELIVERY_DAYS = [2, 4, 6]; // Tue, Thu, Sat
+  var DRIVERS = ['Rahman', 'Wei Jie', 'Suresh', 'Kok Leong'];
+
+  function atTime(day, h, m) { var d = new Date(day); d.setHours(h, m, 0, 0); return d; }
+  function nextDeliveryDay(from) {
+    var d = new Date(from);
+    d.setHours(0, 0, 0, 0);
+    for (var i = 1; i <= 7; i++) {
+      d.setDate(d.getDate() + 1);
+      if (DELIVERY_DAYS.indexOf(d.getDay()) > -1) return d;
+    }
+    return d;
+  }
+  function hashOf(s) { var x = 0; for (var i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) % 9973; return x; }
+
+  function trackingFor(order) {
+    var seed = hashOf(order.id);
+    var driver = DRIVERS[seed % DRIVERS.length];
+    var trackingNo = 'MF-TRK-' + (100000 + seed * 7).toString().slice(-6);
+    var placed = new Date(order.createdAt);
+    var now = Date.now();
+    var ev = function (status, label, at, detail) { return { status: status, label: label, at: at ? new Date(at).toISOString() : null, detail: detail || '' }; };
+    var base = { trackingNo: trackingNo, carrier: 'MEOD delivery', driver: null, stopsAway: null, windowStart: null, windowEnd: null, proof: null, progress: 0 };
+
+    if (order.status === 'cancelled' || order.status === 'refunded') {
+      return Object.assign(base, { state: 'closed', headline: order.status === 'refunded' ? 'Refunded' : 'Cancelled', events: [] });
+    }
+    if (order.status === 'pending_payment') {
+      return Object.assign(base, {
+        state: 'awaiting', headline: 'Awaiting payment', sub: 'We\'ll schedule your delivery as soon as payment is confirmed.', progress: 0.05,
+        events: [ev('placed', 'Order placed', placed), ev('confirmed', 'Payment confirmed', null), ev('picked_up', 'Packed at the farm', null), ev('out_for_delivery', 'Out for delivery', null), ev('delivered', 'Delivered', null)]
+      });
+    }
+
+    var day, packed, out, delivered, winStart, winEnd;
+    if (order.trackingDemo === 'live') {
+      // Demo order: always mid-route relative to "now".
+      packed = new Date(now - 5.5 * 36e5);
+      out = new Date(now - 48 * 6e4);
+      winStart = new Date(now + 10 * 6e4);
+      winEnd = new Date(now + 40 * 6e4);
+      return Object.assign(base, {
+        state: 'out_for_delivery', headline: 'Out for delivery', driver: driver, stopsAway: 2, progress: 0.68,
+        windowStart: winStart.toISOString(), windowEnd: winEnd.toISOString(),
+        sub: driver + ' is 2 stops away',
+        events: [ev('placed', 'Order placed', placed.getTime() - 864e5), ev('confirmed', 'Payment confirmed', placed.getTime() - 864e5 + 3e5),
+          ev('picked_up', 'Packed at the farm', packed, 'Harvested and packed in Kranji'), ev('out_for_delivery', 'Out for delivery', out, 'With ' + driver),
+          ev('delivered', 'Delivered', null)]
+      });
+    }
+
+    day = nextDeliveryDay(placed);
+    if (order.status === 'fulfilled') {
+      delivered = atTime(day, 14 + (seed % 3), 5 + (seed % 50));
+      if (delivered.getTime() > now) delivered = new Date(Math.max(placed.getTime() + 864e5, now - 36e5));
+      day = new Date(delivered);
+      return Object.assign(base, {
+        state: 'delivered', headline: 'Delivered', driver: driver, progress: 1,
+        sub: 'Delivered ' + day.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + delivered.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }),
+        proof: { receivedBy: seed % 2 ? 'Left at door' : 'Received by customer', photo: true },
+        events: [ev('placed', 'Order placed', placed), ev('confirmed', 'Payment confirmed', placed.getTime() + 3e5),
+          ev('picked_up', 'Packed at the farm', atTime(day, 6, 40), 'Harvested and packed in Kranji'),
+          ev('out_for_delivery', 'Out for delivery', atTime(day, 13, 20), 'With ' + driver),
+          ev('delivered', 'Delivered', delivered, seed % 2 ? 'Left at door' : 'Received by customer')]
+      });
+    }
+
+    // Paid: scheduled for the next delivery day after today.
+    day = nextDeliveryDay(Math.max(placed.getTime(), now - 864e5));
+    winStart = atTime(day, 14, 0);
+    winEnd = atTime(day, 18, 0);
+    return Object.assign(base, {
+      state: 'scheduled', headline: 'Scheduled', progress: 0.25,
+      windowStart: winStart.toISOString(), windowEnd: winEnd.toISOString(),
+      sub: 'Arriving ' + day.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' }) + ', 2–6pm',
+      events: [ev('placed', 'Order placed', placed), ev('confirmed', 'Payment confirmed', placed.getTime() + 3e5),
+        ev('picked_up', 'Packed at the farm', null), ev('out_for_delivery', 'Out for delivery', null), ev('delivered', 'Delivered', null)]
+    });
+  }
+
+  // One-time additive data updates for browsers that already hold demo data.
+  function migrate(s) {
+    s.migrations = s.migrations || {};
+    if (!s.migrations.liveTracking) {
+      var pick = function (title, qty) {
+        var p = s.products.filter(function (x) { return x.title === title; })[0];
+        return p ? { productId: p.id, title: p.title, qty: qty, priceCents: p.priceCents } : null;
+      };
+      var items = [pick('Xiao Bai Cai', 3), pick('Mesclun Mix', 2), pick('Tuscan Kale', 1)].filter(Boolean);
+      var totals = priceOrder(items, false);
+      s.seq = (s.seq || 2000) + 1;
+      s.orders.push(Object.assign({
+        id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: 'C-1001', groupEventId: null,
+        status: 'paid', items: items, refundedCents: 0, createdAt: new Date(Date.now() - 864e5).toISOString(),
+        source: 'shopify-mock', trackingDemo: 'live'
+      }, totals));
+      s.migrations.liveTracking = true;
+    }
+    return s;
+  }
+
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         var parsed = JSON.parse(raw);
-        if (parsed && parsed.version === 2) return parsed;
+        if (parsed && parsed.version === 2) return migrate(parsed);
       }
     } catch (e) { /* storage blocked or corrupt — fall back to seed */ }
-    return buildSeed();
+    return migrate(buildSeed());
   }
 
   var state = load();
@@ -198,7 +306,7 @@
   }
 
   function reset() {
-    state = buildSeed();
+    state = migrate(buildSeed());
     save();
     window.MEOD.state = state;
   }
@@ -396,7 +504,7 @@
     state: state, RULES: RULES, CATEGORIES: CATEGORIES, DEMO_PASSWORD: DEMO_PASSWORD,
     save: save, reset: reset, nextId: nextId, byId: byId,
     stockStatus: stockStatus, findProduct: findProduct, priceOrder: priceOrder,
-    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
+    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, trackingFor: trackingFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
     withinHumanHours: withinHumanHours, audit: audit,
     money: money, maskName: maskName, maskPhone: maskPhone
   };

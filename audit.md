@@ -103,6 +103,7 @@ No automated test suite yet. That's a follow-up.
 5. Official WhatsApp Cloud API number and template approval owner
 6. Human support hours to state in the bot
 7. Brand assets (fonts, logo SVG, photos) and permission to reuse them
+8. Who delivers: in-house drivers, a courier (e.g. Ninja Van, Lalamove) or Shopify fulfilment? This decides the real source behind the mock delivery tracking (`trackingFor()` in `js/data.js`).
 
 ## 7. Changelog
 

@@ -139,7 +139,11 @@
       if (ctx && ctx.customerId) {
         var mine = M.state.orders.filter(function (o) { return o.customerId === ctx.customerId; });
         var last = mine[mine.length - 1];
-        out.text = last ? 'Your latest order ' + last.ref + ' is ' + last.status.replace('_', ' ') + ' (' + M.money(last.totalCents) + ').' : 'You have no orders yet.';
+        if (!last) out.text = 'You have no orders yet.';
+        else {
+          var tr = M.trackingFor ? M.trackingFor(last) : null;
+          out.text = 'Your latest order ' + last.ref + ' (' + M.money(last.totalCents) + '): ' + (tr ? tr.headline + (tr.sub ? ' — ' + tr.sub : '') : last.status.replace('_', ' ')) + '. See My orders for live tracking.';
+        }
       } else out.text = t.order;
     } else if (intent === 'greeting') out.text = t.hi;
     else out.text = t.unknown;

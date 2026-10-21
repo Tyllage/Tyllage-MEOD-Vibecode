@@ -252,3 +252,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .reset-btn { width: 100%; }
   .setting-value { font-size: 1.35rem; }
 }
+
+/* Campaign status: pill + sent count */
+.status-cell { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-cell small { color: var(--muted); font-size: .82rem; white-space: nowrap; }

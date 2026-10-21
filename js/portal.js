@@ -307,7 +307,7 @@
         { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
         { label: 'Audience', num: true, render: function (c) { return String(c.audience.length); } },
         { label: 'By', render: function (c) { return h('span', null, c.createdBy, c.approvedBy ? h('br') : null, c.approvedBy ? h('small', { text: 'approved: ' + c.approvedBy }) : null); } },
-        { label: 'Status', render: function (c) { return h('span', null, statusBadge(c.status), c.status === 'sent' ? h('small', { text: ' ' + c.sentCount + ' sent' }) : null); } },
+        { label: 'Status', render: function (c) { return h('span', { class: 'status-cell' }, statusBadge(c.status), c.status === 'sent' ? h('small', { text: c.sentCount + ' sent' }) : null); } },
         { label: 'Actions', render: function (c) {
           if (c.status === 'pending_approval') {
             if (!canApprove) return h('small', { text: 'Waiting for admin' });

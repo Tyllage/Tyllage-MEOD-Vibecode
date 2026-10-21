@@ -316,3 +316,54 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 @media (max-width: 340px) { .picks .rec-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .rec { transition: none; } }
+
+/* My orders: action pills + receipt */
+.pill-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pill-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1.5px solid #dcd5c9; background: var(--white); color: var(--forest); font: 600 .8rem var(--font-body); white-space: nowrap;
+  transition: background .2s, border-color .2s, color .2s;
+}
+.pill-btn:hover { border-color: var(--forest); background: var(--forest); color: var(--white); }
+.pill-btn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+.receipt-dialog { border: 0; padding: 0; border-radius: 20px; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 32px); box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+.receipt-dialog::backdrop { background: rgba(3,40,10,.55); backdrop-filter: blur(3px); }
+.receipt { padding: 28px 28px 8px; font-size: .92rem; color: var(--ink); }
+.r-head { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 2px dashed #e6dfd3; }
+.r-head img { border-radius: 50%; }
+.r-head strong { display: block; font-size: 1.15rem; color: var(--forest); }
+.r-head small { color: var(--muted); font-size: .78rem; }
+.r-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+.r-meta span, .r-to span { display: block; font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
+.r-to { padding: 12px 14px; background: #f7f3ee; border-radius: 12px; margin-bottom: 14px; }
+.r-to strong { display: block; }
+.r-to small { color: var(--muted); }
+.r-items { width: 100%; border-collapse: collapse; }
+.r-items th { font-size: .7rem; padding: 8px 4px; border-bottom: 1.5px solid #e6dfd3; }
+.r-items td { padding: 9px 4px; border-bottom: 1px solid #f0ebe3; }
+.r-totals { margin-top: 12px; display: grid; gap: 6px; }
+.r-line { display: flex; justify-content: space-between; }
+.r-total { font-weight: 700; font-size: 1.1rem; color: var(--forest); padding-top: 8px; border-top: 2px solid var(--forest); margin-top: 4px; }
+.r-refund { color: var(--danger); font-weight: 600; }
+.r-note { margin: 16px 0 4px; text-align: center; color: var(--forest); font-weight: 600; }
+.r-foot { margin: 0 0 12px; text-align: center; font-size: .72rem; color: var(--muted); }
+.r-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; }
+
+@media (max-width: 640px) {
+  .pill-row { justify-content: flex-start; }
+  .table-wrap td[data-label=""] { justify-content: flex-start; }
+  .receipt { padding: 22px 18px 6px; }
+  .r-meta { grid-template-columns: 1fr 1fr; }
+  .r-actions { padding: 12px 18px 18px; }
+  .r-actions .btn { flex: 1; justify-content: center; }
+  /* Receipt table stays a real table on phones. */
+  .receipt .r-items, .receipt .r-items tbody, .receipt .r-items tr, .receipt .r-items td { display: revert; width: auto; }
+}
+
+@media print {
+  body.portal > *:not(.receipt-dialog) { display: none !important; }
+  .receipt-dialog { position: static; box-shadow: none; width: 100%; max-height: none; border-radius: 0; }
+  .receipt-dialog::backdrop { display: none; }
+  .no-print { display: none !important; }
+}

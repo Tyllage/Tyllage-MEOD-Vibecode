@@ -916,59 +916,195 @@
     toast(p.title + ' added to cart.');
   }
 
+  function iconCircle(paths, cls) {
+    var s = h('span', { class: 'icon-circle' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true' });
+    s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    return s;
+  }
+  var ICONS = {
+    cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L22 7H6"/>',
+    truck: '<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    tag: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    pin: '<path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+    leaf: '<path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 16-9 0 12-4 16-9 16z"/><path d="M4 20c4-4 7-7 11-10"/>',
+    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>'
+  };
+
+  // Join a group buy by code; shared by the Shop cart and the Group buy page.
+  function joinGroup(code) {
+    code = String(code || '').trim().toUpperCase();
+    var ev = S().events.filter(function (x) { return x.code === code; })[0];
+    if (!ev) { toast('We couldn\'t find that code.'); return false; }
+    if (ev.status !== 'open') { toast('That group buy has closed.'); return false; }
+    me().groupCode = code;
+    try { sessionStorage.removeItem('meod-join-code'); } catch (err) { /* ignore */ }
+    commit('groupbuy.joined', code, 'You joined ' + ev.title + '. 5% off is now applied.');
+    return true;
+  }
+  function myEvent() {
+    var c = me();
+    return c.groupCode ? S().events.filter(function (e) { return e.code === c.groupCode; })[0] || null : null;
+  }
+
   function shopView(root) {
     var c = me();
-    var ev = c.groupCode ? S().events.filter(function (e) { return e.code === c.groupCode && e.status === 'open'; })[0] : null;
-    var items = Object.keys(cart).filter(function (id) { return cart[id] > 0; }).map(function (id) {
-      var p = M.byId('products', id);
-      return { productId: id, title: p.title, qty: cart[id], priceCents: p.priceCents };
-    });
-    var totals = M.priceOrder(items, Boolean(ev));
+    var state = shopView.state || (shopView.state = { filter: 'all', q: '', inStock: false });
+    var gridBox = h('div');
+    var cartBox = h('aside', { class: 'cart-card', 'aria-label': 'Your cart' });
 
-    var grid = h('div', { class: 'shop-grid' }, S().products.map(function (p) {
-      var s = M.stockStatus(p);
-      var q = cart[p.id] || 0;
-      return h('div', { class: 'shop-item' },
-        thumb(p),
-        h('div', { class: 'row' }, h('strong', { text: p.title }), stockBadge(p)),
-        h('small', { text: p.subtitle }),
-        h('div', { class: 'row' },
-          h('span', { text: money(p.priceCents) }),
-          h('div', { class: 'qty' },
-            h('button', { type: 'button', 'aria-label': 'Remove one ' + p.title, disabled: q === 0, text: '−', onclick: function () { cart[p.id] = q - 1; saveCart(); render(); } }),
-            h('span', { text: String(q) }),
-            h('button', { type: 'button', 'aria-label': 'Add one ' + p.title, disabled: !s.known || q >= s.qty, text: '+', onclick: function () { cart[p.id] = q + 1; saveCart(); render(); } }))));
-    }));
+    function cartItems() {
+      return Object.keys(cart).filter(function (id) { return cart[id] > 0 && M.byId('products', id); }).map(function (id) {
+        var p = M.byId('products', id);
+        return { productId: id, title: p.title, qty: cart[id], priceCents: p.priceCents };
+      });
+    }
+    function setQty(id, q) {
+      cart[id] = Math.max(0, q);
+      if (!cart[id]) delete cart[id];
+      saveCart();
+      drawGrid();
+      drawCart();
+    }
 
-    var summary = h('div', { class: 'cart-lines' },
-      items.map(function (i) { return h('div', null, h('span', { text: i.qty + '× ' + i.title }), h('span', { text: money(i.qty * i.priceCents) })); }),
-      h('div', null, h('span', { text: 'Subtotal' }), h('span', { text: money(totals.subtotalCents) })),
-      ev ? h('div', null, h('span', { text: 'Group discount (' + ev.code + ')' }), h('span', { text: '−' + money(totals.discountCents) })) : null,
-      h('div', null, h('span', { text: 'Delivery' }), h('span', { text: totals.deliveryCents ? money(totals.deliveryCents) : 'Free' })),
-      h('div', { class: 'cart-total' }, h('span', { text: 'Total' }), h('span', { text: money(totals.totalCents) })));
+    // Toolbar
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter products' });
+    function drawChips() {
+      chips.textContent = '';
+      [['all', 'All']].concat(Object.keys(M.CATEGORIES).map(function (k) { return [k, M.CATEGORIES[k].label]; })).forEach(function (f) {
+        var n = S().products.filter(function (p) { return f[0] === 'all' || p.category === f[0]; }).length;
+        append(chips, h('button', { type: 'button', class: 'chip' + (state.filter === f[0] ? ' active' : ''), 'aria-pressed': String(state.filter === f[0]),
+          onclick: function () { state.filter = f[0]; drawChips(); drawGrid(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(n) })));
+      });
+    }
+    var search = h('input', { type: 'search', placeholder: 'Search the harvest', 'aria-label': 'Search products', value: state.q });
+    search.addEventListener('input', function () { state.q = search.value.trim().toLowerCase(); drawGrid(); });
+    var stockToggle = h('input', { type: 'checkbox', checked: state.inStock });
+    stockToggle.addEventListener('change', function () { state.inStock = stockToggle.checked; drawGrid(); });
+    var searchBox = h('label', { class: 'shop-search' }, iconCircle(ICONS.search, 'bare'), search);
 
-    var checkout = h('button', { class: 'btn btn-forest', type: 'button', style: 'margin-top:14px;width:100%;justify-content:center', disabled: !items.length, text: 'Place order', onclick: function () {
-      // Re-check stock at submit time: fail closed if anything changed.
-      for (var i = 0; i < items.length; i++) {
-        var p = M.byId('products', items[i].productId);
+    function drawGrid() {
+      var list = S().products.filter(function (p) {
+        if (state.filter !== 'all' && p.category !== state.filter) return false;
+        if (state.inStock && !(M.stockStatus(p).known && p.stock.qty > 0)) return false;
+        if (state.q && [p.title, p.subtitle].concat(p.aliases || []).join(' ').toLowerCase().indexOf(state.q) === -1) return false;
+        return true;
+      });
+      gridBox.textContent = '';
+      if (!list.length) { append(gridBox, h('p', { class: 'empty', text: 'Nothing matches that — try another name.' })); return; }
+      append(gridBox, h('div', { class: 'shop-grid' }, list.map(function (p) {
         var s = M.stockStatus(p);
-        if (!s.known || s.qty < items[i].qty) { toast('Stock for ' + p.title + ' could not be confirmed. Please adjust your cart.'); render(); return; }
-      }
-      items.forEach(function (i) { M.byId('products', i.productId).stock.qty -= i.qty; });
-      var id = M.nextId('O');
-      var ref = '#MF' + (5000 + S().orders.length + 1);
-      S().orders.push(Object.assign({ id: id, ref: ref, customerId: c.id, groupEventId: ev ? ev.id : null, status: 'pending_payment', items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'portal' }, totals));
-      cart = {}; saveCart();
-      commit('order.created', ref, 'Order ' + ref + ' created. In production you\'d pay through MEOD Fresh (Shopify checkout).');
-      location.hash = 'orders';
-    } });
+        var q = cart[p.id] || 0;
+        var canAdd = s.known && q < s.qty;
+        var media = h('div', { class: 'shop-media' }, thumb(p), stockBadge(p));
+        var control = q === 0
+          ? h('button', { class: 'btn btn-sm btn-forest shop-add', type: 'button', disabled: !canAdd, text: canAdd ? '+ Add' : (s.key === 'stale' ? 'Checking…' : 'Sold out'),
+              'aria-label': 'Add ' + p.title + ' to cart', onclick: function () { setQty(p.id, 1); } })
+          : h('div', { class: 'qty' },
+              h('button', { type: 'button', 'aria-label': 'Remove one ' + p.title, text: '−', onclick: function () { setQty(p.id, q - 1); } }),
+              h('span', { text: String(q) }),
+              h('button', { type: 'button', 'aria-label': 'Add one ' + p.title, disabled: !canAdd, text: '+', onclick: function () { setQty(p.id, q + 1); } }));
+        return h('article', { class: 'shop-item' + (q ? ' in-cart' : '') + (s.key === 'out' ? ' is-out' : '') },
+          media,
+          h('div', { class: 'shop-body' },
+            h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
+            h('strong', { class: 'shop-title', text: p.title }),
+            h('small', { text: p.subtitle }),
+            h('div', { class: 'shop-foot' }, h('span', { class: 'shop-price', text: money(p.priceCents) }), control)));
+      })));
+    }
 
-    append(root, h('div', { class: 'two-col shop-layout' },
-      panel('This week\'s harvest', 'Prices are examples. You can\'t add items whose stock we can\'t confirm.', grid),
-      panel('Your cart', ev ? 'Group buy ' + ev.code + ': 5% off.' : 'No group code yet. Join one under Group buy.',
-        items.length ? summary : h('p', { class: 'empty', text: 'Your cart is empty.' }),
-        h('p', { class: 'form-note', text: 'Orders from ' + money(M.RULES.freeDeliveryThresholdCents) + ' get free delivery. Delivery days are Tue, Thu and Sat.' }),
-        checkout)));
+    function drawCart() {
+      var items = cartItems();
+      var ev = myEvent();
+      var activeEv = ev && ev.status === 'open' ? ev : null;
+      var totals = M.priceOrder(items, Boolean(activeEv));
+      var count = items.reduce(function (s, i) { return s + i.qty; }, 0);
+      cartBox.textContent = '';
+
+      append(cartBox, h('div', { class: 'cart-head' },
+        iconCircle(ICONS.cart),
+        h('div', null, h('strong', { text: 'Your cart' }), h('small', { text: count ? count + (count === 1 ? ' item' : ' items') : 'Nothing added yet' }))));
+
+      if (!items.length) {
+        append(cartBox, h('div', { class: 'cart-empty' },
+          iconCircle(ICONS.leaf, 'soft'),
+          h('strong', { text: 'Your basket is empty' }),
+          h('span', { text: 'Add fresh greens from the harvest to get started.' })));
+      } else {
+        append(cartBox, h('ul', { class: 'cart-list' }, items.map(function (i) {
+          var p = M.byId('products', i.productId);
+          return h('li', null,
+            h('span', { class: 'cart-thumb' }, thumb(p)),
+            h('span', { class: 'cart-name' }, h('strong', { text: i.title }), h('small', { text: i.qty + ' × ' + money(i.priceCents) })),
+            h('span', { class: 'cart-amt', text: money(i.qty * i.priceCents) }),
+            h('button', { class: 'cart-remove', type: 'button', 'aria-label': 'Remove ' + i.title, onclick: function () { setQty(i.productId, 0); } }, iconCircle(ICONS.x, 'bare')));
+        })));
+
+        // Free-delivery progress
+        var need = M.RULES.freeDeliveryThresholdCents - totals.netCents;
+        var pct = Math.min(100, Math.round(totals.netCents / M.RULES.freeDeliveryThresholdCents * 100));
+        var bar = h('span', { class: 'fd-bar' }, h('span', { class: 'fd-fill' }));
+        bar.firstChild.style.width = pct + '%';
+        append(cartBox, h('div', { class: 'free-delivery' + (need <= 0 ? ' done' : '') },
+          h('span', { class: 'fd-text' }, iconCircle(ICONS.truck, 'bare'),
+            need > 0 ? h('span', null, 'Add ', h('strong', { text: money(need) }), ' more for free delivery') : h('span', { text: 'You\'ve unlocked free delivery!' })),
+          bar));
+      }
+
+      // Group code
+      if (activeEv) {
+        append(cartBox, h('div', { class: 'cart-code applied' }, iconCircle(ICONS.tag, 'bare'),
+          h('span', null, h('strong', { text: activeEv.code }), h('small', { text: '5% group discount applied' }))));
+      } else {
+        var codeInput = h('input', { placeholder: 'Group code', 'aria-label': 'Group code', maxlength: 24 });
+        var form = h('form', { class: 'cart-code' }, iconCircle(ICONS.tag, 'bare'), codeInput, h('button', { class: 'pill-btn', type: 'submit', text: 'Apply' }));
+        form.addEventListener('submit', function (e) { e.preventDefault(); joinGroup(codeInput.value); });
+        append(cartBox, form);
+      }
+
+      if (items.length) {
+        append(cartBox, h('div', { class: 'cart-lines' },
+          h('div', null, h('span', { text: 'Subtotal' }), h('span', { text: money(totals.subtotalCents) })),
+          activeEv ? h('div', { class: 'saving' }, h('span', { text: 'Group discount' }), h('span', { text: '−' + money(totals.discountCents) })) : null,
+          h('div', null, h('span', { text: 'Delivery' }), h('span', { text: totals.deliveryCents ? money(totals.deliveryCents) : 'Free' })),
+          h('div', { class: 'cart-total' }, h('span', { text: 'Total' }), h('span', { text: money(totals.totalCents) }))));
+      }
+
+      append(cartBox,
+        h('button', { class: 'btn btn-forest cart-checkout', type: 'button', disabled: !items.length, text: items.length ? 'Place order · ' + money(totals.totalCents) : 'Place order', onclick: function () {
+          // Re-check stock at submit time: fail closed if anything changed.
+          for (var i = 0; i < items.length; i++) {
+            var p = M.byId('products', items[i].productId);
+            var s = M.stockStatus(p);
+            if (!s.known || s.qty < items[i].qty) { toast('Stock for ' + p.title + ' could not be confirmed. Please adjust your cart.'); drawGrid(); drawCart(); return; }
+          }
+          items.forEach(function (i) { M.byId('products', i.productId).stock.qty -= i.qty; });
+          var id = M.nextId('O');
+          var ref = '#MF' + (5000 + S().orders.length + 1);
+          S().orders.push(Object.assign({ id: id, ref: ref, customerId: c.id, groupEventId: activeEv ? activeEv.id : null, status: 'pending_payment', items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'portal' }, totals));
+          cart = {}; saveCart();
+          commit('order.created', ref, 'Order ' + ref + ' placed. You\'ll pay securely on MEOD Fresh.');
+          location.hash = 'orders';
+        } }),
+        h('p', { class: 'cart-note' }, iconCircle(ICONS.clock, 'bare'), 'Delivery on Tue, Thu & Sat · free from ' + money(M.RULES.freeDeliveryThresholdCents)));
+    }
+
+    drawChips();
+    drawGrid();
+    drawCart();
+    append(root, h('div', { class: 'shop-layout' },
+      h('section', { class: 'panel shop-panel' },
+        h('div', { class: 'shop-toolbar' }, searchBox, h('label', { class: 'toggle' }, stockToggle, h('span', { text: 'In stock only' }))),
+        chips,
+        gridBox),
+      cartBox));
   }
 
   function pill(label, onclick, icon) {
@@ -1042,92 +1178,257 @@
     if (added) location.hash = 'shop';
   }
 
-  function customerOrdersView(root) {
-    var mine = S().orders.filter(function (o) { return o.customerId === session.customerId; }).slice().reverse();
-    append(root, panel('My orders', null,
-      table([
-        { label: 'Order', render: function (o) { return h('span', null, h('strong', { text: o.ref }), h('br'), h('small', { text: date(o.createdAt) })); } },
-        { label: 'Items', render: itemsSummary },
-        { label: 'Group', render: function (o) { var e = eventFor(o); return e ? h('span', { class: 'code-box', text: e.code }) : '—'; } },
-        { label: 'Total', num: true, render: function (o) { return h('strong', { text: money(o.totalCents) }); } },
-        { label: 'Status', render: function (o) { return statusBadge(o.status); } },
-        { label: '', render: function (o) {
-          return h('div', { class: 'pill-row' },
-            pill('Receipt', function () { showReceipt(o); }, ICON_RECEIPT),
-            o.status !== 'cancelled' ? pill('Reorder', function () { reorder(o); }, ICON_REORDER) : null,
-            pill('Get help', function () { assistantView.prefill = 'Question about order ' + o.ref + ': '; location.hash = 'assistant'; }, ICON_HELP));
-        } }
-      ], mine, 'No orders yet — visit the shop.')));
+  /* ----- My orders ----- */
+  function orderTracker(o) {
+    if (o.status === 'cancelled' || o.status === 'refunded') {
+      return h('div', { class: 'tracker ended' }, iconCircle(ICONS.x, 'bare'),
+        h('span', { text: o.status === 'refunded' ? 'Refunded ' + money(o.refundedCents || o.netCents) + ' to your original payment method' : 'This order was cancelled' }));
+    }
+    var steps = [['Placed', true], ['Paid', o.status !== 'pending_payment'], ['Delivered', o.status === 'fulfilled']];
+    var currentIdx = steps.filter(function (s) { return s[1]; }).length - 1;
+    return h('ol', { class: 'tracker', 'aria-label': 'Order progress' }, steps.map(function (s, i) {
+      return h('li', { class: (s[1] ? 'done' : '') + (i === currentIdx ? ' current' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: s[0] }));
+    }));
   }
 
+  function customerOrdersView(root) {
+    var mine = S().orders.filter(function (o) { return o.customerId === session.customerId; }).slice()
+      .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    var state = customerOrdersView.state || (customerOrdersView.state = { filter: 'all' });
+    var spent = mine.filter(function (o) { return o.status !== 'cancelled'; }).reduce(function (s, o) { return s + o.totalCents - (o.refundedCents || 0); }, 0);
+    var saved = mine.filter(function (o) { return o.status !== 'cancelled'; }).reduce(function (s, o) { return s + (o.discountCents || 0); }, 0);
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Orders', String(mine.length)),
+      kpi('Total spent', money(spent), 'After refunds'),
+      kpi('Saved with group buys', money(saved), saved ? 'Thanks to your group code' : 'Join a group buy to save 5%'),
+      kpi('Last order', mine[0] ? ago(mine[0].createdAt) : '—', mine[0] ? mine[0].ref : null)));
+
+    var FILTERS = [
+      ['all', 'All', function () { return true; }],
+      ['active', 'In progress', function (o) { return o.status === 'pending_payment' || o.status === 'paid'; }],
+      ['done', 'Delivered', function (o) { return o.status === 'fulfilled'; }],
+      ['closed', 'Refunded / cancelled', function (o) { return o.status === 'refunded' || o.status === 'cancelled'; }]
+    ];
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter orders' });
+    var list = h('div', { class: 'order-list' });
+
+    function draw() {
+      chips.textContent = '';
+      FILTERS.forEach(function (f) {
+        append(chips, h('button', { type: 'button', class: 'chip' + (state.filter === f[0] ? ' active' : ''), 'aria-pressed': String(state.filter === f[0]),
+          onclick: function () { state.filter = f[0]; draw(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(mine.filter(f[2]).length) })));
+      });
+      var test = FILTERS.filter(function (f) { return f[0] === state.filter; })[0][2];
+      var rows = mine.filter(test);
+      list.textContent = '';
+      if (!rows.length) {
+        append(list, h('div', { class: 'cart-empty' }, iconCircle(ICONS.box, 'soft'), h('strong', { text: 'No orders here yet' }),
+          h('a', { class: 'btn btn-sm btn-forest', href: '#shop', text: 'Shop the harvest' })));
+        return;
+      }
+      rows.forEach(function (o) {
+        var ev = eventFor(o);
+        append(list, h('article', { class: 'order-card' },
+          h('div', { class: 'order-top' },
+            h('div', null, h('strong', { class: 'order-ref', text: o.ref }), h('small', { text: date(o.createdAt) + (ev ? ' · ' : '') }), ev ? h('span', { class: 'code-box', text: ev.code }) : null),
+            h('div', { class: 'order-total' }, h('strong', { text: money(o.totalCents) }), statusBadge(o.status))),
+          h('div', { class: 'order-items' }, o.items.map(function (i) {
+            var p = M.byId('products', i.productId);
+            return h('span', { class: 'order-item' }, p ? h('span', { class: 'cart-thumb' }, thumb(p)) : null, h('span', { text: i.qty + '× ' + i.title }));
+          })),
+          h('div', { class: 'order-bottom' },
+            orderTracker(o),
+            h('div', { class: 'pill-row' },
+              pill('Receipt', function () { showReceipt(o); }, ICON_RECEIPT),
+              o.status !== 'cancelled' ? pill('Reorder', function () { reorder(o); }, ICON_REORDER) : null,
+              pill('Get help', function () { assistantView.prefill = 'Question about order ' + o.ref + ': '; location.hash = 'assistant'; }, ICON_HELP)))));
+      });
+    }
+    draw();
+    append(root, h('section', { class: 'panel' }, h('div', { class: 'user-toolbar' }, chips), list));
+  }
+
+  /* ----- Group buy ----- */
   function customerGroupView(root) {
     var c = me();
-    var pending = '';
-    try { pending = sessionStorage.getItem('meod-join-code') || ''; } catch (e) { /* ignore */ }
-    var input = h('input', { name: 'code', placeholder: 'e.g. PUNGGOL-GREENS', value: pending, maxlength: 24 });
-    var f = h('form', { class: 'toolbar' }, input, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Join group buy' }));
-    f.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var code = input.value.trim().toUpperCase();
-      var ev = S().events.filter(function (x) { return x.code === code; })[0];
-      if (!ev) { toast('We couldn\'t find that code.'); return; }
-      if (ev.status !== 'open') { toast('That group buy has closed.'); return; }
-      c.groupCode = code;
-      try { sessionStorage.removeItem('meod-join-code'); } catch (err) { /* ignore */ }
-      commit('groupbuy.joined', code, 'You joined ' + ev.title + '.');
-    });
-    append(root, panel('Join a group buy', 'Got a code from your group leader? Enter it to get the group discount at checkout.', f));
-    var ev = c.groupCode ? S().events.filter(function (x) { return x.code === c.groupCode; })[0] : null;
+    var ev = myEvent();
     if (ev) {
       var leader = M.byId('leaders', ev.leaderId);
-      append(root, panel(ev.title, null,
-        h('p', null, 'Leader: ', h('strong', { text: leader.name }), ' · ' + leader.area),
-        h('p', null, 'Pickup & terms: ' + ev.terms),
-        h('p', null, 'Closes ', h('strong', { text: date(ev.endsAt) }), ' · ', statusBadge(ev.status)),
-        h('p', { class: 'form-note', text: 'Your leader sees your masked name and what you ordered. They don\'t see your phone number or address unless you agree.' }),
-        mini('Leave group buy', function () { c.groupCode = null; commit('groupbuy.left', ev.code, 'You left the group buy.'); }, { danger: true })));
+      var daysLeft = Math.ceil((new Date(ev.endsAt) - Date.now()) / 864e5);
+      var myOrders = S().orders.filter(function (o) { return o.customerId === c.id && o.groupEventId === ev.id && o.status !== 'cancelled'; });
+      var saved = myOrders.reduce(function (s, o) { return s + (o.discountCents || 0); }, 0);
+      var members = {};
+      S().orders.forEach(function (o) { if (o.groupEventId === ev.id) members[o.customerId] = true; });
+      append(root, h('section', { class: 'gb-hero joined' },
+        h('div', { class: 'gb-hero-text' },
+          h('span', { class: 'picks-eyebrow' }, svgIcon(ICONS.users), 'You\'re in'),
+          h('h2', { text: ev.title }),
+          h('p', { text: 'Your 5% group discount is applied automatically at checkout.' }),
+          h('div', { class: 'gb-actions' },
+            h('a', { class: 'btn btn-gold', href: '#shop', text: 'Shop with my discount' }),
+            h('button', { class: 'btn btn-ghost', type: 'button', text: 'Leave group buy', onclick: function () {
+              if (!confirm('Leave ' + ev.title + '? You\'ll lose the group discount on new orders.')) return;
+              c.groupCode = null; commit('groupbuy.left', ev.code, 'You left the group buy.');
+            } }))),
+        h('div', { class: 'gb-code' }, h('span', { text: 'Your code' }), h('strong', { text: ev.code }), statusBadge(ev.status))));
+
+      append(root, h('div', { class: 'kpis' },
+        kpi('Closes in', ev.status === 'open' ? (daysLeft > 0 ? daysLeft + (daysLeft === 1 ? ' day' : ' days') : 'Today') : 'Closed', date(ev.endsAt)),
+        kpi('You\'ve saved', money(saved), myOrders.length + ' group order' + (myOrders.length === 1 ? '' : 's')),
+        kpi('Members ordering', String(Object.keys(members).length), 'In this group buy')));
+
+      append(root, h('div', { class: 'two-col' },
+        h('section', { class: 'panel gb-info' },
+          h('div', { class: 'user-cell' }, h('span', { class: 'avatar av-leader', 'aria-hidden': 'true', text: initials(leader.name) }),
+            h('span', null, h('strong', { text: leader.name }), h('small', { text: 'Your group leader · ' + leader.area }))),
+          h('div', { class: 'gb-detail' }, iconCircle(ICONS.pin, 'soft'), h('span', null, h('strong', { text: 'Pickup & terms' }), h('small', { text: ev.terms })))),
+        h('section', { class: 'panel gb-info' },
+          h('div', { class: 'gb-detail' }, iconCircle(ICONS.shield, 'soft'),
+            h('span', null, h('strong', { text: 'Your privacy' }),
+              h('small', { text: 'Your leader sees a masked version of your name and what you ordered. They never see your phone number or address unless you agree.' }))))));
+      return;
     }
+
+    var pending = '';
+    try { pending = sessionStorage.getItem('meod-join-code') || ''; } catch (e) { /* ignore */ }
+    var input = h('input', { name: 'code', placeholder: 'e.g. PUNGGOL-GREENS', value: pending, maxlength: 24, 'aria-label': 'Group code', autocomplete: 'off' });
+    var f = h('form', { class: 'gb-form' }, input, h('button', { class: 'btn btn-forest', type: 'submit', text: 'Join group buy' }));
+    f.addEventListener('submit', function (e) { e.preventDefault(); joinGroup(input.value); });
+
+    append(root, h('section', { class: 'gb-hero' },
+      h('div', { class: 'gb-hero-text' },
+        h('span', { class: 'picks-eyebrow' }, svgIcon(ICONS.users), 'Community group buys'),
+        h('h2', { text: 'Buy together, save 5%' }),
+        h('p', { text: 'Got a code from your group leader? Enter it below and the discount is applied to every order while the group buy is open.' }),
+        f),
+      h('ol', { class: 'gb-steps' },
+        [['Get a code', 'Your estate or office leader shares a group code.'], ['Order as usual', 'Shop here or on WhatsApp — 5% off at checkout.'], ['Collect together', 'Pick up on the agreed day with your group.']]
+          .map(function (s, i) { return h('li', null, h('b', { text: String(i + 1) }), h('span', null, h('strong', { text: s[0] }), h('small', { text: s[1] }))); }))));
+
+    var open = S().events.filter(function (e) { return e.status === 'open'; });
+    append(root, h('section', { class: 'panel' },
+      h('h2', { text: 'Open group buys' }),
+      h('p', { class: 'hint', text: 'Codes are shared by each group\'s leader. Ask yours, or start one with MEOD.' }),
+      open.length ? h('div', { class: 'gb-list' }, open.map(function (e) {
+        var l = M.byId('leaders', e.leaderId);
+        var d = Math.ceil((new Date(e.endsAt) - Date.now()) / 864e5);
+        return h('article', { class: 'gb-card' },
+          h('div', { class: 'user-cell' }, h('span', { class: 'avatar av-leader', 'aria-hidden': 'true', text: initials(l.name) }),
+            h('span', null, h('strong', { text: e.title }), h('small', { text: 'Led by ' + l.name + ' · ' + l.area }))),
+          h('div', { class: 'gb-meta' },
+            h('span', null, iconCircle(ICONS.clock, 'bare'), d > 0 ? 'Closes in ' + d + ' day' + (d === 1 ? '' : 's') : 'Closes today'),
+            h('span', null, iconCircle(ICONS.pin, 'bare'), e.terms)));
+      })) : h('p', { class: 'empty', text: 'No group buys are open right now.' })));
   }
 
+  /* ----- Preferences ----- */
   function preferencesView(root) {
     var c = me();
-    function toggle(field, label, note) {
-      return h('label', { class: 'switch' },
-        h('span', null, label, h('small', { text: note })),
-        h('input', { type: 'checkbox', checked: c[field], onchange: function (e) {
-          c[field] = e.target.checked;
-          c.consentTimestamp = new Date().toISOString();
-          commit('consent.' + field + '.' + (e.target.checked ? 'granted' : 'withdrawn'), c.id, 'Preference saved.');
-        } }));
+    function switchRow(field, icon, label, note) {
+      var input = h('input', { type: 'checkbox', role: 'switch', checked: c[field], 'aria-label': label });
+      input.addEventListener('change', function () {
+        c[field] = input.checked;
+        c.consentTimestamp = new Date().toISOString();
+        commit('consent.' + field + '.' + (input.checked ? 'granted' : 'withdrawn'), c.id, label + (input.checked ? ' turned on.' : ' turned off.'));
+      });
+      return h('label', { class: 'pref-row' }, iconCircle(icon, 'soft'),
+        h('span', { class: 'pref-text' }, h('strong', { text: label }), h('small', { text: note })),
+        h('span', { class: 'switch-ui' }, input, h('span', { class: 'switch-track', 'aria-hidden': 'true' })));
     }
-    append(root, panel('Messages & privacy', 'You can change these any time. Each change is saved with the time you made it.',
-      toggle('consentMarketing', 'WhatsApp promotions', 'Harvest updates and offers. Reply STOP to any message to opt out.'),
-      toggle('consentPersonalisation', 'Personalised picks', 'Use your past orders to suggest products. We never guess sensitive things about you.'),
-      h('label', { class: 'switch' },
-        h('span', null, 'Preferred language', h('small', { text: 'Used by the assistant and for messages' })),
-        h('select', { style: 'width:auto', onchange: function (e) { c.language = e.target.value; commit('profile.language', c.id, 'Language saved.'); } },
-          [['en', 'English'], ['zh', '中文'], ['ms', 'Bahasa Melayu'], ['ta', 'தமிழ்']].map(function (l) { return h('option', { value: l[0], text: l[1], selected: c.language === l[0] }); }))),
-      c.consentTimestamp ? h('p', { class: 'form-note', text: 'Last updated ' + new Date(c.consentTimestamp).toLocaleString('en-SG') }) : null));
+    var LANGS = [['en', 'English'], ['zh', '中文'], ['ms', 'Bahasa Melayu'], ['ta', 'தமிழ்']];
+
+    append(root, h('section', { class: 'profile-card' },
+      h('span', { class: 'avatar av-customer profile-avatar', 'aria-hidden': 'true', text: initials(c.name) }),
+      h('div', null,
+        h('strong', { text: c.name }),
+        h('small', { text: c.id + ' · Member' }),
+        h('div', { class: 'profile-meta' },
+          h('span', null, iconCircle(ICONS.chat, 'bare'), c.phone),
+          c.email ? h('span', null, iconCircle(ICONS.globe, 'bare'), c.email) : null))));
+
+    append(root, h('div', { class: 'two-col prefs-layout' },
+      h('section', { class: 'panel' },
+        h('h2', { text: 'Messages & privacy' }),
+        h('p', { class: 'hint', text: 'Change these any time. Each change is saved with the time you made it.' }),
+        switchRow('consentMarketing', ICONS.chat, 'WhatsApp promotions', 'Harvest updates and offers. Reply STOP to any message to opt out.'),
+        switchRow('consentPersonalisation', ICONS.leaf, 'Personalised picks', 'Use your past orders to suggest products. We never guess sensitive things about you.'),
+        h('div', { class: 'pref-row' }, iconCircle(ICONS.globe, 'soft'),
+          h('span', { class: 'pref-text' }, h('strong', { text: 'Preferred language' }), h('small', { text: 'Used by Ask MEOD and for messages' })),
+          h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Preferred language' }, LANGS.map(function (l) {
+            return h('button', { type: 'button', role: 'radio', class: c.language === l[0] ? 'on' : '', 'aria-checked': String(c.language === l[0]), text: l[1],
+              onclick: function () { if (c.language === l[0]) return; c.language = l[0]; commit('profile.language', c.id, 'Language set to ' + l[1] + '.'); } });
+          })))),
+      h('section', { class: 'panel privacy-card' },
+        h('h2', { text: 'Your privacy at a glance' }),
+        h('ul', { class: 'privacy-list' },
+          h('li', null, h('span', { class: 'status-dot ' + (c.consentMarketing ? 'on' : 'off'), text: c.consentMarketing ? 'Promotions on' : 'Promotions off' })),
+          h('li', null, h('span', { class: 'status-dot ' + (c.consentPersonalisation ? 'on' : 'off'), text: c.consentPersonalisation ? 'Personalised picks on' : 'Personalised picks off' })),
+          h('li', null, h('span', { class: 'status-dot on', text: 'Group leaders only see your masked name' }))),
+        h('p', { class: 'form-note', text: c.consentTimestamp ? 'Last changed ' + new Date(c.consentTimestamp).toLocaleString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'You haven\'t changed these yet.' }))));
   }
 
+  /* ----- Ask MEOD ----- */
   function assistantView(root) {
-    var log = h('div', { class: 'assist-log', 'aria-live': 'polite' });
-    var input = h('input', { placeholder: 'Ask about stock, delivery or your order', maxlength: 300, 'aria-label': 'Message' });
+    var c = me();
+    var history = assistantView.history || (assistantView.history = [
+      { who: 'bot', text: 'Hi ' + c.name.split(' ')[0] + '! I\'m Ask MEOD 🌱 You\'re signed in, so I can check your orders as well as stock, prices and delivery.', at: new Date().toISOString() }
+    ]);
+    var online = M.withinHumanHours();
+    var log = h('div', { class: 'chat-log', 'aria-live': 'polite' });
+    var input = h('input', { placeholder: 'Type a message…', maxlength: 300, 'aria-label': 'Message', autocomplete: 'off' });
     if (assistantView.prefill) { input.value = assistantView.prefill; assistantView.prefill = ''; setTimeout(function () { input.focus(); }, 0); }
-    function push(text, who, extra) { log.appendChild(h('div', { class: 'msg ' + who + (extra ? ' ' + extra : ''), text: text })); log.scrollTop = log.scrollHeight; }
-    var f = h('form', null, input, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Send' }));
-    f.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var t = input.value.trim();
-      if (!t) return;
-      input.value = '';
-      push(t, 'user');
-      var r = M.assist.reply(t, { channel: 'portal', customerId: session.customerId });
-      setTimeout(function () { push(r.text, 'bot', r.handover ? 'handover' : ''); }, 300);
-    });
-    push('Hi ' + me().name.split(' ')[0] + '! You\'re signed in, so I can check your orders too. Try "where is my order?"', 'bot');
-    append(root, panel('Ask MEOD', 'This is the same assistant used on WhatsApp. Because you are signed in, it can look up your own orders.',
-      h('div', { class: 'chat' }, log, f)));
+
+    function time(iso) { return new Date(iso).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }); }
+    function bubble(m) {
+      return h('div', { class: 'bubble-row ' + m.who },
+        m.who === 'bot' ? h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'M' }) : null,
+        h('div', { class: 'bubble' + (m.handover ? ' handover' : '') }, h('p', { text: m.text }), h('time', { text: time(m.at) })));
+    }
+    function drawLog() { log.textContent = ''; history.forEach(function (m) { log.appendChild(bubble(m)); }); log.scrollTop = log.scrollHeight; }
+    function send(text) {
+      text = String(text || '').trim();
+      if (!text) return;
+      history.push({ who: 'user', text: text, at: new Date().toISOString() });
+      drawLog();
+      var typing = h('div', { class: 'bubble-row bot' }, h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'M' }), h('div', { class: 'bubble typing', 'aria-label': 'Ask MEOD is typing' }, h('i'), h('i'), h('i')));
+      log.appendChild(typing);
+      log.scrollTop = log.scrollHeight;
+      var r = M.assist.reply(text, { channel: 'portal', customerId: session.customerId });
+      setTimeout(function () {
+        history.push({ who: 'bot', text: r.text, handover: r.handover, at: new Date().toISOString() });
+        drawLog();
+        if (r.handover) M.save();
+      }, 650);
+    }
+    var form = h('form', { class: 'chat-form' }, input, h('button', { class: 'chat-send', type: 'submit', 'aria-label': 'Send' }, iconCircle('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>', 'bare')));
+    form.addEventListener('submit', function (e) { e.preventDefault(); var t = input.value; input.value = ''; send(t); });
+
+    var mine = S().orders.filter(function (o) { return o.customerId === c.id; });
+    var lastRef = mine.length ? mine[mine.length - 1].ref : null;
+    var quick = ['Where is my order?', 'Do you have kai lan?', 'Delivery days?', '菜心有货吗？', 'Any promotions?'];
+    var chips = h('div', { class: 'quick-chips' }, quick.map(function (q) { return h('button', { type: 'button', text: q, onclick: function () { send(q); } }); }));
+
+    drawLog();
+    append(root, h('div', { class: 'chat-layout' },
+      h('section', { class: 'chat-card' },
+        h('header', { class: 'chat-header' },
+          h('span', { class: 'avatar av-bot big', 'aria-hidden': 'true', text: 'M' }),
+          h('div', null, h('strong', { text: 'Ask MEOD' }),
+            h('small', null, h('span', { class: 'status-dot on', text: 'Bot online 24/7' }), ' · ', online ? 'Team online now' : 'Team back Mon–Sat 9am'))),
+        log, chips, form),
+      h('aside', { class: 'chat-side' },
+        h('section', { class: 'panel' },
+          h('h2', { text: 'I can help with' }),
+          h('ul', { class: 'help-list' },
+            [[ICONS.leaf, 'Stock & prices', 'Live availability, never guessed'], [ICONS.truck, 'Delivery', 'Days, fees and free-delivery threshold'],
+             [ICONS.box, 'Your orders', lastRef ? 'Latest: ' + lastRef : 'Status of anything you\'ve ordered'], [ICONS.users, 'Group buys', 'Codes and discounts'],
+             [ICONS.globe, '3 languages', 'English, 中文 and Bahasa Melayu']]
+              .map(function (x) { return h('li', null, iconCircle(x[0], 'soft'), h('span', null, h('strong', { text: x[1] }), h('small', { text: x[2] }))); }))),
+        h('section', { class: 'panel human-card' },
+          h('h2', { text: 'Need a person?' }),
+          h('p', { class: 'hint', text: 'Complaints, refunds and payment questions go straight to our team. ' + (online ? 'We\'re online now.' : 'We\'ll reply when we\'re back (Mon–Sat, 9am–6pm).') }),
+          h('a', { class: 'btn btn-sm btn-forest', href: 'https://wa.me/6581330358', target: '_blank', rel: 'noopener', text: 'WhatsApp the team' })))));
   }
 
   /* ---------------- routing ---------------- */
@@ -1151,8 +1452,8 @@
     ],
     customer: [
       { id: 'overview', label: 'Home', title: 'Welcome back', sub: 'Your orders, picks and group buy.', render: customerOverview },
-      { id: 'shop', label: 'Shop', title: 'Shop the harvest', sub: 'Stock is checked live; prices are examples.', render: shopView },
-      { id: 'orders', label: 'My orders', title: 'My orders', sub: null, render: customerOrdersView },
+      { id: 'shop', label: 'Shop', title: 'Shop the harvest', sub: 'Fresh from Kranji, delivered Tue, Thu & Sat.', render: shopView },
+      { id: 'orders', label: 'My orders', title: 'My orders', sub: 'Track, reorder and get receipts.', render: customerOrdersView },
       { id: 'group', label: 'Group buy', title: 'Group buy', sub: 'Buy together and save.', render: customerGroupView },
       { id: 'preferences', label: 'Preferences', title: 'Preferences', sub: 'Messages, privacy and language.', render: preferencesView },
       { id: 'assistant', label: 'Ask MEOD', title: 'Ask MEOD', sub: 'Help in English, 中文 and Bahasa Melayu.', render: assistantView }

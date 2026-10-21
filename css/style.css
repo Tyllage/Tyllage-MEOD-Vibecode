@@ -575,7 +575,8 @@ a.buy-option.primary:hover { background: var(--gold-dark); }
 @media (max-width: 1024px) {
   .fm-bento { grid-template-columns: repeat(2, 1fr); grid-template-rows: none; grid-auto-rows: auto; }
   .fm-tile { height: 260px; }
-  .fm-feature { grid-column: 1 / -1; grid-row: auto; height: auto; aspect-ratio: 16 / 10; min-height: 440px; }
+  /* Height scales with width; no aspect-ratio + min-height combo, which forced the tile wider than the screen. */
+  .fm-feature { grid-column: 1 / -1; grid-row: auto; aspect-ratio: auto; min-height: 0; height: clamp(420px, 62vw, 560px); }
   .fm-overlay p { max-height: none; opacity: 1; }
 }
 @media (max-width: 640px) {
@@ -596,3 +597,9 @@ a.buy-option.primary:hover { background: var(--gold-dark); }
 }
 @media (max-width: 360px) { .fm-bento { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .fm-tile > img:first-child, .fm-overlay p { transition: none; } }
+
+/* Bigger tap area for the in-stock toggle (the label is the target) */
+.toggle { min-height: 40px; padding: 4px 6px; border-radius: 10px; }
+.toggle input { width: 20px; height: 20px; }
+
+.fm-bento > * { min-width: 0; }

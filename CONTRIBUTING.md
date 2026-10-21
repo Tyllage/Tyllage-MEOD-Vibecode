@@ -30,6 +30,7 @@ To start with fresh data, use **Portal → (admin) Settings → Reset demo data*
 - Need to add demo records to existing browsers? Add a step to `migrate()` in `js/data.js` instead of bumping the storage version, which would wipe everyone's demo data.
 - Money is **integer cents**. Format it only with `MEOD.money()`.
 - Business rules (rates, thresholds, hours) live in `RULES` in `js/data.js`. Don't hard-code them elsewhere.
+- In CSS grids, use `minmax(0, 1fr)` (not `1fr`) for columns that hold scrolling rows or long text, and don't combine `aspect-ratio` with `min-height`. Both can push a page wider than the screen.
 - Use the CSS tokens in `:root` (`--forest`, `--gold`, `--berry`, `--stony`). Don't add new colours.
 - The public pages share one header and footer. If you change the nav, change it in **every** HTML page.
 

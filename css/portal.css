@@ -576,7 +576,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---- Responsive ---- */
 @media (max-width: 1100px) {
-  .shop-layout, .chat-layout, .prefs-layout { grid-template-columns: 1fr; }
+  .shop-layout, .chat-layout, .prefs-layout { grid-template-columns: minmax(0, 1fr); }
   .cart-card { position: static; }
   .chat-side { grid-template-columns: 1fr 1fr; }
 }
@@ -729,3 +729,14 @@ label.pill-btn { cursor: pointer; }
 .panel-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid #f0ebe3; display: flex; justify-content: flex-end; }
 .two-col > .panel > .table-wrap, .two-col > .panel > .empty { margin-bottom: 14px; }
 a.pill-btn { text-decoration: none; }
+
+/* Responsive hardening: grid/flex children may shrink below their content width (scrolling chip rows, long codes). */
+.shop-layout > *, .chat-layout > *, .prefs-layout > *, .two-col > *, .kpis > *, .order-card, .order-top > * { min-width: 0; }
+.two-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
+.shop-layout.two-col, .prefs-layout { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+@media (max-width: 1100px) { .prefs-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .mini { min-height: 34px; padding: 6px 12px; }
+  .pill-btn { min-height: 34px; }
+}

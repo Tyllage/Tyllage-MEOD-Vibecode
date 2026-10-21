@@ -166,7 +166,7 @@ Product photos for the catalogue are mapped in `IMAGES` in `js/data.js`. Product
 | ≤ 480 px | Footer goes single-column; smaller logo |
 | ≥ 1600 px | Wider content container |
 
-Checked at 320, 375, 768, 1024, 1440 and 1900 px.
+Every public page and every portal screen (all four roles) is checked at widths from 320 px to 1920 px, plus a landscape phone, with no sideways scrolling or clipped content. See [audit.md](audit.md) §4.
 
 ## Path to production
 

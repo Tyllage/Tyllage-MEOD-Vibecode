@@ -81,7 +81,12 @@ It also lists what must change before any real data is used.
 - ✅ Native `<dialog>` for the receipt and edit-profile pop-ups (focus is kept inside; Esc closes them)
 - ✅ Consent toggles are real checkboxes with `role="switch"`; the language picker is a radio group
 - ✅ `prefers-reduced-motion` turns off reveal, typing, pulse and hover animations
-- ✅ No horizontal scroll at 320–1900 px on public pages, or at 375 px on any portal screen for any role
+- ✅ Automated responsive sweep (21 Oct 2026), all clean:
+  - **Public pages** at 320, 360, 375, 414, 480, 600, 667, 768, 820, 900, 1024, 1100, 1280, 1440 and 1920 px, plus landscape phone (667 × 375)
+  - **Every portal screen for every role** at 320–1440 px
+  - **Open states:** chat, mobile menu, Show more, tracking, and the receipt and edit-profile pop-ups at 320 px
+  - **Checks:** no horizontal scroll, nothing spilling out of the screen, no clipped text, all images load
+- ✅ Phone tap targets: portal action buttons and pills are at least 34 px tall; the in-stock toggle label is at least 40 px tall
 - ✅ Portal tables turn into labelled cards under 640 px
 - ⚠️ Colour contrast not formally measured; gold on white is only used for buttons with dark text
 - ⚠️ The route map is decorative; the timeline next to it carries the same information as text
@@ -158,3 +163,7 @@ There's no automated test suite yet; that's a follow-up.
   - Orders: receipts, reorder and get-help actions.
   - Preferences: profile editing (photo, contact details, address).
   - Delivery: mock delivery tracking with an additive data migration (`migrate()`).
+- **21 Oct 2026, responsive hardening.**
+  - Fixed the customer Shop overflowing on phones: single-column grids now use `minmax(0, 1fr)` so swipeable chip rows can't widen the page.
+  - Fixed the Farm & More feature tile overflowing at 641–700 px: it had `aspect-ratio` plus `min-height`; its height now scales with the screen.
+  - Larger tap targets on phones.

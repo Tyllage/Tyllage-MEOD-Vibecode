@@ -25,6 +25,7 @@ To start with fresh data, use **Portal → (admin) Settings → Reset demo data*
 - **Plain HTML, CSS and JavaScript.** No frameworks or bundlers unless the team agrees.
 - JS files are self-contained IIFEs that hang off `window.MEOD`. Public pages load `data.js → assist.js → main.js`. The portal app (`dashboard.html`) loads `data.js → assist.js → auth.js → portal.js`.
 - **Never put data into `innerHTML`.** In the portal, use the `h()` helper, which sets `textContent`. Only fixed icon or illustration markup written in the code (`ICONS`, `CATEGORY_ART`) may use `innerHTML`.
+- Never set `position` on an open `<dialog>` (for example `position: relative` to place a close button). A modal dialog must stay `position: fixed`. Otherwise it renders at the top of the page, and opening it scrolls the page up.
 - Don't use `<section>` for floating or nested UI (chat panels, dialogs, settings groups) on the public site. Every `section` gets large page padding there. Use `<div>` instead.
 - Delivery tracking goes through `trackingFor(order)` in `js/data.js`. Keep screens reading from it, not from order fields directly, so the real provider can be swapped in later.
 - Need to add demo records to existing browsers? Add a step to `migrate()` in `js/data.js` instead of bumping the storage version, which would wipe everyone's demo data.

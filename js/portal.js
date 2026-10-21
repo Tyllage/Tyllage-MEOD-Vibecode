@@ -1849,6 +1849,22 @@
   }
   $('[data-sign-out]').addEventListener('click', signOut);
   window.addEventListener('hashchange', function () { render(); window.scrollTo(0, 0); });
+
+  // Scroll-to-top for every portal role (same look as the public site's button).
+  (function () {
+    var btn = h('button', { class: 'to-top solo portal-top', type: 'button', 'aria-label': 'Scroll to top', title: 'Back to top' });
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>';
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    btn.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+      var main = $('#main'); if (main) { main.setAttribute('tabindex', '-1'); main.focus({ preventScroll: true }); }
+    });
+    document.body.appendChild(btn);
+    function update() { btn.classList.toggle('show', window.scrollY > 400); }
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('hashchange', function () { setTimeout(update, 0); });
+    update();
+  })();
   // Pick up changes made in another tab (e.g. a booking on the public site).
   window.addEventListener('storage', function (e) {
     if (e.key === 'meod-demo-state-v2' && e.newValue) {

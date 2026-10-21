@@ -52,7 +52,7 @@ Every push to `main` redeploys automatically.
 On every page:
 
 - **Ask MEOD** chat bubble: stock, prices, delivery and group buys in EN / 中文 / BM. Complaints hand over to a person.
-- **Scroll-to-top** button, above the chat bubble.
+- **Scroll-to-top** button, above the chat bubble. The portal has one too, for every role.
 - **Portal** button in the top nav.
 
 ### Where the portal entry points are (and why)
@@ -78,6 +78,7 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 
 ### Highlights
 
+- **Product details.** Tap any shop card for a pop-up with a large photo, live stock, description, storage and cooking tips, "often bought together", and a quantity picker.
 - **Shop and cart.** Live stock checks, a group-code box in the cart, a **free-delivery progress bar** and the delivery address. Stock is re-checked when you place the order.
 - **My orders.** Status filters, and on each order:
   - a 5-step tracker

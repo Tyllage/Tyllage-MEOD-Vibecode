@@ -107,7 +107,11 @@
     var weekAgo = Date.now() - 7 * 864e5;
     var recent = S().orders.filter(function (o) { return new Date(o.createdAt) > weekAgo && o.status !== 'cancelled'; });
     var revenue = recent.reduce(function (s, o) { return s + o.totalCents - (o.refundedCents || 0); }, 0);
-    var alerts = S().products.filter(function (p) { return M.stockStatus(p).key !== 'ok'; });
+    // Worst first: sold out, then can't confirm, then low.
+    var SEVERITY = { out: 0, stale: 1, low: 2 };
+    var alerts = S().products.filter(function (p) { return M.stockStatus(p).key !== 'ok'; })
+      .sort(function (a, b) { return SEVERITY[M.stockStatus(a).key] - SEVERITY[M.stockStatus(b).key]; });
+    var LIMIT = 5;
     var openTickets = S().tickets.filter(function (t) { return t.status === 'open'; });
     var newBookings = S().bookings.filter(function (b) { return b.status === 'new'; });
     var payable = M.ledger().reduce(function (s, e) { return s + e.payableCents; }, 0);
@@ -126,15 +130,15 @@
           { label: 'Type', render: function (t) { return statusBadge(t.intent); } },
           { label: 'Summary', render: function (t) { return t.summary; } },
           { label: 'Age', render: function (t) { return ago(t.createdAt); } }
-        ], openTickets.slice(0, 5), 'No open tickets 🎉'),
-        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inbox', text: 'Open inbox →' }))),
+        ], openTickets.slice(0, LIMIT), 'No open tickets 🎉'),
+        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inbox', text: openTickets.length > LIMIT ? 'View all ' + openTickets.length + ' in inbox →' : 'Open inbox →' }))),
       panel('Stock alerts', 'Stale syncs are shown as unknown, never as available.',
         table([
           { label: 'Product', render: function (p) { return p.title; } },
           { label: 'Status', render: stockBadge },
           { label: 'Last sync', render: function (p) { return ago(p.stock.updatedAt); } }
-        ], alerts, 'All stock is fresh.'),
-        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inventory', text: 'View stock →' })))));
+        ], alerts.slice(0, LIMIT), 'All stock is fresh.'),
+        h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#inventory', text: alerts.length > LIMIT ? 'View all ' + alerts.length + ' alerts →' : 'View stock →' })))));
   }
 
   function inventoryView(root) {

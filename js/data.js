@@ -268,7 +268,23 @@
   }
 
   // One-time additive data updates for browsers that already hold demo data.
+  // Simulated background Shopify sync: in production stock syncs every few minutes, so
+  // products that synced fine get a recent timestamp on each load. Without this, demo data
+  // saved hours ago would all turn stale after RULES.stockStaleAfterMinutes.
+  // Products whose sync failed (syncStatus !== 'ok', e.g. Mizuna) stay stale on purpose.
+  function autoSync(s) {
+    var now = Date.now();
+    s.products.forEach(function (p, i) {
+      if (p.stock.syncStatus !== 'ok') return;
+      if (now - new Date(p.stock.updatedAt).getTime() > 15 * 60000) {
+        p.stock.updatedAt = new Date(now - (2 + (i * 3) % 12) * 60000).toISOString();
+      }
+    });
+    return s;
+  }
+
   function migrate(s) {
+    autoSync(s);
     s.migrations = s.migrations || {};
     if (!s.migrations.liveTracking) {
       var pick = function (title, qty) {

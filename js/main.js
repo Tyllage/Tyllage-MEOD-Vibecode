@@ -123,6 +123,7 @@
     };
 
     var matches = function (p, ignoreCategory) {
+      if (p.bagOffer) return false; // sold only through the Buy to Clear bag pre-order now
       if (!ignoreCategory && view.filter !== 'all' && p.category !== view.filter) return false;
       if (view.inStock && !(M.stockStatus(p).known && p.stock.qty > 0)) return false;
       if (view.q) {
@@ -208,6 +209,116 @@
     renderCatalogue();
   }
 
+  /* ---------- Buy to Clear (clearance.html) ---------- */
+  var clearanceGrid = $('[data-clearance-grid]');
+  if (clearanceGrid) {
+    var emptyNote = $('[data-clearance-empty]');
+
+    function clearanceTile(l) {
+      var p = M.byId('products', l.productId);
+      var cat = M.CATEGORIES[p.category];
+      var tile = el('article', { class: 'produce-tile clearance-tile' });
+      var media = el('div', { class: 'tile-media' });
+      if (p.image) {
+        media.classList.add(p.category === 'farm-more' ? 'cover' : 'contain');
+        media.appendChild(el('img', { src: p.image, alt: p.title, loading: 'lazy', width: '420', height: '420' }));
+      } else {
+        media.classList.add('art');
+        media.style.setProperty('--tint', cat.color);
+        var art = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        art.setAttribute('viewBox', '0 0 64 64');
+        art.setAttribute('aria-hidden', 'true');
+        art.innerHTML = CATEGORY_ART[p.category] || CATEGORY_ART['asian-greens'];
+        media.appendChild(art);
+      }
+      tile.appendChild(media);
+
+      var body = el('div', { class: 'tile-body' });
+      body.appendChild(el('span', { class: 'reason-pill' }, M.clearance.reasonLabel(l.reason)));
+      body.appendChild(el('h3', null, p.title));
+      var meta = el('div', { class: 'clearance-meta' });
+      meta.appendChild(el('span', { class: 'mini-chip' }, M.clearance.remaining(l) + ' left'));
+      meta.appendChild(el('span', { class: 'mini-chip' }, 'Until ' + new Date(l.availableUntil).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })));
+      body.appendChild(meta);
+      var foot = el('div', { class: 'clearance-foot' });
+      var priceRow = el('div', { class: 'price-row' });
+      priceRow.appendChild(el('span', { class: 'price-was' }, M.money(l.normalPriceCents)));
+      priceRow.appendChild(el('span', { class: 'price-now price' }, M.money(l.clearancePriceCents)));
+      priceRow.appendChild(el('span', { class: 'discount-badge' }, '−' + M.clearance.discountPct(l) + '%'));
+      foot.appendChild(priceRow);
+      foot.appendChild(el('a', { class: 'tile-buy clearance-buy', href: 'portal.html?role=customer' }, 'Buy now →'));
+      body.appendChild(foot);
+      tile.appendChild(body);
+      return tile;
+    }
+
+    var listings = M.clearance.listActive();
+    listings.forEach(function (l) { clearanceGrid.appendChild(clearanceTile(l)); });
+    if (emptyNote) emptyNote.hidden = listings.length > 0;
+
+    // Surprise Harvest Bag promo: a real (local-only) size + exclude choice, carried over
+    // to the Portal via the CTA link's query string so it's pre-selected there — this page
+    // never checks out, so nothing here is submitted, just passed along.
+    var bagChoice = { sizeKey: M.state.harvestBag.sizes[0].key, exclude: '' };
+    var sizesBox = $('[data-bag-sizes]');
+    var likelyBox = $('[data-bag-likely]');
+    var excludeSelect = $('[data-bag-exclude]');
+    var ctaLink = $('[data-bag-cta]');
+
+    function hourLabel(d) { var h = d.getHours(); return (h % 12 || 12) + (h >= 12 ? 'pm' : 'am'); }
+    function cutoffShort(d) { return d.toLocaleDateString('en-SG', { weekday: 'short' }) + ' ' + hourLabel(d); }
+    function deliveryShort(d) { return d.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+
+    function updateCta() {
+      if (!ctaLink) return;
+      ctaLink.href = 'portal.html?role=customer&bagSize=' + encodeURIComponent(bagChoice.sizeKey) +
+        (bagChoice.exclude ? '&bagExclude=' + encodeURIComponent(bagChoice.exclude) : '');
+    }
+
+    function renderSizes() {
+      if (!sizesBox) return;
+      sizesBox.textContent = '';
+      M.state.harvestBag.sizes.forEach(function (sz) {
+        var active = bagChoice.sizeKey === sz.key;
+        var box = el('button', { type: 'button', class: 'size-box' + (active ? ' active' : ''), 'aria-pressed': String(active) });
+        box.appendChild(el('span', { class: 'tick', 'aria-hidden': 'true' }));
+        box.appendChild(el('strong', null, sz.label + ' · ' + M.money(sz.priceCents)));
+        box.appendChild(el('span', { class: 'size-save' }, 'Save ' + M.money(sz.worthCents - sz.priceCents)));
+        box.appendChild(el('span', { class: 'size-worth' }, 'Worth at least ' + M.money(sz.worthCents)));
+        box.addEventListener('click', function () { bagChoice.sizeKey = sz.key; renderSizes(); updateCta(); });
+        sizesBox.appendChild(box);
+      });
+    }
+    function renderLikely() {
+      if (!likelyBox) return;
+      likelyBox.textContent = '';
+      var items = M.clearance.likelyInside(bagChoice.exclude || null, 5);
+      items.forEach(function (p) { likelyBox.appendChild(el('li', null, p.title)); });
+      if (!items.length) likelyBox.appendChild(el('li', null, 'Fresh seasonal picks'));
+    }
+    if (excludeSelect) {
+      excludeSelect.appendChild(el('option', { value: '' }, 'No exclusions'));
+      Object.keys(M.CATEGORIES).forEach(function (k) { excludeSelect.appendChild(el('option', { value: k }, 'No ' + M.CATEGORIES[k].label)); });
+      excludeSelect.addEventListener('change', function () { bagChoice.exclude = excludeSelect.value; renderLikely(); updateCta(); });
+    }
+    renderSizes();
+    renderLikely();
+    updateCta();
+
+    var cutoffTextEl = $('[data-bag-cutoff-text]');
+    var leftTextEl = $('[data-bag-left-text]');
+    if (cutoffTextEl) {
+      var renderCutoff = function () {
+        var info = M.clearance.nextBagCutoff();
+        var left = M.clearance.bagsLeftForDay(M.clearance.dayKey(info.deliveryDay));
+        cutoffTextEl.textContent = 'Order by ' + cutoffShort(info.cutoff) + ' for ' + deliveryShort(info.deliveryDay) + ' delivery';
+        if (leftTextEl) leftTextEl.textContent = left + (left === 1 ? ' bag left that day' : ' bags left that day');
+      };
+      renderCutoff();
+      setInterval(renderCutoff, 30000);
+    }
+  }
+
   /* ---------- Booking form (Experiences) ---------- */
   var booking = $('#booking-form');
   if (booking) {
@@ -280,8 +391,10 @@
     try { session = JSON.parse(sessionStorage.getItem('meod-session') || 'null'); } catch (e) { /* ignore */ }
     var ctx = { channel: 'web', customerId: session && session.customerId };
 
-    function push(text, who, extra) {
-      var m = el('div', { class: 'msg ' + who + (extra ? ' ' + extra : '') }, text);
+    function push(text, who, extra, link) {
+      var m = el('div', { class: 'msg ' + who + (extra ? ' ' + extra : '') });
+      m.appendChild(document.createTextNode(text));
+      if (link) m.appendChild(el('a', { class: 'msg-link', href: link.href }, link.label));
       log.appendChild(m);
       log.scrollTop = log.scrollHeight;
     }
@@ -290,10 +403,12 @@
       if (!text) return;
       push(text, 'user');
       var r = M.assist.reply(text, ctx);
-      setTimeout(function () { push(r.text, 'bot', r.handover ? 'handover' : ''); }, 350);
+      setTimeout(function () {
+        push(r.text, 'bot', r.handover ? 'handover' : '', r.showClearanceLink ? { href: 'clearance.html', label: 'Go to Buy to Clear →' } : null);
+      }, 350);
     }
 
-    ['Do you have kai lan?', '菜心有货吗？', 'Delivery days?', 'My veg arrived wilted'].forEach(function (s) {
+    ['Do you have kai lan?', '菜心有货吗？', 'Delivery days?', 'What\'s the surprise bag?', 'My veg arrived wilted'].forEach(function (s) {
       var b = el('button', { type: 'button' }, s);
       b.addEventListener('click', function () { send(s); });
       $('.assist-suggest', panel).appendChild(b);

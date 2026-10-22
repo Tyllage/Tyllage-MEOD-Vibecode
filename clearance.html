@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buy to Clear | MEOD Farm</title>
+  <meta name="description" content="Fresh MEOD produce we have extra of, sold at a clearance price before it goes to waste — plus the pre-order Surprise Harvest Bag.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat+Brush&family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <meta name="theme-color" content="#054f12">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="container nav" aria-label="Main">
+      <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm home" width="106" height="30"></a>
+      <ul class="nav-links" id="nav-links">
+        <li><a href="about.html">About</a></li>
+        <li><a href="produce.html">Our Produce</a></li>
+        <li><a href="produce.html#farm-more">Farm &amp; More</a></li>
+        <li><a href="clearance.html" aria-current="page">Buy to Clear</a></li>
+        <li><a href="experiences.html">Experiences</a></li>
+        <li><a href="contact.html">Contact Us</a></li>
+        <li class="mobile-only"><a href="https://meodfresh.com/" target="_blank" rel="noopener">Our Store ↗</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a class="btn btn-sm btn-outline portal-btn" href="portal.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+          <span data-portal-label>Portal</span>
+        </a>
+        <a class="btn btn-sm btn-gold store-btn" href="https://meodfresh.com/" target="_blank" rel="noopener">Our Store</a>
+        <button class="menu-toggle" type="button" aria-controls="nav-links" aria-expanded="false" aria-label="Open menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero page-hero">
+      <img class="hero-bg" src="assets/img/hero-farm.webp" srcset="assets/img/hero-farm-640.webp 640w, assets/img/hero-farm.webp 1200w" sizes="100vw" alt="" fetchpriority="high">
+      <div class="container">
+        <span class="eyebrow badge">Buy to Clear</span>
+        <h1>Good food,<br>before it's gone</h1>
+        <p class="lead" style="color:rgba(255,255,255,.9)">Fresh MEOD produce we have extra of — surplus, short-dated or a little less than picture-perfect — sold at a clearance price before it goes to waste.</p>
+      </div>
+    </section>
+
+    <section class="bg-cream">
+      <div class="container">
+        <div class="catalog-head reveal">
+          <div>
+            <span class="eyebrow dark">Why Buy to Clear</span>
+            <h2 class="section-title">Too good to waste</h2>
+            <p class="lead">Every harvest has some produce growing faster than we can sell, close to its best-by date, or simply not photo-perfect. It's still 100% pesticide-free MEOD produce — just priced to clear. <strong>MEOD decides what's fit for sale.</strong></p>
+          </div>
+        </div>
+
+        <article class="bag-promo reveal" aria-label="Surprise Harvest Bag">
+          <div class="bag-photo">
+            <img src="assets/img/farm-flatlay.webp" srcset="assets/img/farm-flatlay-640.webp 640w, assets/img/farm-flatlay.webp 1200w" sizes="(max-width: 860px) 100vw, 200px" alt="A flatlay of freshly harvested MEOD produce" width="640" height="640" loading="lazy">
+          </div>
+          <div class="bag-info">
+            <span class="eyebrow dark">Pre-order</span>
+            <h3>Surprise Harvest Bag</h3>
+            <p class="lead">A chef-picked mix of whatever we have the most of this week — mostly from Buy to Clear.</p>
+            <div class="size-boxes" data-bag-sizes role="group" aria-label="Choose a bag size"></div>
+            <div>
+              <p class="likely-inside-label">Likely inside</p>
+              <ul class="likely-inside" data-bag-likely aria-label="Likely inside the bag"></ul>
+            </div>
+            <label class="bag-exclude">Exclude a category
+              <select data-bag-exclude aria-label="Exclude a category"></select>
+            </label>
+            <div class="bag-cutoff">
+              <span class="icon-circle" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <span>
+                <strong data-bag-cutoff-text></strong>
+                <small data-bag-left-text aria-live="polite"></small>
+              </span>
+            </div>
+            <a class="btn btn-forest" href="portal.html?role=customer" data-bag-cta>Pre-order in the Portal</a>
+          </div>
+        </article>
+
+        <h2 class="section-title">On clearance now</h2>
+        <p class="clearance-note">Prices shown are illustrative — MEOD to confirm. Buy through the Portal; there's no second checkout.</p>
+        <div class="harvest-row catalog-grid clearance-cards-grid" data-clearance-grid></div>
+        <p class="catalog-empty" data-clearance-empty hidden>
+          <strong>Nothing is on clearance right now.</strong>
+          <span>Check back soon, or pre-order a Surprise Harvest Bag above.</span>
+        </p>
+      </div>
+    </section>
+
+    <section class="bg-berry buy-band">
+      <div class="container">
+        <div class="buy-inner reveal">
+          <div>
+            <span class="eyebrow">Ready to buy?</span>
+            <h2 class="section-title">Shop Buy to Clear in the Portal</h2>
+            <p class="lead">Sign in (or join with a code) to add clearance items and the Surprise Harvest Bag to your cart. It's the same checkout as the rest of the Portal shop.</p>
+          </div>
+          <div class="buy-options">
+            <a class="buy-option primary" href="portal.html?role=customer"><strong>MEOD Portal</strong><span>Sign in to buy →</span></a>
+            <a class="buy-option" href="produce.html"><strong>Our Produce</strong><span>Full-price catalogue →</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="logo" href="index.html"><img src="assets/meod-light.svg" alt="MEOD Farm" width="106" height="30" loading="lazy"></a>
+          <p>13 Neo Tiew Harvest Lane<br>Singapore 719838</p>
+          <p>WhatsApp +65 8133 0358<br><a href="mailto:info@meod.com.sg">info@meod.com.sg</a></p>
+        </div>
+        <div>
+          <h4>Explore</h4>
+          <ul>
+            <li><a href="about.html">About</a></li>
+            <li><a href="produce.html">Our Produce</a></li>
+            <li><a href="clearance.html">Buy to Clear</a></li>
+            <li><a href="experiences.html">Experiences</a></li>
+            <li><a href="contact.html">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Shop</h4>
+          <ul>
+            <li><a href="https://meodfresh.com/" target="_blank" rel="noopener">MEOD Fresh store</a></li>
+            <li><a href="index.html#group-buy">Group buys</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year></span> MEOD Farm. Prototype by Tyllage — demo data only.</span>
+        <span>Since 2014 · SG Fresh Produce Certified</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/assist.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

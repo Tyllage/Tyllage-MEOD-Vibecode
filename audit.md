@@ -39,6 +39,7 @@ It also lists what must change before any real data is used.
 | Audit log of actor, event, object, timestamp | Portal → Audit log (categories, search, plain-English labels) | ✅ Not tamper-proof |
 | Synthetic fixtures; no real phone numbers | `js/data.js` uses the +65 8000 00xx range and `.test` emails | ✅ |
 | Public site stays the storefront (no second checkout) | "Place order" creates a *pending payment* order; copy says payment is on MEOD Fresh | ✅ |
+| **Buy to Clear** (proposal §4.1): clearance listings, candidates, minimum-price guardrail, Surprise Harvest Bag pre-order, staff tools | `clearance.html`; Portal → Shop "Buy to Clear" section; Portal → **Buy to Clear** (staff/admin); `M.clearance` in `js/data.js` | ✅ Mock. Clearance price can't go below the minimum (admin-only field; staff see it read-only). Stale stock blocks ordering. Bag "Approve contents" reserves real stock or fails closed |
 
 ## 2. Public site vs meod.com.sg
 
@@ -148,9 +149,17 @@ There's no automated test suite yet; that's a follow-up.
 7. Brand assets (fonts, logo SVG, photos) and permission to reuse them
 8. Who delivers: in-house drivers, a courier (e.g. Ninja Van, Lalamove) or Shopify fulfilment? This decides the real source behind the mock delivery tracking (`trackingFor()` in `js/data.js`).
 9. Real Farm & More product names, prices and the current delivery schedule
+10. A S$12 bag plus S$8 delivery is S$20, which weakens the "worth at least S$18" message. Should bags get free delivery, be add-ons to a normal order, or use pickup points?
 
 ## 7. Changelog
 
+- **22 Oct 2026, Buy to Clear.**
+  - Added clearance listings, candidates (high stock vs. low 14-day sales, plain-English reason) and a minimum-price guardrail to `js/data.js`, seeded additively via `migrate()`.
+  - Turned the flat-price "Surprise Harvest Bag" product into a pre-order bag offer (two sizes, "worth at least", a bag limit per delivery day, a 10pm-the-day-before cutoff, one excluded category); it's no longer sold as a plain Shop item.
+  - New public page `clearance.html` ("Buy to Clear"), linked from every public page's nav after Farm & More.
+  - Customer Shop: a Buy to Clear section (clearance items + the bag) using the same cart and order flow.
+  - New staff/admin **Buy to Clear** screen: candidates, a listing form (minimum price is admin-only; staff see it read-only), active listings with End early, a bag panel with rule-based proposed contents and Approve contents (reserves real stock or fails closed with a clear reason), a Send WhatsApp alert button that only drafts a Campaign Studio message, and an illustrative money-breakdown panel. Every action is logged to the Audit log.
+  - Ask MEOD (EN/中文/BM) now answers questions about the bag and clearance, and says so when stock can't be confirmed.
 - **21 Oct 2026, images & responsive pass.** Switched to MEOD-supplied images (optimised WebP with phone-size versions). Added a Farm & More showcase and a Goodness Gracious Gelato flavour strip, plus product photos in the catalogue and portal shop. Mobile card tables, full-width chat on phones, svh hero heights, tablet three-column grid. Demo storage key bumped to v2 so the new catalogue loads.
 - **21 Oct 2026, public site redesign.**
   - Removed the footer portal column and the "Group leader sign in" button.

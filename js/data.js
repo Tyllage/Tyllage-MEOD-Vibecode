@@ -21,7 +21,11 @@
     deliveryFeeCents: 800,
     stockStaleAfterMinutes: 360,   // older syncs are treated as unknown
     lowStockQty: 10,
-    humanHours: { days: [1, 2, 3, 4, 5, 6], start: 9, end: 18 } // Mon–Sat 9am–6pm SGT
+    humanHours: { days: [1, 2, 3, 4, 5, 6], start: 9, end: 18 }, // Mon–Sat 9am–6pm SGT
+    clearanceCutoffHour: 22,        // bag pre-orders close 10pm the day before delivery
+    clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
+    clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
+    clearanceDefaultMinRate: 0.6    // staff default minimum price = 60% of normal price
   };
 
   // Demo sign-in. The password is shared by every demo account and is NOT a
@@ -99,6 +103,9 @@
         id: id, title: r[0], subtitle: r[1], category: r[2], priceCents: r[3],
         nutrients: r[5], blurb: r[6], aliases: r[7], image: IMAGES[r[0]] || null,
         meodGrown: r[2] !== 'farm-more' || r[0].indexOf('Bag') > -1,
+        // The flat-price bag product stays for old orders/receipts, but is now sold only
+        // through the Buy to Clear bag flow (sizes, cutoff, excluded category) — see M.clearance.
+        bagOffer: r[0] === 'Surprise Harvest Bag',
         stock: { qty: r[4], syncStatus: stale ? 'stale' : 'ok', updatedAt: minutesAgo(stale ? 900 : 12), source: 'shopify-mock' }
       };
     });
@@ -301,6 +308,67 @@
       }, totals));
       s.migrations.liveTracking = true;
     }
+    if (!s.migrations.clearanceV1) {
+      var byTitle = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      s.clearance = s.clearance || [];
+      var seedListing = function (title, qty, clearancePriceCents, minPriceCents, reason, untilDays) {
+        var p = byTitle(title);
+        if (!p) return;
+        s.seq += 1;
+        s.clearance.push({
+          id: 'CL-' + s.seq, productId: p.id, qty: qty, qtySold: Math.max(0, Math.round(qty * 0.3)),
+          normalPriceCents: p.priceCents, clearancePriceCents: clearancePriceCents, minPriceCents: minPriceCents,
+          reason: reason, availableUntil: daysFromNow(untilDays), status: 'active',
+          createdBy: 'sales@meod.test', createdAt: minutesAgo(180)
+        });
+      };
+      seedListing('HK Cai Xin', 20, 250, 220, 'surplus', 3);
+      seedListing('Kai Lan', 18, 260, 240, 'surplus', 2);
+      seedListing('Mesclun Mix', 14, 390, 350, 'short_dated', 1);
+      seedListing('Tuscan Kale', 10, 380, 330, 'cosmetic', 4);
+      seedListing('Garden Mint', 4, 200, 180, 'short_dated', 2);
+
+      s.harvestBag = {
+        sizes: [
+          { key: 'small', label: 'Small', priceCents: 1200, worthCents: 1800 },
+          { key: 'regular', label: 'Regular', priceCents: 1800, worthCents: 2800 }
+        ],
+        limitPerDay: 15
+      };
+      s.migrations.clearanceV1 = true;
+    }
+    if (!s.migrations.clearanceDayKeyFix) {
+      // Bug fix: bag orders saved with the old UTC-based day key can land one day early
+      // (e.g. a Saturday bag keyed as Friday). Move any non-Tue/Thu/Sat deliveryDay forward a day.
+      s.orders.forEach(function (o) {
+        if (!o.bagSize || !o.deliveryDay) return;
+        var d = parseDayKey(o.deliveryDay);
+        if (DELIVERY_DAYS.indexOf(d.getDay()) === -1) {
+          d.setDate(d.getDate() + 1);
+          o.deliveryDay = bagDayKey(d);
+        }
+      });
+      s.migrations.clearanceDayKeyFix = true;
+    }
+    if (!s.migrations.clearancePhotosV1) {
+      // Swap the 3 seeded listings that had no product photo (leaf placeholder) for
+      // photographed products, so the clearance grid always shows a real picture.
+      var byTitle2 = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      var reswap = function (oldTitle, newTitle, clearancePriceCents, minPriceCents) {
+        var oldP = byTitle2(oldTitle), newP = byTitle2(newTitle);
+        if (!oldP || !newP) return;
+        var listing = s.clearance.filter(function (l) { return l.productId === oldP.id; })[0];
+        if (!listing) return;
+        listing.productId = newP.id;
+        listing.normalPriceCents = newP.priceCents;
+        listing.clearancePriceCents = clearancePriceCents;
+        listing.minPriceCents = minPriceCents;
+      };
+      reswap('HK Cai Xin', 'Xiao Bai Cai', 230, 200);
+      reswap('Kai Lan', 'Shiitake Mushroom', 450, 400);
+      reswap('Garden Mint', 'Veggie Crackers', 600, 550);
+      s.migrations.clearancePhotosV1 = true;
+    }
     return s;
   }
 
@@ -352,6 +420,170 @@
     return state.products.filter(function (p) {
       return p.aliases.some(function (a) { return q.indexOf(a.toLowerCase()) > -1; });
     })[0] || null;
+  }
+
+  /* ---------- Tyllage Buy to Clear: clearance listings + Surprise Harvest Bag ----------
+   * Clearance stock is a discounted slice of a product's own stock.qty (not a separate
+   * pool): selling a clearance line or an approved bag item decrements the real stock too,
+   * so the Stock page stays the single source of truth. All prices here are illustrative —
+   * MEOD to confirm real costs before anything goes live.
+   */
+  var CLEARANCE_REASONS = { surplus: 'Surplus', short_dated: 'Short-dated', cosmetic: 'Cosmetic' };
+  function clearanceReasonLabel(reason) { return CLEARANCE_REASONS[reason] || reason; }
+  function clearanceDiscountPct(listing) {
+    return Math.round((1 - listing.clearancePriceCents / listing.normalPriceCents) * 100);
+  }
+  function clearanceRemaining(listing) { return Math.max(0, listing.qty - listing.qtySold); }
+  function clearanceOpen(listing) {
+    return listing.status === 'active' && clearanceRemaining(listing) > 0 && new Date(listing.availableUntil).getTime() >= Date.now();
+  }
+  function clearanceListActive() { return state.clearance.filter(clearanceOpen); }
+  function clearanceSold14(productId) {
+    var cutoff = Date.now() - 14 * DAY;
+    var sum = 0;
+    state.orders.forEach(function (o) {
+      if (o.status === 'cancelled' || new Date(o.createdAt).getTime() < cutoff) return;
+      o.items.forEach(function (i) { if (i.productId === productId) sum += i.qty; });
+    });
+    return sum;
+  }
+  // Products with a lot of stock and few recent sales — plain-English reason for staff.
+  function clearanceCandidates() {
+    var listedIds = {};
+    state.clearance.filter(clearanceOpen).forEach(function (l) { listedIds[l.productId] = true; });
+    return state.products.filter(function (p) {
+      if (p.bagOffer || listedIds[p.id]) return false;
+      var s = stockStatus(p);
+      if (!s.known || s.qty < RULES.clearanceCandidateQty) return false;
+      var sold14 = clearanceSold14(p.id);
+      return sold14 <= s.qty * RULES.clearanceCandidateSoldRatio;
+    }).map(function (p) {
+      var sold14 = clearanceSold14(p.id);
+      var soldPhrase = sold14 === 0 ? 'none sold' : 'only ' + sold14 + ' sold';
+      return { product: p, qty: p.stock.qty, sold14: sold14, reason: p.stock.qty + ' in stock, ' + soldPhrase + ' in the last 14 days.' };
+    }).sort(function (a, b) { return b.qty - a.qty; });
+  }
+  function clearanceValidate(data) {
+    var p = byId('products', data.productId);
+    if (!p) return { ok: false, error: 'Choose a product.' };
+    if (!(data.qty > 0)) return { ok: false, error: 'Quantity must be at least 1.' };
+    if (data.qty > p.stock.qty) return { ok: false, error: 'Only ' + p.stock.qty + ' ' + p.title + ' in stock — reduce the quantity.' };
+    if (!(data.clearancePriceCents > 0)) return { ok: false, error: 'Enter a clearance price.' };
+    if (!(data.minPriceCents >= 0)) return { ok: false, error: 'Enter a minimum price.' };
+    if (data.clearancePriceCents < data.minPriceCents) {
+      return { ok: false, error: 'Clearance price (' + money(data.clearancePriceCents) + ') can\'t be below the minimum of ' + money(data.minPriceCents) + '.' };
+    }
+    if (!data.availableUntil || new Date(data.availableUntil).getTime() < Date.now() - DAY) return { ok: false, error: 'Pick a date in the future.' };
+    return { ok: true };
+  }
+  function clearanceCreate(data, actorEmail) {
+    var v = clearanceValidate(data);
+    if (!v.ok) return v;
+    var p = byId('products', data.productId);
+    var id = nextId('CL');
+    state.clearance.unshift({
+      id: id, productId: p.id, qty: data.qty, qtySold: 0, normalPriceCents: p.priceCents,
+      clearancePriceCents: data.clearancePriceCents, minPriceCents: data.minPriceCents, reason: data.reason,
+      availableUntil: data.availableUntil, status: 'active', createdBy: actorEmail, createdAt: new Date().toISOString()
+    });
+    return { ok: true, id: id };
+  }
+  function clearanceEndEarly(id) {
+    var l = byId('clearance', id);
+    if (l) l.status = 'ended';
+  }
+  // Sells qty off a listing and the product's real stock together, or fails closed.
+  function clearanceSell(listingId, qty) {
+    var l = byId('clearance', listingId);
+    if (!l) return { ok: false, error: 'That clearance listing no longer exists.' };
+    var p = byId('products', l.productId);
+    var s = stockStatus(p);
+    if (!s.known) return { ok: false, error: p.title + ' stock can\'t be confirmed right now.' };
+    if (!clearanceOpen(l) || clearanceRemaining(l) < qty || p.stock.qty < qty) {
+      return { ok: false, error: 'Only ' + Math.min(clearanceRemaining(l), p.stock.qty) + ' left of ' + p.title + ' at the clearance price.' };
+    }
+    l.qtySold += qty;
+    p.stock.qty -= qty;
+    return { ok: true };
+  }
+
+  function nextBagCutoff(from) {
+    var now = from || new Date();
+    var day = nextDeliveryDay(now);
+    var cutoff = atTime(new Date(day.getTime() - DAY), RULES.clearanceCutoffHour, 0);
+    while (cutoff.getTime() <= now.getTime()) {
+      day = nextDeliveryDay(day);
+      cutoff = atTime(new Date(day.getTime() - DAY), RULES.clearanceCutoffHour, 0);
+    }
+    return { deliveryDay: day, cutoff: cutoff };
+  }
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+  // Local calendar date, not UTC: toISOString() would shift SGT (UTC+8) evenings/midnights
+  // onto the previous UTC day, so a Saturday bag would key itself as Friday.
+  function bagDayKey(day) {
+    var d = new Date(day);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  // The inverse of bagDayKey: parse "YYYY-MM-DD" as local midnight, never with
+  // `new Date("YYYY-MM-DD")`, which parses as UTC midnight and can land a day early/late.
+  function parseDayKey(key) {
+    var parts = key.split('-').map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  function bagOrdersForDay(dayKey) {
+    return state.orders.filter(function (o) { return o.bagSize && o.deliveryDay === dayKey && o.status !== 'cancelled'; });
+  }
+  function bagsLeftForDay(dayKey) {
+    return Math.max(0, state.harvestBag.limitPerDay - bagOrdersForDay(dayKey).length);
+  }
+  // Likely-inside preview: active clearance stock, skipping the customer's excluded category.
+  function clearanceLikelyInside(excludeCategory, limit) {
+    limit = limit || 5;
+    return clearanceListActive()
+      .map(function (l) { return byId('products', l.productId); })
+      .filter(function (p) { return p && p.category !== excludeCategory; })
+      .slice(0, limit);
+  }
+  // Rule-based proposal for one bag order's contents: clearance stock first, topped up with
+  // in-stock fresh produce, always skipping the customer's excluded category.
+  function proposeBagContents(order) {
+    var exclude = order.excludedCategory;
+    var picked = [], seen = {};
+    clearanceListActive().forEach(function (l) {
+      if (picked.length >= 4) return;
+      var p = byId('products', l.productId);
+      if (!p || p.category === exclude || seen[p.id]) return;
+      seen[p.id] = true; picked.push({ productId: p.id, title: p.title, qty: 1 });
+    });
+    state.products.forEach(function (p) {
+      if (picked.length >= 4 || p.bagOffer || p.category === exclude || seen[p.id]) return;
+      var s = stockStatus(p);
+      if (!s.known || s.qty <= 0) return;
+      seen[p.id] = true; picked.push({ productId: p.id, title: p.title, qty: 1 });
+    });
+    return picked;
+  }
+  // Reserves the approved items against real stock (and any matching clearance listing),
+  // or fails closed with a clear reason — nothing is deducted unless every line has stock.
+  function approveBagContents(orderId, items) {
+    var order = byId('orders', orderId);
+    if (!order) return { ok: false, error: 'Order not found.' };
+    for (var i = 0; i < items.length; i++) {
+      var p = byId('products', items[i].productId);
+      var s = p ? stockStatus(p) : { known: false };
+      if (!p || !s.known) return { ok: false, error: (p ? p.title : 'That item') + '\'s stock can\'t be confirmed.' };
+      if (p.stock.qty < items[i].qty) return { ok: false, error: 'Only ' + p.stock.qty + ' ' + p.title + ' left in stock.' };
+    }
+    items.forEach(function (it) {
+      var p = byId('products', it.productId);
+      p.stock.qty -= it.qty;
+      var listing = state.clearance.filter(function (l) { return l.productId === it.productId && clearanceOpen(l); })[0];
+      if (listing) listing.qtySold = Math.min(listing.qty, listing.qtySold + it.qty);
+    });
+    order.bagContents = items;
+    order.bagContentsApproved = true;
+    order.bagContentsApprovedAt = new Date().toISOString();
+    return { ok: true };
   }
 
   // Commission ledger derived from orders so every figure is reproducible.
@@ -414,7 +646,7 @@
 
   function recommendFor(customer, limit) {
     limit = limit || 4;
-    var available = state.products.filter(function (p) { var s = stockStatus(p); return s.known && s.qty > 0; });
+    var available = state.products.filter(function (p) { var s = stockStatus(p); return !p.bagOffer && s.known && s.qty > 0; });
     if (!customer || !customer.consentPersonalisation) {
       return available.filter(function (p) { return p.meodGrown; }).slice(0, limit)
         .map(function (p, i) { return { product: p, type: 'fresh', reason: 'Freshly harvested this week', match: null, rank: i }; });
@@ -522,6 +754,15 @@
     stockStatus: stockStatus, findProduct: findProduct, priceOrder: priceOrder,
     ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, trackingFor: trackingFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
     withinHumanHours: withinHumanHours, audit: audit,
-    money: money, maskName: maskName, maskPhone: maskPhone
+    money: money, maskName: maskName, maskPhone: maskPhone,
+    DELIVERY_DAYS: DELIVERY_DAYS, nextDeliveryDay: nextDeliveryDay,
+    clearance: {
+      remaining: clearanceRemaining, isOpen: clearanceOpen, listActive: clearanceListActive,
+      candidates: clearanceCandidates, validate: clearanceValidate, create: clearanceCreate,
+      endEarly: clearanceEndEarly, sell: clearanceSell, likelyInside: clearanceLikelyInside,
+      nextBagCutoff: nextBagCutoff, dayKey: bagDayKey, parseDayKey: parseDayKey, bagOrdersForDay: bagOrdersForDay, bagsLeftForDay: bagsLeftForDay,
+      proposeBagContents: proposeBagContents, approveBagContents: approveBagContents,
+      reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
+    }
   };
 })();

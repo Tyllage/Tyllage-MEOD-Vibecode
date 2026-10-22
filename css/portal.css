@@ -458,6 +458,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .order-item { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 999px; background: #f7f3ee; font-size: .85rem; }
 .order-item .thumb { width: 30px; height: 30px; border-radius: 50%; }
 .order-item .thumb img { padding: 2px; }
+.bag-order-item { align-items: flex-start; padding: 6px 14px 6px 6px; border-radius: 14px; }
+.bag-order-item .icon-circle.soft { width: 30px; height: 30px; margin-top: 1px; }
+.bag-order-item .icon-circle.soft svg { width: 15px; height: 15px; }
+.bag-order-item small { display: block; color: var(--muted); font-size: .76rem; margin-top: 2px; }
 .order-bottom { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 12px; border-top: 1px dashed #ebe4d9; }
 .tracker { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; gap: 0; font-size: .8rem; font-weight: 600; color: var(--muted); }
 .tracker li { display: flex; align-items: center; gap: 6px; }
@@ -824,3 +828,80 @@ a.pill-btn { text-decoration: none; }
 .pd-why .rec-icon { width: 16px; height: 16px; color: #8a5a00; flex: none; margin-top: 2px; }
 .pd-why strong { display: block; font-size: .86rem; color: #8a5a00; }
 .pd-why small { color: var(--ink); font-size: .84rem; }
+
+/* Buy to Clear now sits at the top of the Shop's catalogue column (not a full-width
+   panel below the cart), so it needs its own compact heading + divider. */
+.clearance-top-head h2 { margin: 0 0 2px; color: var(--forest); font-size: 1.25rem; }
+.shop-divider { border: 0; border-top: 1px solid #eee8de; margin: 20px 0; }
+.clearance-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 4px; }
+.clearance-strip .clearance-item { flex: 0 0 190px; }
+@media (max-width: 640px) { .clearance-strip .clearance-item { flex: 0 0 170px; } }
+
+/* ---- Buy to Clear (customer shop + staff/admin screen) ----
+   .size-box, .likely-inside, .likely-inside-label, .bag-cutoff, .bag-photo, .mini-chip,
+   .discount-badge, .clearance-foot and .clearance-buy are shared with the public site —
+   defined once in style.css, which dashboard.html also loads. */
+.clearance-item { border-color: #f1dfb6; }
+.clearance-item .shop-media .thumb.cover img { object-fit: contain; padding: 14px; }
+.clearance-qty { width: 100%; justify-content: space-between; }
+.bag-card { display: grid; gap: 20px; margin-top: 16px; grid-template-columns: 150px 1fr; }
+.bag-card h3 { margin: 0; color: var(--forest); font-size: 1.15rem; }
+.bag-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bag-fields label { display: grid; gap: 4px; font-weight: 600; font-size: .86rem; color: var(--ink); }
+
+/* Clearance listing form: a predictable 4-up row rather than auto-fit's variable count.
+   Fixed heights keep <select> and <input> pixel-identical, and every label is kept to
+   one line (see the JS) so all four boxes share the same top edge. */
+.clearance-form { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; }
+.clearance-form label { white-space: nowrap; }
+.clearance-form input, .clearance-form select { height: 48px; }
+.min-locked { display: flex; align-items: center; gap: 8px; height: 48px; }
+.min-locked input { flex: 1; min-width: 0; height: 100%; }
+.min-locked input:disabled { background: #eceae4; color: var(--muted); cursor: not-allowed; }
+.min-locked .icon-circle.bare { color: var(--muted); flex: none; }
+.min-live { color: var(--muted); font-weight: 400; }
+@media (max-width: 1100px) { .clearance-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .clearance-form { grid-template-columns: 1fr; } }
+
+/* Listings table: keep product names readable, stop dates/actions from forcing wrap. */
+.clearance-table .table-wrap table { table-layout: auto; }
+.clearance-table .table-wrap td, .clearance-table .table-wrap th { white-space: nowrap; }
+.clearance-table .table-wrap td:first-child, .clearance-table .table-wrap th:first-child { white-space: normal; min-width: 150px; }
+.clearance-table .table-wrap .actions { flex-wrap: nowrap; }
+@media (max-width: 640px) {
+  .clearance-table .table-wrap td, .clearance-table .table-wrap th { white-space: normal; }
+}
+
+/* Bag pre-order days: a compact row for empty days, a fuller card for days with pre-orders. */
+.bag-day-empty { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border: 1px dashed #e6dfd3; border-radius: 12px; color: var(--muted); font-size: .9rem; margin-bottom: 10px; }
+.bag-day-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.bag-day-progress .bar { flex: 1; height: 8px; border-radius: 999px; background: #e6dfd3; overflow: hidden; }
+.bag-day-progress .bar-fill { display: block; height: 100%; background: var(--leaf); border-radius: inherit; }
+.bag-day-progress small { color: var(--muted); white-space: nowrap; }
+.bag-value-ok { color: #23602a; font-weight: 700; }
+.bag-value-low { color: var(--danger); font-weight: 700; }
+
+/* Bag pre-order rows: a flex card row (not a <table>) so the Approve button has a fixed
+   column that can never be squeezed off-screen at 1280/1440px like a table column could. */
+.bag-order-rows { display: grid; }
+.bag-order-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0; border-bottom: 1px dashed #eee8de; flex-wrap: wrap; }
+.bag-order-row:last-child { border-bottom: 0; }
+.bor-id { flex: 0 0 140px; min-width: 0; }
+.bor-id strong { display: block; color: var(--forest); }
+.bor-id small { display: block; color: var(--muted); }
+.bor-mid { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; font-size: .9rem; }
+.bor-tags { color: var(--muted); }
+.bor-mid small { display: block; margin-top: 2px; }
+.bor-status { flex: 0 0 96px; }
+.bor-action { flex: 0 0 96px; text-align: right; }
+@media (max-width: 640px) {
+  .bor-id, .bor-status, .bor-action { flex-basis: auto; }
+  .bor-action { text-align: left; }
+}
+@media (max-width: 760px) {
+  .bag-card { grid-template-columns: 1fr; }
+  .bag-card .bag-photo { aspect-ratio: 16 / 7; }
+}
+@media (max-width: 640px) {
+  .bag-fields { grid-template-columns: 1fr; }
+}

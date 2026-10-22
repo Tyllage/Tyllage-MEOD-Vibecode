@@ -287,6 +287,9 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(230,185,100,
 .msg.bot { background: var(--white); align-self: flex-start; border-bottom-left-radius: 4px; }
 .msg.user { background: var(--forest); color: var(--white); align-self: flex-end; border-bottom-right-radius: 4px; }
 .msg.handover { background: #fff1d6; border: 1px solid var(--gold); }
+.msg-link { display: block; margin-top: 6px; color: var(--leaf); font-weight: 700; text-decoration: none; }
+.msg-link:hover { text-decoration: underline; }
+.msg.user .msg-link { color: var(--gold); }
 .assist-suggest { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px 0; background: var(--white); }
 .assist-suggest button { border: 1px solid #cfd8cf; background: var(--white); border-radius: 999px; padding: 5px 12px; font: 500 .8rem var(--font-body); cursor: pointer; }
 .assist-suggest button:hover { border-color: var(--forest); color: var(--forest); }
@@ -305,6 +308,9 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(230,185,100,
   .assist-panel { right: 8px; left: 8px; width: auto; bottom: 86px; height: min(560px, calc(100svh - 110px)); }
   .assist-fab { right: 14px; bottom: 14px; width: 56px; height: 56px; }
   .footer-bottom { flex-direction: column; }
+  /* Reserve room below the main content so the floating chat/scroll-to-top buttons
+     never sit over the last section's text or buttons while scrolling. */
+  #main { padding-bottom: 92px; }
 }
 @media (min-width: 1600px) {
   :root { --max: 1360px; }
@@ -601,5 +607,74 @@ a.buy-option.primary:hover { background: var(--gold-dark); }
 /* Bigger tap area for the in-stock toggle (the label is the target) */
 .toggle { min-height: 40px; padding: 4px 6px; border-radius: 10px; }
 .toggle input { width: 20px; height: 20px; }
+
+/* ---------- Buy to Clear ---------- */
+/* Shared with the portal: dashboard.html loads this file too, so these classes are
+   written once here instead of duplicated in portal.css. */
+.price-was { text-decoration: line-through; color: var(--muted); font-weight: 500; font-size: .95rem; }
+.price-now { color: var(--danger); font-weight: 700; }
+.discount-badge { background: #eaf4e5; color: #23602a; font-weight: 700; font-size: .76rem; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+/* No text-transform: the reason labels (Surplus / Short-dated / Cosmetic) already come
+   correctly cased from js/data.js, and capitalize would turn "Short-dated" into "Short-Dated". */
+.reason-pill { display: inline-block; font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #fff1d6; color: #8a5a00; white-space: nowrap; }
+.clearance-note { color: var(--muted); font-size: .92rem; margin: 10px 0 28px; }
+/* With 5 seeded listings, .harvest-row's auto-fill (230px min) only fits 4 columns at
+   ~1200px, orphaning the 5th card onto its own row — force 5 up from 1200px. */
+@media (min-width: 1200px) { .clearance-cards-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+/* Keep clearance photos consistent (same background/fit/padding) even for Farm & More items,
+   which normally get a full-bleed "cover" treatment in the regular catalogue. */
+.clearance-tile .tile-media.cover img { object-fit: contain; padding: 14px; }
+.clearance-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0; }
+.mini-chip { display: inline-block; font-size: .74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #f3f1ec; color: var(--muted); white-space: nowrap; }
+.qty-cell { display: inline-grid; justify-items: end; gap: 4px; }
+.clearance-foot { display: flex; flex-direction: column; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px dashed #e8e1d6; }
+.clearance-foot .price-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clearance-buy { display: flex; width: 100%; justify-content: center; white-space: nowrap; }
+
+/* ---- Surprise Harvest Bag card (public + portal) ---- */
+.bag-promo { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px clamp(20px, 4vw, 36px); margin: 28px 0 44px; display: grid; grid-template-columns: 200px 1fr; gap: 24px; }
+.bag-photo { border-radius: 14px; overflow: hidden; background: var(--cream); aspect-ratio: 1 / 1; }
+.bag-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bag-info { display: grid; gap: 14px; min-width: 0; align-content: start; }
+.bag-promo h3 { font-family: var(--font-script); font-weight: 400; font-size: clamp(2rem, 3.6vw, 2.6rem); color: var(--forest); margin: 2px 0 2px; }
+
+.size-boxes { display: flex; gap: 10px; }
+.size-box {
+  position: relative; flex: 1 1 0; min-width: 0; border: 1.5px solid #e8e1d6; border-radius: 12px;
+  padding: 10px 12px 10px 32px; background: var(--white); cursor: pointer; text-align: left;
+  font: inherit; color: inherit; display: block;
+}
+.size-box strong { display: block; color: var(--forest); font-size: .96rem; }
+.size-box .size-save { display: block; color: #23602a; font-weight: 700; font-size: .78rem; margin-top: 3px; }
+.size-box .size-worth { display: block; color: var(--muted); font-size: .78rem; margin-top: 1px; }
+.size-box .tick { position: absolute; top: 12px; left: 10px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #d6cfc3; background: var(--white); }
+.size-box.active { border-color: var(--leaf); background: #f6faf2; }
+.size-box.active .tick { border-color: var(--leaf); background: var(--leaf); }
+
+.likely-inside-label { font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--leaf); margin: 0; }
+.likely-inside { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.likely-inside li { font-size: .82rem; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: #eaf4e5; color: var(--forest); }
+
+.bag-exclude { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; font-size: .92rem; }
+.bag-exclude select { width: auto; padding: 8px 12px; }
+
+.bag-cutoff { display: flex; align-items: center; gap: 12px; background: #fff6e2; border: 1.5px solid var(--gold); border-radius: 12px; padding: 12px 16px; }
+.bag-cutoff strong { display: block; color: var(--forest-dark); font-size: .92rem; }
+.bag-cutoff small { display: block; color: var(--muted); font-size: .8rem; margin-top: 2px; }
+.bag-cutoff .icon-circle { flex: none; width: 38px; height: 38px; margin: 0; }
+.bag-cutoff .icon-circle svg { width: 18px; height: 18px; }
+
+.bag-promo .btn { justify-self: start; }
+
+@media (max-width: 860px) {
+  .bag-promo { grid-template-columns: 1fr; }
+  .bag-photo { aspect-ratio: 16 / 7; }
+}
+@media (max-width: 640px) {
+  .bag-promo { padding: 20px 16px; gap: 14px; }
+  .size-box { padding: 9px 10px 9px 28px; }
+  .size-box .tick { top: 10px; left: 9px; }
+  .bag-promo .btn { width: 100%; justify-content: center; }
+}
 
 .fm-bento > * { min-width: 0; }

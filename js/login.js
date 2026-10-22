@@ -10,6 +10,16 @@
   var code = new URLSearchParams(location.search).get('code');
   if (code) { try { sessionStorage.setItem('meod-join-code', code.slice(0, 24)); } catch (e) { /* ignore */ } }
 
+  // Buy to Clear's bag card carries ?bagSize=&bagExclude= — hold it until the Shop pre-selects it.
+  var qs = new URLSearchParams(location.search);
+  var bagSize = qs.get('bagSize'), bagExclude = qs.get('bagExclude');
+  if (bagSize) {
+    try {
+      sessionStorage.setItem('meod-bag-size', bagSize.slice(0, 20));
+      if (bagExclude) sessionStorage.setItem('meod-bag-exclude', bagExclude.slice(0, 20));
+    } catch (e) { /* ignore */ }
+  }
+
   if (M.auth.current()) { location.replace('dashboard.html'); return; }
 
   var PITCH = {

@@ -46,6 +46,7 @@ Every push to `main` redeploys automatically.
 | Home | `index.html` | Hero, What we do, **Picked this morning** (in-stock produce with live stock badges), Our promise, Growing, **Buy together** group-buy band, stockists, Visit us |
 | About | `about.html` | Story, purpose, values, **food-security fact cards** (SG Fresh, 6 hectares, since 2014) |
 | Our Produce | `produce.html` | Catalogue with **search** (English and Chinese names), category chips with counts, **In stock only**, **Show more**, product cards with nutrients and *Buy ↗*. Also **Seed to plate** steps, **Farm & More** photo grid featuring Goodness Gracious Gelato, and **Where to buy** |
+| Buy to Clear | `clearance.html` | Why Buy to Clear exists, the **Surprise Harvest Bag** pre-order (sizes, "worth at least", likely-inside preview, exclude-a-category, a live countdown to the next 10pm cutoff and bags left), and a grid of clearance items (normal price struck through, clearance price, reason badge, qty left, available until). Buttons send people to the Portal to buy — no second checkout |
 | Experiences | `experiences.html` | Farm Tour, Workshop and School Visit cards, visit facts, and a **booking form** (validated; saved to the staff inbox) |
 | Contact | `contact.html` | WhatsApp, email and tours contact cards, and a **Visit the farm** panel with map and directions |
 
@@ -71,15 +72,16 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 
 | Role | Demo account | Screens |
 |---|---|---|
-| **Admin** | `admin@meod.test` | **SalesDesk** overview, Stock, Orders, Inbox, Campaign Studio, Group buys, Customers, **Users & roles**, **Audit log**, **Settings** |
-| **Sales staff** | `sales@meod.test` | Same as admin, minus Users / Audit / Settings. Customer names and phones are **masked**, and campaigns need an admin's approval |
+| **Admin** | `admin@meod.test` | **SalesDesk** overview, Stock, Orders, Inbox, Campaign Studio, **Buy to Clear**, Group buys, Customers, **Users & roles**, **Audit log**, **Settings** |
+| **Sales staff** | `sales@meod.test` | Same as admin, minus Users / Audit / Settings. Customer names and phones are **masked**, campaigns need an admin's approval, and only an admin can set or change a clearance **minimum price** (staff see it, read-only) |
 | **Group leader** | `leader@meod.test`, `leader2@meod.test` | Own group buys and share link, members' orders (**masked**), commission ledger with a worked example |
-| **Customer** | `customer@meod.test` | Home with **Smart picks**, Shop, My orders with **delivery tracking**, Group buy, Preferences (**profile editing**), Ask MEOD |
+| **Customer** | `customer@meod.test` | Home with **Smart picks**, Shop (incl. a **Buy to Clear** section and the Surprise Harvest Bag pre-order), My orders with **delivery tracking**, Group buy, Preferences (**profile editing**), Ask MEOD |
 
 ### Highlights
 
 - **Product details.** Tap any shop card for a pop-up with a large photo, live stock, description, storage and cooking tips, "often bought together", and a quantity picker.
 - **Shop and cart.** Live stock checks, a group-code box in the cart, a **free-delivery progress bar** and the delivery address. Stock is re-checked when you place the order.
+- **Buy to Clear.** A Shop section for clearance-priced produce and the pre-order **Surprise Harvest Bag** (two sizes, a bag limit per delivery day, 10pm-the-day-before cutoff, one excluded category). Staff/admin get a **Buy to Clear** screen: clearance candidates with plain-English reasons, a listing form (admin-only minimum price), active listings with **End early**, a bag panel with rule-based proposed contents and **Approve contents** (which reserves real stock, or blocks with a clear reason), a **Send WhatsApp alert** button that only drafts a Campaign Studio message, and an illustrative money-breakdown panel.
 - **My orders.** Status filters, and on each order:
   - a 5-step tracker
   - **Track**: an expandable panel with route map, driver card or proof of delivery, and a timeline
@@ -101,6 +103,7 @@ All of these live in `RULES` in `js/data.js`:
 - **Pricing:** amounts are integer cents. Group discount is 5%. Delivery is free from S$60, otherwise S$8. Deliveries run Tue / Thu / Sat.
 - **Commission:** 5% of net merchandise (subtotal − discount, delivery excluded). It counts once an order is paid, and a refund posts a matching negative adjustment. The ledger is rebuilt from the orders, so it always reconciles.
 - **Stock never guesses.** A sync older than 6 hours, or a failed one, shows as *Checking stock*. Those items can't be ordered, and the bot won't confirm them.
+- **Buy to Clear.** A clearance price can never be below its minimum price. Clearance stock is a discounted slice of a product's own stock, so a sale decrements both. Bag pre-orders close 10pm the day before each Tue/Thu/Sat delivery.
 - **Ask MEOD** detects language (EN / 中文 / BM; Tamil falls back to English) and what the customer is asking about. Complaints, refunds, payment and food-safety messages **create a ticket and hand over to a person**, and the reply is honest about after-hours wait times.
 
 ### Delivery tracking (mock adapter)

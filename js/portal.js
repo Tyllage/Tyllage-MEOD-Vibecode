@@ -42,12 +42,15 @@
     return Math.round(m / 1440) + ' d ago';
   }
   function date(iso) { return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  // No-year date, for the Buy to Clear feature (listings, bag days — never more than a few weeks out).
+  function shortDate(iso) { return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }); }
+  function shortWeekday(iso) { return new Date(iso).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
   function badge(text, tone) { return h('span', { class: 'badge b-' + tone, text: String(text).replace(/_/g, ' ') }); }
   var STATUS_TONE = {
     pending_payment: 'amber', paid: 'blue', fulfilled: 'green', refunded: 'red', cancelled: 'grey',
     open: 'amber', resolved: 'green', new: 'amber', confirmed: 'green', declined: 'grey', closed: 'grey',
     draft: 'grey', pending_approval: 'amber', approved: 'blue', sent: 'green', rejected: 'red',
-    accrued: 'green', pending: 'amber', reversed: 'red', void: 'grey'
+    accrued: 'green', pending: 'amber', reversed: 'red', void: 'grey', active: 'green', ended: 'grey'
   };
   function statusBadge(s) { return badge(s, STATUS_TONE[s] || 'grey'); }
   function stockBadge(p) {
@@ -158,10 +161,19 @@
         { label: 'Category', render: function (p) { return M.CATEGORIES[p.category].label; } },
         { label: 'Type', render: function (p) { return p.category === 'farm-more' ? 'Made by MEOD' : 'Fresh harvest'; } },
         { label: 'Price', num: true, render: function (p) { return money(p.priceCents); } },
-        { label: 'Qty', num: true, render: function (p) { return M.stockStatus(p).known ? String(p.stock.qty) : '—'; } },
+        { label: 'Qty', num: true, render: function (p) {
+          if (!M.stockStatus(p).known) return '—';
+          var listing = S().clearance.filter(function (l) { return l.productId === p.id && M.clearance.isOpen(l); })[0];
+          // A block (not an inline span) so the tag always starts its own line, never
+          // wrapping onto the qty's line depending on available width.
+          return h('div', { class: 'qty-cell' },
+            h('div', { text: String(p.stock.qty) }),
+            listing ? h('div', { class: 'mini-chip', text: M.clearance.remaining(listing) + ' on clearance' }) : null);
+        } },
         { label: 'Status', render: stockBadge },
         { label: 'Last synced', render: function (p) { return ago(p.stock.updatedAt); } }
-      ], rows)));
+      ], rows),
+      h('p', { class: 'hint', style: 'margin-top:14px', text: 'Approving a Surprise Harvest Bag’s contents reserves stock here too — in production this would update Shopify.' })));
   }
 
   var TRANSITIONS = { pending_payment: ['paid', 'cancelled'], paid: ['fulfilled', 'refunded'], fulfilled: ['refunded'] };
@@ -349,6 +361,224 @@
     drawCampaigns();
     append(root, h('section', { class: 'panel' }, h('div', { class: 'user-toolbar' }, cChips), cList));
   }
+
+  /* ---------------- Buy to Clear (staff + admin) ---------------- */
+  function dollarsToCents(v) { var n = Math.round(parseFloat(v) * 100); return isNaN(n) ? NaN : n; }
+  function centsToDollars(c) { return (c / 100).toFixed(2); }
+
+  function clearanceView(root) {
+    var canEditMin = M.auth.can(session, 'clearance.minprice');
+
+    /* ---- a. Candidates ---- */
+    var candidates = M.clearance.candidates();
+    append(root, panel('Clearance candidates', 'High stock, low recent sales — a plain-English reason for each.',
+      table([
+        { label: 'Product', render: function (c) { return c.product.title; } },
+        { label: 'In stock', num: true, render: function (c) { return String(c.qty); } },
+        { label: 'Sold · 14 days', num: true, render: function (c) { return String(c.sold14); } },
+        { label: 'Reason', render: function (c) { return c.reason; } },
+        { label: 'Actions', render: function (c) {
+          return mini('List for clearance', function () { prefillForm(c); });
+        } }
+      ], candidates, 'Nothing stands out right now — stock and recent sales look balanced.')));
+
+    /* ---- b. Create a listing ---- */
+    var inStock = S().products.filter(function (p) { return !p.bagOffer && M.stockStatus(p).known && p.stock.qty > 0; });
+    var productSel = h('select', { name: 'product', required: true }, inStock.map(function (p) { return h('option', { value: p.id, text: p.title + ' (' + p.stock.qty + ')' }); }));
+    var qtyInput = h('input', { name: 'qty', type: 'number', min: 1, step: 1, required: true, value: '10' });
+    var priceInput = h('input', { name: 'price', type: 'number', min: 0, step: '0.01', required: true });
+    var minInput = h('input', { name: 'min', type: 'number', min: 0, step: '0.01', required: true, disabled: !canEditMin });
+    var minLine = h('small', { class: 'pf-hint min-live' });
+    var reasonSel = h('select', { name: 'reason' },
+      h('option', { value: 'surplus', text: 'Surplus' }), h('option', { value: 'short_dated', text: 'Short-dated' }), h('option', { value: 'cosmetic', text: 'Cosmetic' }));
+    var minDate = new Date().toISOString().slice(0, 10);
+    var untilInput = h('input', { name: 'until', type: 'date', required: true, min: minDate, value: daysFromNowStr(3) });
+    var errorBox = h('p', { class: 'pf-error', 'aria-live': 'polite' });
+
+    function selectedProduct() { return M.byId('products', productSel.value); }
+    function refreshMinLine() {
+      var minC = dollarsToCents(minInput.value);
+      minLine.textContent = isNaN(minC) ? '' : 'Min ' + money(minC);
+      var priceC = dollarsToCents(priceInput.value);
+      var tooLow = !isNaN(priceC) && !isNaN(minC) && priceC < minC;
+      priceInput.setAttribute('aria-invalid', String(tooLow));
+      errorBox.textContent = tooLow ? 'Clearance price can\'t be below the minimum of ' + money(minC) + '.' : '';
+    }
+    function applyDefaults() {
+      var p = selectedProduct();
+      if (!p) return;
+      priceInput.value = centsToDollars(Math.round(p.priceCents * 0.8));
+      minInput.value = centsToDollars(Math.round(p.priceCents * M.RULES.clearanceDefaultMinRate));
+      refreshMinLine();
+    }
+    productSel.addEventListener('change', applyDefaults);
+    priceInput.addEventListener('input', refreshMinLine);
+    minInput.addEventListener('input', refreshMinLine);
+    if (inStock.length) applyDefaults();
+
+    function prefillForm(candidate) {
+      productSel.value = candidate.product.id;
+      applyDefaults();
+      qtyInput.value = String(Math.max(1, Math.round(candidate.qty * 0.6)));
+      var formPanel = document.getElementById('clearance-form-panel');
+      if (formPanel) formPanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      qtyInput.focus();
+    }
+
+    var minField = canEditMin ? minInput : h('span', { class: 'min-locked' }, minInput, iconCircle(ICONS.lock, 'bare'));
+    var form = h('form', { class: 'form-grid clearance-form', novalidate: true },
+      h('label', null, 'Product', productSel),
+      h('label', null, 'Quantity to list', qtyInput),
+      h('label', null, 'Clearance price (S$)', priceInput, minLine),
+      h('label', null, 'Min price (S$)', minField),
+      h('label', null, 'Reason', reasonSel),
+      h('label', null, 'Available until', untilInput),
+      !canEditMin ? h('small', { class: 'pf-hint', style: 'grid-column:1/-1', text: 'Example minimum (MEOD to confirm) — only an admin can change this.' }) : null,
+      h('div', { style: 'grid-column:1/-1' }, errorBox),
+      h('div', { style: 'grid-column:1/-1' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'List for clearance' })));
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var data = {
+        productId: productSel.value, qty: parseInt(qtyInput.value, 10),
+        clearancePriceCents: dollarsToCents(priceInput.value), minPriceCents: dollarsToCents(minInput.value),
+        reason: reasonSel.value, availableUntil: untilInput.value
+      };
+      var r = M.clearance.create(data, session.email);
+      if (!r.ok) { errorBox.textContent = r.error; return; }
+      errorBox.textContent = '';
+      var p = selectedProduct();
+      commit('clearance.listed', r.id, p.title + ' listed for clearance at ' + money(data.clearancePriceCents) + '.');
+    });
+
+    append(root, h('section', { class: 'panel', id: 'clearance-form-panel' },
+      h('h2', { text: 'List a product for clearance' }),
+      h('p', { class: 'hint', text: 'A clearance price can never be below the minimum price. Stale stock can\'t be listed or ordered.' }),
+      form));
+
+    /* ---- c. Active listings ---- */
+    var activeListings = S().clearance.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    append(root, panel('Listings', null,
+      h('div', { class: 'clearance-table' },
+        table([
+          { label: 'Product', render: function (l) { var p = M.byId('products', l.productId); return p ? p.title : '—'; } },
+          { label: 'Price', render: function (l) { return h('span', null, h('span', { class: 'price-was', text: money(l.normalPriceCents) }), ' ', h('span', { class: 'price-now', text: money(l.clearancePriceCents) }), ' ', h('span', { class: 'discount-badge', text: '−' + M.clearance.discountPct(l) + '%' })); } },
+          { label: 'Minimum', num: true, render: function (l) { return money(l.minPriceCents); } },
+          { label: 'Sold / left', render: function (l) { return l.qtySold + ' sold · ' + M.clearance.remaining(l) + ' left'; } },
+          { label: 'Reason', render: function (l) { return M.clearance.reasonLabel(l.reason); } },
+          { label: 'Ends', render: function (l) { return shortDate(l.availableUntil); } },
+          { label: 'Status', render: function (l) { return statusBadge(M.clearance.isOpen(l) ? 'active' : 'ended'); } },
+          { label: 'Actions', render: function (l) {
+            var actions = [];
+            if (M.clearance.isOpen(l)) {
+              actions.push(mini('End', function () {
+                if (!confirm('End this clearance listing early?')) return;
+                M.clearance.endEarly(l.id);
+                var p = M.byId('products', l.productId);
+                commit('clearance.ended', l.id, p.title + ' clearance listing ended early.');
+              }, { danger: true, title: 'End early' }));
+              actions.push(mini('Alert', function () { draftClearanceAlert(l); }, { title: 'Send WhatsApp alert' }));
+            }
+            return actions.length ? h('div', { class: 'actions' }, actions) : '—';
+          } }
+        ], activeListings, 'No clearance listings yet.'))));
+
+    /* ---- e. WhatsApp alert -> Campaign Studio draft (never sent directly) ---- */
+    function draftClearanceAlert(listing) {
+      var p = M.byId('products', listing.productId);
+      var audience = audienceFor(p.id);
+      var id = M.nextId('CP');
+      S().campaigns.unshift({
+        id: id, productId: p.id, title: p.title + ' — Buy to Clear', language: 'en',
+        message: 'Buy to Clear 🌱 ' + p.title + ' is now ' + money(listing.clearancePriceCents) + ' (was ' + money(listing.normalPriceCents) +
+          '), only ' + M.clearance.remaining(listing) + ' left, available until ' + shortDate(listing.availableUntil) + '. Reply STOP to opt out.',
+        audience: audience.eligible, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+      });
+      commit('campaign.submitted', id, 'Draft added to Campaign Studio — needs admin approval before it sends.');
+    }
+
+    /* ---- d. Surprise Harvest Bag: pre-orders per day + proposed contents ---- */
+    function bagValueInfo(o) {
+      var items = o.bagContents || o.bagProposed || [];
+      var worth = items.reduce(function (s, it) { var p = M.byId('products', it.productId); return s + (p ? p.priceCents * it.qty : 0); }, 0);
+      var sz = S().harvestBag.sizes.filter(function (s) { return s.key === o.bagSize; })[0];
+      var promise = sz ? sz.worthCents : 0;
+      return { items: items, worth: worth, promise: promise, ok: worth >= promise };
+    }
+    function approveAllForDay(dayOrders, dayLabel) {
+      var pending = dayOrders.filter(function (o) { return !o.bagContentsApproved && o.status !== 'cancelled'; });
+      if (!pending.length) { toast('Nothing to approve for this day.'); return; }
+      var okCount = 0, fails = [];
+      pending.forEach(function (o) {
+        var r = M.clearance.approveBagContents(o.id, o.bagProposed || []);
+        if (r.ok) okCount++; else fails.push(o.ref + ': ' + r.error);
+      });
+      commit('clearance.bag_approved', dayLabel, 'Approved ' + okCount + ' of ' + pending.length + ' bag(s) for ' + dayLabel + '.' +
+        (fails.length ? ' Blocked: ' + fails.join('; ') : ''));
+    }
+
+    var bagDays = []; var from = new Date();
+    for (var i = 0; i < 4; i++) {
+      var info = M.clearance.nextBagCutoff(from);
+      bagDays.push(info);
+      from = new Date(info.deliveryDay.getTime() + 36e5);
+    }
+    var limit = S().harvestBag.limitPerDay;
+    var busyDays = [], emptyDays = [];
+    bagDays.forEach(function (info) {
+      var key = M.clearance.dayKey(info.deliveryDay);
+      var orders = M.clearance.bagOrdersForDay(key);
+      (orders.length ? busyDays : emptyDays).push({ info: info, key: key, orders: orders });
+    });
+
+    var bagPanels = busyDays.map(function (d) {
+      var dayLabel = weekdayLongLabel(d.info.deliveryDay);
+      var pct = Math.min(100, Math.round(d.orders.length / limit * 100));
+      var bar = h('div', { class: 'bag-day-progress' },
+        h('div', { class: 'bar' }, h('span', { class: 'bar-fill', style: 'width:' + pct + '%' })),
+        h('small', { text: d.orders.length + ' / ' + limit + ' bags' }),
+        mini('Approve all for this day', function () { approveAllForDay(d.orders, dayLabel); }));
+      var rows = d.orders.length ? d.orders.map(function (o) {
+        var sz = S().harvestBag.sizes.filter(function (s) { return s.key === o.bagSize; })[0];
+        var v = bagValueInfo(o);
+        return h('div', { class: 'bag-order-row' },
+          h('div', { class: 'bor-id' }, h('strong', { text: o.ref }), h('small', { text: customerLabel(o.customerId) })),
+          h('div', { class: 'bor-mid' },
+            h('small', { class: 'bor-tags' }, (sz ? sz.label : o.bagSize) + ' · Excludes ' + (o.excludedCategory ? M.CATEGORIES[o.excludedCategory].label : 'none')),
+            v.items.length
+              ? h('div', null,
+                  h('span', { text: v.items.map(function (it) { return it.title; }).join(', ') }),
+                  h('small', { class: v.ok ? 'bag-value-ok' : 'bag-value-low' },
+                    v.items.length + ' items · worth ' + money(v.worth) + ' ' + (v.ok ? '✓' : '✗') + ' (promise ' + money(v.promise) + ')'))
+              : h('span', { class: 'empty', text: 'No contents proposed.' })),
+          h('div', { class: 'bor-status' }, o.bagContentsApproved ? statusBadge('approved') : statusBadge('pending')),
+          h('div', { class: 'bor-action' }, (o.bagContentsApproved || o.status === 'cancelled') ? null : mini('Approve', function () {
+            var r = M.clearance.approveBagContents(o.id, o.bagProposed || []);
+            if (!r.ok) { toast(r.error); return; }
+            commit('clearance.bag_approved', o.ref, 'Contents approved for ' + o.ref + '.');
+          })));
+      }) : h('p', { class: 'empty', text: 'No pre-orders for this day yet.' });
+      return panel(dayLabel, null, bar, h('div', { class: 'bag-order-rows' }, rows));
+    });
+    append(root, h('div', { class: 'settings-group' }, h('h2', { class: 'settings-heading', text: 'Surprise Harvest Bag — pre-orders' }),
+      bagPanels,
+      emptyDays.length ? panel('No pre-orders yet', null, emptyDays.map(function (d) {
+        return h('div', { class: 'bag-day-empty' }, h('span', { text: weekdayLongLabel(d.info.deliveryDay) }), h('span', { text: '0 / ' + limit + ' bags' }));
+      })) : null));
+
+    /* ---- f. Money breakdown ---- */
+    append(root, panel('Money breakdown', 'Example numbers — MEOD to confirm real costs.',
+      h('div', { class: 'clearance-table' }, table([
+        { label: 'Product', render: function (l) { var p = M.byId('products', l.productId); return p ? p.title : '—'; } },
+        { label: 'Listed qty', num: true, render: function (l) { return String(l.qty); } },
+        { label: 'Sold so far (S$)', num: true, render: function (l) { return money(l.qtySold * l.clearancePriceCents); } },
+        { label: 'If all sold (S$)', num: true, render: function (l) { return money(l.qty * l.clearancePriceCents); } },
+        { label: 'Normal value (S$)', num: true, render: function (l) { return money(l.qty * l.normalPriceCents); } },
+        { label: 'vs S$0 if wasted', num: true, render: function (l) { return h('span', { class: 'bag-value-ok' }, '+' + money(l.qtySold * l.clearancePriceCents)); } }
+      ], S().clearance, 'No clearance history yet.'))));
+  }
+  function daysFromNowStr(d) { return new Date(Date.now() + d * 864e5).toISOString().slice(0, 10); }
+  function weekdayLongLabel(d) { return d.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' }); }
 
   function groupBuyAdminView(root) {
     var entries = M.ledger();
@@ -626,7 +856,8 @@
     user: { label: 'Users', tone: 'red' },
     inventory: { label: 'Stock', tone: 'grey' },
     consent: { label: 'Privacy', tone: 'grey' },
-    profile: { label: 'Privacy', tone: 'grey' }
+    profile: { label: 'Privacy', tone: 'grey' },
+    clearance: { label: 'Buy to Clear', tone: 'amber' }
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
@@ -639,7 +870,9 @@
     'groupbuy.created': 'Created a group buy', 'groupbuy.open': 'Reopened a group buy', 'groupbuy.closed': 'Closed a group buy',
     'groupbuy.joined': 'Joined a group buy', 'groupbuy.left': 'Left a group buy',
     'user.disabled': 'Disabled a user', 'user.enabled': 'Enabled a user',
-    'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo'
+    'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
+    'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
+    'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -960,7 +1193,9 @@
     leaf: '<path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 16-9 0 12-4 16-9 16z"/><path d="M4 20c4-4 7-7 11-10"/>',
     box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z"/>',
-    x: '<path d="M18 6 6 18M6 6l12 12"/>'
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    bag: '<path d="M6 7h12l1.5 13.5a2 2 0 0 1-2 2.5H6.5a2 2 0 0 1-2-2.5z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
 
   // Join a group buy by code; shared by the Shop cart and the Group buy page.
@@ -997,7 +1232,7 @@
       if (!o.items.some(function (i) { return i.productId === p.id; })) return;
       o.items.forEach(function (i) { if (i.productId !== p.id) counts[i.productId] = (counts[i.productId] || 0) + 1; });
     });
-    var inStock = function (x) { var st = M.stockStatus(x); return st.known && x.stock.qty > 0; };
+    var inStock = function (x) { var st = M.stockStatus(x); return !x.bagOffer && st.known && x.stock.qty > 0; };
     var list = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; })
       .map(function (id) { return M.byId('products', id); }).filter(function (x) { return x && inStock(x); });
     S().products.forEach(function (x) { if (list.length < 3 && x.id !== p.id && x.category === p.category && inStock(x) && list.indexOf(x) === -1) list.push(x); });
@@ -1086,19 +1321,70 @@
     var state = shopView.state || (shopView.state = { filter: 'all', q: '', inStock: false });
     var gridBox = h('div');
     var cartBox = h('aside', { class: 'cart-card', 'aria-label': 'Your cart' });
+    var bagProduct = S().products.filter(function (p) { return p.bagOffer; })[0];
+    var bagSelection = shopView.bagSelection || (shopView.bagSelection = (function () {
+      // One-time pre-select from the public clearance.html bag card's link, if present.
+      var sizeKey = 'small', excludedCategory = '';
+      try {
+        var prefSize = sessionStorage.getItem('meod-bag-size');
+        if (prefSize && S().harvestBag.sizes.some(function (sz) { return sz.key === prefSize; })) sizeKey = prefSize;
+        excludedCategory = sessionStorage.getItem('meod-bag-exclude') || '';
+        sessionStorage.removeItem('meod-bag-size');
+        sessionStorage.removeItem('meod-bag-exclude');
+      } catch (e) { /* ignore */ }
+      return { sizeKey: sizeKey, excludedCategory: excludedCategory, dayKey: M.clearance.dayKey(M.clearance.nextBagCutoff().deliveryDay) };
+    })());
 
+    // Cart keys: a plain productId for regular items, "CL:<listingId>" for a clearance
+    // line (priced at the listing's clearance price) and "BAG" for the one Surprise
+    // Harvest Bag pre-order (its size/day/exclusion travels on bagSelection).
     function cartItems() {
-      return Object.keys(cart).filter(function (id) { return cart[id] > 0 && M.byId('products', id); }).map(function (id) {
-        var p = M.byId('products', id);
-        return { productId: id, title: p.title, qty: cart[id], priceCents: p.priceCents };
-      });
+      return Object.keys(cart).filter(function (key) { return cart[key] > 0; }).map(function (key) {
+        if (key === 'BAG') {
+          var size = S().harvestBag.sizes.filter(function (sz) { return sz.key === bagSelection.sizeKey; })[0] || S().harvestBag.sizes[0];
+          return {
+            key: key, productId: bagProduct.id, title: 'Surprise Harvest Bag — ' + size.label, qty: 1, priceCents: size.priceCents,
+            bag: true, bagSizeKey: size.key, deliveryDay: bagSelection.dayKey, excludedCategory: bagSelection.excludedCategory || null
+          };
+        }
+        if (key.indexOf('CL:') === 0) {
+          var listing = M.byId('clearance', key.slice(3));
+          var p = listing && M.byId('products', listing.productId);
+          if (!p) return null;
+          return { key: key, productId: p.id, title: p.title + ' (clearance)', qty: cart[key], priceCents: listing.clearancePriceCents, clearanceListingId: listing.id };
+        }
+        var p2 = M.byId('products', key);
+        if (!p2) return null;
+        return { key: key, productId: key, title: p2.title, qty: cart[key], priceCents: p2.priceCents };
+      }).filter(Boolean);
     }
-    function setQty(id, q) {
-      cart[id] = Math.max(0, q);
-      if (!cart[id]) delete cart[id];
+    function setQty(key, q) {
+      cart[key] = Math.max(0, q);
+      if (!cart[key]) delete cart[key];
       saveCart();
       drawGrid();
       drawCart();
+      drawClearance();
+    }
+    // One cart line validation error, or null — checked again right before placing the order.
+    function cartLineError(i) {
+      if (i.bag) {
+        if (!M.stockStatus(bagProduct).known) return 'Surprise Harvest Bag can\'t be confirmed right now — stock data is being refreshed.';
+        if (M.clearance.bagsLeftForDay(i.deliveryDay) <= 0) return 'No bags left for that delivery day — pick another day in Buy to Clear.';
+        return null;
+      }
+      if (i.clearanceListingId) {
+        var listing = M.byId('clearance', i.clearanceListingId);
+        var p = listing && M.byId('products', listing.productId);
+        if (!listing || !p || !M.clearance.isOpen(listing)) return i.title + ' is no longer available at the clearance price.';
+        if (!M.stockStatus(p).known) return p.title + ' stock can\'t be confirmed right now.';
+        if (M.clearance.remaining(listing) < i.qty) return 'Only ' + M.clearance.remaining(listing) + ' left of ' + p.title + ' at the clearance price.';
+        return null;
+      }
+      var p2 = M.byId('products', i.productId);
+      var s2 = p2 && M.stockStatus(p2);
+      if (!p2 || !s2.known || s2.qty < i.qty) return 'Stock for ' + (p2 ? p2.title : i.title) + ' could not be confirmed. Please adjust your cart.';
+      return null;
     }
 
     // Toolbar
@@ -1106,7 +1392,7 @@
     function drawChips() {
       chips.textContent = '';
       [['all', 'All']].concat(Object.keys(M.CATEGORIES).map(function (k) { return [k, M.CATEGORIES[k].label]; })).forEach(function (f) {
-        var n = S().products.filter(function (p) { return f[0] === 'all' || p.category === f[0]; }).length;
+        var n = S().products.filter(function (p) { return !p.bagOffer && (f[0] === 'all' || p.category === f[0]); }).length;
         append(chips, h('button', { type: 'button', class: 'chip' + (state.filter === f[0] ? ' active' : ''), 'aria-pressed': String(state.filter === f[0]),
           onclick: function () { state.filter = f[0]; drawChips(); drawGrid(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(n) })));
       });
@@ -1120,6 +1406,7 @@
     var shopOpts = { onCartChange: function () { drawGrid(); drawCart(); } };
     function drawGrid() {
       var list = S().products.filter(function (p) {
+        if (p.bagOffer) return false;
         if (state.filter !== 'all' && p.category !== state.filter) return false;
         if (state.inStock && !(M.stockStatus(p).known && p.stock.qty > 0)) return false;
         if (state.q && [p.title, p.subtitle].concat(p.aliases || []).join(' ').toLowerCase().indexOf(state.q) === -1) return false;
@@ -1177,7 +1464,7 @@
             h('span', { class: 'cart-thumb' }, thumb(p)),
             h('span', { class: 'cart-name' }, h('strong', { text: i.title }), h('small', { text: i.qty + ' × ' + money(i.priceCents) })),
             h('span', { class: 'cart-amt', text: money(i.qty * i.priceCents) }),
-            h('button', { class: 'cart-remove', type: 'button', 'aria-label': 'Remove ' + i.title, onclick: function () { setQty(i.productId, 0); } }, iconCircle(ICONS.x, 'bare')));
+            h('button', { class: 'cart-remove', type: 'button', 'aria-label': 'Remove ' + i.title, onclick: function () { setQty(i.key, 0); } }, iconCircle(ICONS.x, 'bare')));
         })));
 
         // Free-delivery progress
@@ -1212,16 +1499,28 @@
 
       append(cartBox,
         h('button', { class: 'btn btn-forest cart-checkout', type: 'button', disabled: !items.length, text: items.length ? 'Place order · ' + money(totals.totalCents) : 'Place order', onclick: function () {
-          // Re-check stock at submit time: fail closed if anything changed.
+          // Re-check stock (and clearance / bag availability) at submit time: fail closed if anything changed.
           for (var i = 0; i < items.length; i++) {
-            var p = M.byId('products', items[i].productId);
-            var s = M.stockStatus(p);
-            if (!s.known || s.qty < items[i].qty) { toast('Stock for ' + p.title + ' could not be confirmed. Please adjust your cart.'); drawGrid(); drawCart(); return; }
+            var err = cartLineError(items[i]);
+            if (err) { toast(err); drawGrid(); drawCart(); drawClearance(); return; }
           }
-          items.forEach(function (i) { M.byId('products', i.productId).stock.qty -= i.qty; });
+          items.forEach(function (i) {
+            if (i.bag) return; // bag availability is tracked per delivery day, not as product stock
+            if (i.clearanceListingId) { M.clearance.sell(i.clearanceListingId, i.qty); return; }
+            M.byId('products', i.productId).stock.qty -= i.qty;
+          });
           var id = M.nextId('O');
           var ref = '#MF' + (5000 + S().orders.length + 1);
-          S().orders.push(Object.assign({ id: id, ref: ref, customerId: c.id, groupEventId: activeEv ? activeEv.id : null, status: 'pending_payment', items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'portal' }, totals));
+          var order = Object.assign({ id: id, ref: ref, customerId: c.id, groupEventId: activeEv ? activeEv.id : null, status: 'pending_payment', items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'portal' }, totals);
+          var bagLine = items.filter(function (i) { return i.bag; })[0];
+          if (bagLine) {
+            order.bagSize = bagLine.bagSizeKey;
+            order.deliveryDay = bagLine.deliveryDay;
+            order.excludedCategory = bagLine.excludedCategory;
+            order.bagContentsApproved = false;
+            order.bagProposed = M.clearance.proposeBagContents(order);
+          }
+          S().orders.push(order);
           cart = {}; saveCart();
           commit('order.created', ref, 'Order ' + ref + ' placed. You\'ll pay securely on MEOD Fresh.');
           location.hash = 'orders';
@@ -1233,11 +1532,118 @@
         h('a', { href: '#preferences', text: addr ? 'Change' : 'Add' })), cartBox.querySelector('.cart-checkout'));
     }
 
+    /* ---- Buy to Clear: clearance items + the Surprise Harvest Bag pre-order ---- */
+    var clearanceBox = h('div');
+    var weekdayLong = function (d) { return d.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' }); };
+    var hourLabel = function (d) { var hh = d.getHours(); return (hh % 12 || 12) + (hh >= 12 ? 'pm' : 'am'); };
+    var cutoffShort = function (d) { return d.toLocaleDateString('en-SG', { weekday: 'short' }) + ' ' + hourLabel(d); };
+
+    function drawClearance() {
+      clearanceBox.textContent = '';
+      var listings = M.clearance.listActive();
+
+      var clearGrid = listings.length ? h('div', { class: 'clearance-strip' }, listings.map(function (l) {
+        var p = M.byId('products', l.productId);
+        var left = M.clearance.remaining(l);
+        var q = cart['CL:' + l.id] || 0;
+        var stockOk = M.stockStatus(p).known;
+        var canAdd = stockOk && q < left;
+        var control = q === 0
+          ? h('button', { class: 'btn btn-sm btn-forest shop-add clearance-buy', type: 'button', disabled: !canAdd, text: canAdd ? '+ Add' : (stockOk ? 'Sold out' : 'Checking…'),
+              onclick: function () { setQty('CL:' + l.id, 1); } })
+          : h('div', { class: 'qty clearance-qty' },
+              h('button', { type: 'button', 'aria-label': 'Remove one', text: '−', onclick: function () { setQty('CL:' + l.id, q - 1); } }),
+              h('span', { text: String(q) }),
+              h('button', { type: 'button', 'aria-label': 'Add one', disabled: !canAdd, text: '+', onclick: function () { setQty('CL:' + l.id, q + 1); } }));
+        return h('article', { class: 'shop-item clearance-item' + (q ? ' in-cart' : '') },
+          h('div', { class: 'shop-media' }, thumb(p)),
+          h('div', { class: 'shop-body' },
+            h('span', { class: 'reason-pill', text: M.clearance.reasonLabel(l.reason) }),
+            h('strong', { class: 'shop-title', text: p.title }),
+            h('div', { class: 'clearance-meta' },
+              h('span', { class: 'mini-chip', text: left + ' left' }),
+              h('span', { class: 'mini-chip', text: 'Until ' + shortDate(l.availableUntil) })),
+            h('div', { class: 'clearance-foot' },
+              h('div', { class: 'price-row' },
+                h('span', { class: 'price-was', text: money(l.normalPriceCents) }),
+                h('span', { class: 'price-now', text: money(l.clearancePriceCents) }),
+                h('span', { class: 'discount-badge', text: '−' + M.clearance.discountPct(l) + '%' }),
+              ),
+              control)));
+      })) : h('p', { class: 'empty', text: 'Nothing is on clearance right now — check back soon.' });
+
+      var bag = S().harvestBag;
+      var bagDays = []; var from = new Date();
+      for (var i = 0; i < 3; i++) {
+        var info = M.clearance.nextBagCutoff(from);
+        bagDays.push(info);
+        from = new Date(info.deliveryDay.getTime() + 36e5);
+      }
+      var daySelect = h('select', { 'aria-label': 'Delivery day', onchange: function (e) { bagSelection.dayKey = e.target.value; drawClearance(); } },
+        bagDays.map(function (info) {
+          var key = M.clearance.dayKey(info.deliveryDay);
+          var left = M.clearance.bagsLeftForDay(key);
+          return h('option', { value: key, selected: key === bagSelection.dayKey, disabled: left <= 0,
+            text: weekdayLong(info.deliveryDay) + ' · ' + (left > 0 ? left + ' bags left' : 'fully booked') });
+        }));
+      var excludeSelect = h('select', { 'aria-label': 'Exclude a category', onchange: function (e) { bagSelection.excludedCategory = e.target.value; drawClearance(); } },
+        h('option', { value: '', text: 'No exclusions', selected: !bagSelection.excludedCategory }),
+        Object.keys(M.CATEGORIES).map(function (k) { return h('option', { value: k, text: 'No ' + M.CATEGORIES[k].label, selected: bagSelection.excludedCategory === k }); }));
+
+      var cutoffInfo = bagDays.filter(function (info) { return M.clearance.dayKey(info.deliveryDay) === bagSelection.dayKey; })[0];
+      if (!cutoffInfo) { cutoffInfo = bagDays[0]; bagSelection.dayKey = M.clearance.dayKey(cutoffInfo.deliveryDay); }
+      var selectedDayLeft = M.clearance.bagsLeftForDay(bagSelection.dayKey);
+      var likely = M.clearance.likelyInside(bagSelection.excludedCategory, 5);
+
+      var sizeCards = bag.sizes.map(function (sz) {
+        var active = bagSelection.sizeKey === sz.key;
+        var box = h('button', { type: 'button', class: 'size-box' + (active ? ' active' : ''), 'aria-pressed': String(active),
+          onclick: function () { bagSelection.sizeKey = sz.key; drawClearance(); } },
+          h('span', { class: 'tick', 'aria-hidden': 'true' }),
+          h('strong', { text: sz.label + ' · ' + money(sz.priceCents) }),
+          h('span', { class: 'size-save', text: 'Save ' + money(sz.worthCents - sz.priceCents) }),
+          h('span', { class: 'size-worth', text: 'Worth at least ' + money(sz.worthCents) }));
+        return box;
+      });
+      var selectedSize = bag.sizes.filter(function (sz) { return sz.key === bagSelection.sizeKey; })[0] || bag.sizes[0];
+
+      var inCart = Boolean(cart.BAG);
+      var bagCard = h('article', { class: 'panel bag-card' },
+        h('div', { class: 'bag-photo' }, h('img', { src: 'assets/img/farm-flatlay-640.webp', alt: '', loading: 'lazy', width: 320, height: 320 })),
+        h('div', { class: 'bag-info' },
+          h('h3', { text: 'Surprise Harvest Bag' }),
+          h('p', { class: 'hint', text: 'A chef-picked mix of whatever we have the most of this week — mostly from Buy to Clear.' }),
+          h('div', { class: 'size-boxes', role: 'group', 'aria-label': 'Choose a bag size' }, sizeCards),
+          h('div', null,
+            h('p', { class: 'likely-inside-label', text: 'Likely inside' }),
+            h('ul', { class: 'likely-inside', 'aria-label': 'Likely inside' }, likely.length
+              ? likely.map(function (p) { return h('li', { text: p.title }); })
+              : [h('li', { text: 'Fresh seasonal picks' })])),
+          h('div', { class: 'bag-fields' },
+            h('label', null, 'Delivery day', daySelect),
+            h('label', null, 'Exclude a category', excludeSelect)),
+          h('div', { class: 'bag-cutoff' }, iconCircle(ICONS.clock),
+            h('span', null,
+              h('strong', { text: 'Order by ' + cutoffShort(cutoffInfo.cutoff) + ' for ' + shortWeekday(cutoffInfo.deliveryDay) }),
+              h('small', { text: selectedDayLeft + (selectedDayLeft === 1 ? ' bag left that day' : ' bags left that day') }))),
+          h('button', { class: 'btn btn-sm ' + (inCart ? 'btn-outline' : 'btn-gold'), type: 'button',
+            text: inCart ? 'Remove bag from cart' : 'Add bag · ' + money(selectedSize.priceCents),
+            disabled: !inCart && selectedDayLeft <= 0, onclick: function () { setQty('BAG', inCart ? 0 : 1); } })));
+
+      append(clearanceBox,
+        h('div', { class: 'clearance-top-head' }, h('h2', { text: 'Buy to Clear' }),
+          h('p', { class: 'hint', text: 'Fresh produce we have extra of, sold before it goes to waste. Illustrative prices — MEOD to confirm.' })),
+        bagCard, clearGrid);
+    }
+
     drawChips();
     drawGrid();
     drawCart();
+    drawClearance();
     append(root, h('div', { class: 'shop-layout' },
       h('section', { class: 'panel shop-panel' },
+        clearanceBox,
+        h('hr', { class: 'shop-divider' }),
         h('div', { class: 'shop-toolbar' }, searchBox, h('label', { class: 'toggle' }, stockToggle, h('span', { text: 'In stock only' }))),
         chips,
         gridBox),
@@ -1477,6 +1883,11 @@
             h('div', { class: 'order-total' }, h('strong', { text: money(o.totalCents) }), statusBadge(o.status))),
           h('div', { class: 'order-items' }, o.items.map(function (i) {
             var p = M.byId('products', i.productId);
+            if (o.bagSize) {
+              return h('span', { class: 'order-item bag-order-item' }, iconCircle(ICONS.bag, 'soft'),
+                h('span', null, h('span', { text: i.qty + '× ' + i.title }),
+                  h('small', { text: shortWeekday(M.clearance.parseDayKey(o.deliveryDay)) + ' delivery' + (o.excludedCategory ? ' · No ' + M.CATEGORIES[o.excludedCategory].label : '') })));
+            }
             return h('span', { class: 'order-item' }, p ? h('span', { class: 'cart-thumb' }, thumb(p)) : null, h('span', { text: i.qty + '× ' + i.title }));
           })),
           h('div', { class: 'order-bottom' },
@@ -1749,7 +2160,9 @@
     function bubble(m) {
       return h('div', { class: 'bubble-row ' + m.who },
         m.who === 'bot' ? h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'M' }) : null,
-        h('div', { class: 'bubble' + (m.handover ? ' handover' : '') }, h('p', { text: m.text }), h('time', { text: time(m.at) })));
+        h('div', { class: 'bubble' + (m.handover ? ' handover' : '') }, h('p', { text: m.text }),
+          m.showClearanceLink ? h('a', { class: 'msg-link', href: '#shop', text: 'Go to Buy to Clear →' }) : null,
+          h('time', { text: time(m.at) })));
     }
     function drawLog() { log.textContent = ''; history.forEach(function (m) { log.appendChild(bubble(m)); }); log.scrollTop = log.scrollHeight; }
     function send(text) {
@@ -1762,7 +2175,7 @@
       log.scrollTop = log.scrollHeight;
       var r = M.assist.reply(text, { channel: 'portal', customerId: session.customerId });
       setTimeout(function () {
-        history.push({ who: 'bot', text: r.text, handover: r.handover, at: new Date().toISOString() });
+        history.push({ who: 'bot', text: r.text, handover: r.handover, showClearanceLink: r.showClearanceLink, at: new Date().toISOString() });
         drawLog();
         if (r.handover) M.save();
       }, 650);
@@ -1772,7 +2185,7 @@
 
     var mine = S().orders.filter(function (o) { return o.customerId === c.id; });
     var lastRef = mine.length ? mine[mine.length - 1].ref : null;
-    var quick = ['Where is my order?', 'Do you have kai lan?', 'Delivery days?', '菜心有货吗？', 'Any promotions?'];
+    var quick = ['Where is my order?', 'Do you have kai lan?', 'Delivery days?', 'What\'s the surprise bag?', '菜心有货吗？', 'Any promotions?'];
     var chips = h('div', { class: 'quick-chips' }, quick.map(function (q) { return h('button', { type: 'button', text: q, onclick: function () { send(q); } }); }));
 
     drawLog();
@@ -1805,6 +2218,7 @@
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },
       { id: 'users', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
@@ -1885,5 +2299,6 @@
     }
   });
   if (session.role === 'customer' && sessionStorage.getItem('meod-join-code') && !location.hash) location.hash = 'group';
+  else if (session.role === 'customer' && sessionStorage.getItem('meod-bag-size') && !location.hash) location.hash = 'shop';
   render();
 })();

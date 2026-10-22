@@ -15,6 +15,7 @@
     ['complaint', /complain|wilted|rotten|spoil|bad quality|damaged|wrong item|missing|投诉|烂|坏了|不新鲜|aduan|rosak|busuk/i],
     ['payment', /payment|paid|pay |card|paynow|付款|付钱|bayaran/i],
     ['order', /order|track|where is my|my delivery status|订单|pesanan/i],
+    ['clearance', /buy to clear|clearance|surprise bag|harvest bag|清仓|惊喜袋|特价|beg kejutan|jualan murah/i],
     ['delivery', /deliver|shipping|when.*arrive|送货|配送|运费|hantar|penghantaran/i],
     ['promotion', /promo|discount|deal|offer|coupon|group ?buy|优惠|折扣|团购|diskaun|tawaran/i],
     ['visit', /visit|tour|workshop|farm trip|参观|lawatan/i],
@@ -50,6 +51,8 @@
       promo: 'Group-buy members get 5% off with their leader\'s code. Ask your group leader, or sign in to the portal to join a group buy.',
       order: 'For your privacy I can only share order details after you sign in. Please use the Portal (top right) to see your orders.',
       visit: 'Farm tours and workshops are by appointment at 13 Neo Tiew Harvest Lane. You can book on our Experiences page.',
+      clearance: function (bag, when) { return 'Our Surprise Harvest Bag comes in two sizes: Small ' + M.money(bag.small.priceCents) + ' (worth at least ' + M.money(bag.small.worthCents) + ') and Regular ' + M.money(bag.regular.priceCents) + ' (worth at least ' + M.money(bag.regular.worthCents) + '). Pre-order by ' + when + '. See everything on our Buy to Clear page — prices are illustrative.'; },
+      clearanceStale: 'I can\'t confirm Surprise Harvest Bag availability right now — stock data is being refreshed. Check our Buy to Clear page shortly, or a team member can help.',
       handoverOpen: 'I\'m sorry about this. I\'ve created ticket {id} and a MEOD team member will reply shortly. I won\'t try to resolve this myself.',
       handoverClosed: 'I\'m sorry about this. I\'ve created ticket {id}. Our team is offline now (Mon–Sat 9am–6pm) and will reply when they\'re back.',
       unknown: 'I\'m not sure I understood. I can help with stock, prices, delivery, group buys or farm visits — or connect you to a person.'
@@ -64,7 +67,9 @@
       delivery: '我们在周二、周四和周六配送。满 S$60 免运费，否则收取 S$8（示例）。',
       promo: '团购成员使用团长的优惠码可享 5% 折扣。请登录会员门户加入团购。',
       order: '为保护您的隐私，请先登录门户再查看订单详情。',
-      visit: '农场参观需预约，地址：13 Neo Tiew Harvest Lane。可在“Experiences”页面预约。',
+      visit: '农场参观需预约，地址：13 Neo Tiew Harvest Lane。可在”Experiences”页面预约。',
+      clearance: function (bag, when) { return '惊喜丰收袋有两种尺寸：小份 ' + M.money(bag.small.priceCents) + '（价值至少 ' + M.money(bag.small.worthCents) + '）和标准份 ' + M.money(bag.regular.priceCents) + '（价值至少 ' + M.money(bag.regular.worthCents) + '）。请在 ' + when + ' 前预订。详情请见 Buy to Clear 页面，价格仅供参考。'; },
+      clearanceStale: '目前无法确认惊喜丰收袋的库存，数据正在更新中。请稍后查看 Buy to Clear 页面，或联系我们的同事。',
       handoverOpen: '非常抱歉。已为您创建工单 {id}，我们的同事会尽快回复您。',
       handoverClosed: '非常抱歉。已为您创建工单 {id}。客服目前不在线（周一至周六 9am–6pm），上班后会回复您。',
       unknown: '抱歉我不太明白。我可以帮您查库存、价格、配送、团购或参观，也可以为您转接人工。'
@@ -80,6 +85,8 @@
       promo: 'Ahli beli berkumpulan dapat diskaun 5% dengan kod ketua kumpulan.',
       order: 'Untuk privasi anda, sila log masuk ke Portal untuk melihat pesanan.',
       visit: 'Lawatan ladang mengikut temujanji di 13 Neo Tiew Harvest Lane.',
+      clearance: function (bag, when) { return 'Beg Kejutan Tuaian kami ada dua saiz: Kecil ' + M.money(bag.small.priceCents) + ' (bernilai sekurang-kurangnya ' + M.money(bag.small.worthCents) + ') dan Biasa ' + M.money(bag.regular.priceCents) + ' (bernilai sekurang-kurangnya ' + M.money(bag.regular.worthCents) + '). Pesan dahulu sebelum ' + when + '. Lihat semua di halaman Buy to Clear — harga adalah contoh.'; },
+      clearanceStale: 'Saya tidak dapat mengesahkan stok Beg Kejutan Tuaian sekarang. Sila semak halaman Buy to Clear sebentar lagi, atau kakitangan kami boleh bantu.',
       handoverOpen: 'Maaf atas kesulitan ini. Tiket {id} telah dibuat dan kakitangan kami akan membalas.',
       handoverClosed: 'Maaf atas kesulitan ini. Tiket {id} telah dibuat. Pasukan kami akan membalas pada waktu pejabat (Isn–Sab 9pg–6ptg).',
       unknown: 'Maaf, saya kurang faham. Saya boleh bantu stok, harga, penghantaran atau sambungkan anda kepada kakitangan.'
@@ -132,6 +139,21 @@
         out.text = !s.known ? t.stale(product) : s.qty === 0 ? t.out(product) : t.inStock(product, s.qty, timeAgo(product.stock.updatedAt));
       }
     } else if (intent === 'price') out.text = t.which;
+    else if (intent === 'clearance') {
+      var bagProduct = M.findProduct('Surprise Harvest Bag');
+      var bagStatus = bagProduct ? M.stockStatus(bagProduct) : { known: false };
+      if (!bagStatus.known) out.text = t.clearanceStale;
+      else {
+        var bag = M.state.harvestBag;
+        var cutoff = M.clearance.nextBagCutoff();
+        var when = cutoff.cutoff.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }) + ' 10pm, for ' +
+          cutoff.deliveryDay.toLocaleDateString('en-SG', { weekday: 'long' }) + ' delivery';
+        out.text = t.clearance({ small: bag.sizes[0], regular: bag.sizes[1] }, when);
+      }
+      // Let the UI add a tappable "Go to Buy to Clear" link — its href depends on whether
+      // this is the public chat widget or the portal's own Ask MEOD page.
+      out.showClearanceLink = true;
+    }
     else if (intent === 'delivery') out.text = t.delivery;
     else if (intent === 'promotion') out.text = t.promo;
     else if (intent === 'visit') out.text = t.visit;

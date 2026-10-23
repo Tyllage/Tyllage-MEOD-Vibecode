@@ -3223,7 +3223,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'settings.changed': 'Changed an AI assumption', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'settings.changed': 'Changed an AI assumption', 'review.posted': 'Posted a product review', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -3843,14 +3843,100 @@
       h('small', { class: 'pd-recipe-note', text: 'Recipe ideas are AI-drafted samples in this prototype — MEOD would review them before they go live.' }));
   }
 
+  /* ---- Ratings + reviews (customer shop) ----
+   * Average stars on every card, and in the product dialog: the rating breakdown, an
+   * AI-written summary of what reviewers say, the reviews themselves, and a form for
+   * customers who've received the product to add their own. */
+  function starsText(n) { var r = Math.round(n); return '★★★★★'.slice(0, r) + '☆☆☆☆☆'.slice(0, 5 - r); }
+  function ratingLine(p) {
+    var st = M.reviews.stats(p.id);
+    if (!st.count) return null;
+    return h('span', { class: 'rating-line', 'aria-label': st.avg + ' out of 5 stars from ' + st.count + ' reviews' },
+      h('span', { class: 'rating-stars', 'aria-hidden': 'true', text: '★' }), h('b', { text: st.avg.toFixed(1) }), h('small', { text: '(' + st.count + ')' }));
+  }
+  function reviewsSection(p, onChange) {
+    var st = M.reviews.stats(p.id), sum = M.reviews.summary(p.id), list = M.reviews.list(p.id);
+    var can = session.customerId ? M.reviews.canWrite(session.customerId, p.id) : { ok: false };
+    var box = h('section', { class: 'pd-reviews', 'aria-labelledby': 'pd-rev-title' });
+    var head = h('div', { class: 'rv-head' },
+      h('h3', { id: 'pd-rev-title', text: 'Ratings & reviews' }),
+      st.count ? h('div', { class: 'rv-score' },
+        h('strong', { text: st.avg.toFixed(1) }),
+        h('span', null, h('span', { class: 'rv-stars', 'aria-hidden': 'true', text: starsText(st.avg) }), h('small', { text: st.count + ' verified review' + (st.count === 1 ? '' : 's') }))) : null);
+    append(box, head);
+    if (!st.count) append(box, h('p', { class: 'hint', text: 'No reviews yet — be the first once your order arrives.' }));
+    else {
+      var bars = h('ul', { class: 'rv-dist', 'aria-label': 'Rating breakdown' });
+      for (var star = 5; star >= 1; star--) {
+        var n = st.dist[star - 1], bar = h('span', { class: 'rv-bar' }, h('span'));
+        bar.firstChild.style.width = Math.round(n / st.count * 100) + '%';
+        bars.appendChild(h('li', null, h('small', { text: star + '★' }), bar, h('small', { text: String(n) })));
+      }
+      append(box, h('div', { class: 'rv-top' }, bars,
+        sum ? h('div', { class: 'rv-summary' },
+          h('div', { class: 'rv-summary-head' }, h('strong', { text: 'What customers say' }), aiPill()),
+          h('p', { text: sum.text }),
+          sum.pros.length || sum.cons.length ? h('div', { class: 'rv-aspects' },
+            sum.pros.map(function (c) { return h('span', { class: 'rv-aspect pro', text: '👍 ' + c.label + ' · ' + c.pos }); }),
+            sum.cons.map(function (c) { return h('span', { class: 'rv-aspect con', text: '👎 ' + c.negLabel + ' · ' + c.neg }); })) : null,
+          h('small', { class: 'rv-note', text: 'Summarised by AI from ' + sum.basedOn + ' verified reviews. Read them below.' }))
+          : h('div', { class: 'rv-summary' }, h('small', { class: 'hint', text: 'A summary appears once there are 3 or more reviews.' }))));
+      var listBox = h('ul', { class: 'rv-list' });
+      var showAll = false;
+      var toggle = list.length > 3 ? h('button', { type: 'button', class: 'mini rv-more' }) : null;
+      var drawList = function () {
+        listBox.textContent = '';
+        (showAll ? list : list.slice(0, 3)).forEach(function (r) {
+          listBox.appendChild(h('li', null,
+            h('div', { class: 'rv-item-head' }, h('span', { class: 'rv-stars', 'aria-label': r.rating + ' out of 5', text: starsText(r.rating) }),
+              h('strong', { text: r.customerId === session.customerId ? 'You' : M.reviews.name(M.byId('customers', r.customerId)) }),
+              r.verified ? h('small', { class: 'rv-verified', text: '✓ Verified buyer' }) : null,
+              h('small', { text: ago(r.at) })),
+            r.text ? h('p', { text: r.text }) : null));
+        });
+        if (toggle) toggle.textContent = showAll ? 'Show fewer' : 'Show all ' + list.length + ' reviews';
+      };
+      if (toggle) toggle.addEventListener('click', function () { showAll = !showAll; drawList(); });
+      drawList();
+      append(box, listBox, toggle);
+    }
+    if (can.ok) {
+      var picked = 0;
+      var starsWrap = h('div', { class: 'rv-pick', role: 'radiogroup', 'aria-label': 'Your rating' });
+      var btns = [1, 2, 3, 4, 5].map(function (n) {
+        return h('button', { type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': n + ' star' + (n > 1 ? 's' : ''), text: '★', onclick: function () {
+          picked = n;
+          btns.forEach(function (b, i) { b.classList.toggle('on', i < n); b.setAttribute('aria-checked', String(i + 1 === n)); });
+        } });
+      });
+      append(starsWrap, btns);
+      var txt = h('textarea', { rows: 3, maxlength: 300, placeholder: 'How was it? Freshness, taste, how long it lasted…', 'aria-label': 'Your review' });
+      append(box, h('form', { class: 'rv-form', onsubmit: function (e) {
+        e.preventDefault();
+        var r = M.reviews.add(session.customerId, p.id, picked, txt.value);
+        if (!r.ok) { toast(r.error); return; }
+        commit('review.posted', r.id, 'Thanks for your review!');
+        if (onChange) onChange();
+      } }, h('strong', { text: 'You bought this — how was it?' }), starsWrap, txt, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Post review' })));
+    } else if (can.mine) {
+      append(box, h('p', { class: 'hint rv-mine', text: 'You rated this ' + starsText(can.mine.rating) + ' — thank you!' }));
+    }
+    return box;
+  }
+
+  // Buy to Clear listings open the same dialog, priced and limited to the listing.
+  var CLEAR_NOTE = { cosmetic: 'Small marks or odd shapes — same taste and freshness.', short_dated: 'Freshly harvested but best eaten within a couple of days.', surplus: 'We harvested more than expected, so it\'s cheaper this week.' };
   function openProduct(p, opts) {
     opts = opts || {};
     // Only one product dialog at a time: close and remove any others right away.
     document.querySelectorAll('.product-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
     var s = M.stockStatus(p);
-    var inCart = cart[p.id] || 0;
+    var l = opts.listing || null;
+    var cartKey = l ? 'CL:' + l.id : p.id;
+    var unitCents = l ? l.clearancePriceCents : p.priceCents;
+    var inCart = cart[cartKey] || 0;
     var qty = inCart || 1;
-    var maxQty = s.known ? s.qty : 0;
+    var maxQty = s.known ? (l ? M.clearance.remaining(l) : s.qty) : 0;
     var tips = CARE_TIPS[p.category] || CARE_TIPS['asian-greens'];
     var pairs = pairsFor(p);
     var dlg = h('dialog', { class: 'receipt-dialog product-dialog', 'aria-labelledby': 'pd-title' });
@@ -3866,19 +3952,21 @@
       plus.disabled = qty >= maxQty;
       addBtn.disabled = !maxQty;
       addBtn.textContent = !maxQty ? (s.key === 'stale' ? 'Can\'t confirm stock' : 'Sold out')
-        : (inCart ? 'Update cart · ' : 'Add to cart · ') + money(p.priceCents * qty);
+        : (inCart ? 'Update cart · ' : 'Add to cart · ') + money(unitCents * qty);
     }
     minus.addEventListener('click', function () { if (qty > 1) { qty--; sync(); } });
     plus.addEventListener('click', function () { if (qty < maxQty) { qty++; sync(); } });
     addBtn.addEventListener('click', function () {
-      cart[p.id] = qty;
+      cart[cartKey] = qty;
       saveCart();
       if (opts.onCartChange) opts.onCartChange();
-      toast(qty + ' × ' + p.title + (inCart ? ' updated in' : ' added to') + ' your cart.');
+      toast(qty + ' × ' + p.title + (l ? ' (Buy to Clear)' : '') + (inCart ? ' updated in' : ' added to') + ' your cart.');
       closeDialog();
     });
 
-    var stockLine = s.known
+    var stockLine = l && s.known
+      ? (maxQty > 0 ? maxQty + ' left at this price · until ' + shortDate(l.availableUntil) : 'All sold')
+      : s.known
       ? (s.qty > 0 ? s.qty + ' available · synced ' + ago(p.stock.updatedAt) : 'Sold out · synced ' + ago(p.stock.updatedAt))
       : 'We can\'t confirm stock right now — last sync ' + ago(p.stock.updatedAt) + '. Try again shortly.';
     var nutrients = String(p.nutrients || '').split('•').map(function (x) { return x.trim(); }).filter(Boolean);
@@ -3912,7 +4000,14 @@
           h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
           h('h2', { id: 'pd-title', text: p.title }),
           h('small', { class: 'pd-sub', text: p.subtitle }),
-          h('strong', { class: 'pd-price', text: money(p.priceCents) }),
+          l ? h('div', { class: 'pd-price-row' },
+                h('span', { class: 'reason-pill', text: M.clearance.reasonLabel(l.reason) }),
+                h('span', { class: 'price-was', text: money(l.normalPriceCents) }),
+                h('strong', { class: 'pd-price', text: money(l.clearancePriceCents) }),
+                h('span', { class: 'discount-badge', text: '−' + M.clearance.discountPct(l) + '%' }))
+            : h('strong', { class: 'pd-price', text: money(p.priceCents) }),
+          ratingLine(p) ? h('a', { class: 'pd-rating', href: '#pd-rev-title', onclick: function (e) { e.preventDefault(); dlg.querySelector('.pd-reviews').scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, ratingLine(p), h('small', { text: 'Read reviews' })) : null,
+          l ? h('p', { class: 'pd-clear-note', text: CLEAR_NOTE[l.reason] || '' }) : null,
           opts.pick ? h('div', { class: 'pd-why' }, svgIcon('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>'),
             h('span', null, h('strong', { text: 'Picked for you' + (opts.pick.match ? ' · ' + opts.pick.match + '% match' : '') }), h('small', { text: opts.pick.reason }))) : null,
           h('p', { class: 'pd-stock ' + s.key }, iconCircle(ICONS.box, 'bare'), stockLine),
@@ -3924,11 +4019,12 @@
             h('div', { class: 'qty', 'aria-label': 'Quantity' }, minus, qtyLabel, plus),
             addBtn),
           inCart ? h('small', { class: 'pd-incart', text: inCart + ' already in your cart' }) : null,
-          harvestBox)),
+          l ? null : harvestBox)),
       h('div', { class: 'pd-extra' },
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.clock, 'soft'), h('span', null, h('strong', { text: 'Storage' }), h('small', { text: tips.store }))),
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.leaf, 'soft'), h('span', null, h('strong', { text: 'How to enjoy' }), h('small', { text: tips.cook })))),
       recipeCard(p),
+      reviewsSection(p, function () { if (opts.onCartChange) opts.onCartChange(); openProduct(p, opts); }),
       pairs.items.length ? h('div', { class: 'pd-pairs' },
         h('strong', { text: pairs.fromBaskets ? 'Often bought together' : 'More ' + M.CATEGORIES[p.category].label.toLowerCase() }),
         h('div', { class: 'pd-pair-list' }, pairs.items.map(function (x) {
@@ -4074,6 +4170,7 @@
             h('span', { class: 'tile-cat', text: M.CATEGORIES[p.category].label }),
             h('button', { type: 'button', class: 'shop-title', text: p.title, 'aria-haspopup': 'dialog', 'aria-label': p.title + ' — view details', onclick: function () { openProduct(p, shopOpts); } }),
             h('small', { text: p.subtitle }),
+            ratingLine(p),
             h('div', { class: 'shop-foot' }, h('span', { class: 'shop-price', text: money(p.priceCents) }), control)));
         // Clicking anywhere on the card opens details, except its own buttons (+ Add, qty).
         card.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(p, shopOpts); });
@@ -4228,11 +4325,14 @@
               h('button', { type: 'button', 'aria-label': 'Remove one', text: '−', onclick: function () { setQty('CL:' + l.id, q - 1); } }),
               h('span', { text: String(q) }),
               h('button', { type: 'button', 'aria-label': 'Add one', disabled: !canAdd, text: '+', onclick: function () { setQty('CL:' + l.id, q + 1); } }));
-        return h('article', { class: 'shop-item clearance-item' + (q ? ' in-cart' : '') },
-          h('div', { class: 'shop-media' }, thumb(p)),
+        var clearOpts = { listing: l, onCartChange: function () { drawClearance(); drawCart(); } };
+        var cmedia = h('div', { class: 'shop-media' }, thumb(p), h('span', { class: 'shop-peek', 'aria-hidden': 'true', text: 'View details' }));
+        var ccard = h('article', { class: 'shop-item clearance-item clickable' + (q ? ' in-cart' : '') },
+          cmedia,
           h('div', { class: 'shop-body' },
             h('span', { class: 'reason-pill', text: M.clearance.reasonLabel(l.reason) }),
-            h('strong', { class: 'shop-title', text: p.title }),
+            h('button', { type: 'button', class: 'shop-title', text: p.title, 'aria-haspopup': 'dialog', 'aria-label': p.title + ' — view details', onclick: function () { openProduct(p, clearOpts); } }),
+            ratingLine(p),
             h('div', { class: 'clearance-meta' },
               h('span', { class: 'mini-chip', text: left + ' left' }),
               h('span', { class: 'mini-chip', text: 'Until ' + shortDate(l.availableUntil) })),
@@ -4243,6 +4343,9 @@
                 h('span', { class: 'discount-badge', text: '−' + M.clearance.discountPct(l) + '%' }),
               ),
               control)));
+        // Clicking anywhere on the card opens details, except its own buttons.
+        ccard.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(p, clearOpts); });
+        return ccard;
       })) : h('p', { class: 'empty', text: 'Nothing is on clearance right now — check back soon.' });
 
       var bag = S().harvestBag;

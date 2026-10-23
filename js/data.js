@@ -808,6 +808,26 @@
       }
       s.migrations.capacityV1 = true;
     }
+    if (!s.migrations.reviewsV1) {
+      // Demo reviews: for each product, a few customers who bought it leave a rating and a
+      // short review from the category's sample bank. Deterministic, so every reset matches.
+      s.reviews = [];
+      // The signed-in demo customer (C-1001) is left out so they can write their own reviews.
+      var reviewers = s.customers.filter(function (c) { return c.id !== 'C-1001' && !/^(Parent|Staff|Teacher|Resident|Mr|Ms)\b/.test(c.name); });
+      s.products.forEach(function (p, pi) {
+        if (p.bagOffer) return;
+        var bank = REVIEW_BANK[p.category] || REVIEW_BANK['asian-greens'];
+        var n = Math.min(bank.length, 3 + (pi * 7) % 5);
+        for (var i = 0; i < n; i++) {
+          var r = bank[(pi + i) % bank.length], c = reviewers[(pi * 3 + i * 5) % reviewers.length];
+          if (s.reviews.some(function (x) { return x.productId === p.id && x.customerId === c.id; })) continue;
+          s.seq += 1;
+          s.reviews.push({ id: 'RV-' + s.seq, productId: p.id, customerId: c.id, rating: r[0], text: r[1].replace(/\bit is\b/, 'it\'s'),
+            at: new Date(Date.now() - (3 + ((pi * 5 + i * 11) % 50)) * 864e5).toISOString(), verified: true, status: 'published' });
+        }
+      });
+      s.migrations.reviewsV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -832,6 +852,109 @@
       s.migrations.rewardsV1 = true;
     }
     return s;
+  }
+
+  /* ---------- Product reviews + AI review summary ----------
+   * Star ratings and short reviews from customers who bought the product (verified by their
+   * orders). The summary is rule-based and explainable: it counts which aspects reviewers
+   * mention (freshness, taste, how long it lasts, cleanliness, value, size, wilting, marks)
+   * and whether each mention is positive or negative, then writes a short overview. In
+   * production a language model could write the overview from the same counts; it never
+   * invents an aspect nobody mentioned. Reviewer names are shown as first name + initial.
+   */
+  var REVIEW_ASPECTS = [
+    { key: 'fresh', label: 'Fresh and crisp', says: 'how fresh and crisp it is', negLabel: 'Not fresh', re: /\b(fresh|crisp|crunchy|crunch)\b/, neg: /\bnot (very )?(fresh|crisp)\b/ },
+    { key: 'taste', label: 'Great taste', says: 'the taste', negLabel: 'Bland or bitter', re: /\b(sweet|flavou?r|tasty|delicious|fragrant|aroma|earthy|meaty|peppery|nutty)\b/, neg: /\b(bitter|bland|no taste)\b/ },
+    { key: 'lasts', label: 'Lasts long', says: 'how long it keeps', negLabel: 'Didn\'t last', re: /\b(lasted|lasts|keeps well|whole week|still good)\b/, neg: /\b(went bad|didn.?t last|spoiled)\b/ },
+    { key: 'clean', label: 'Clean, easy to prep', says: 'how clean it arrives', negLabel: 'Sandy or gritty', re: /\b(clean|no sand|no grit|easy to wash|pesticide)\b/, neg: /\b(sandy|gritty|dirty)\b/ },
+    { key: 'value', label: 'Good value', says: 'the value', negLabel: 'A bit pricey', re: /\b(value|worth|good price|great deal|bargain)\b/, neg: /\b(pricey|expensive|costly|overpriced)\b/ },
+    { key: 'size', label: 'Generous bunch', says: 'the generous bunches', negLabel: 'Small bunch', re: /\b(generous|big bunch|plenty)\b/, neg: /\b(small bunch|smaller|tiny|not much)\b/ },
+    { key: 'wilt', label: 'Wilting', neg: /\b(wilt|wilted|limp|yellow|yellowing|soggy|slimy|brown)\b/ },
+    { key: 'marks', label: 'Small marks or holes', neg: /\b(holes|marks|spots|bruised|blemish)/ }
+  ];
+  var REVIEW_BANK = {
+    'asian-greens': [
+      [5, 'So fresh and crunchy, you can taste the difference from the supermarket.'], [5, 'Sweet stems, perfect with garlic. Stayed crisp for days.'],
+      [4, 'Very clean leaves, hardly any washing needed. Bunch was a bit small.'], [5, 'Lasted a whole week in the fridge. Will buy again.'],
+      [4, 'Good value for pesticide-free veg. Tasty in soup.'], [3, 'A few leaves were yellowing but the rest was fine.'],
+      [5, 'Kids actually eat their greens now! Sweet and tender.'], [4, 'Fresh and generous bunch, slightly bitter when overcooked.']
+    ],
+    lettuces: [
+      [5, 'Crisp and fresh, great for salads.'], [5, 'Lasted over a week in the fridge, still crunchy.'],
+      [4, 'Lovely peppery flavour. A bit pricey but worth it.'], [3, 'Some leaves were limp on arrival.'],
+      [5, 'So clean, no grit at all. Easy to prep.'], [4, 'Fresh, though the bunch was smaller than I expected.']
+    ],
+    fungi: [
+      [5, 'Meaty and fragrant, best mushrooms I have bought locally.'], [5, 'Fresh, firm and lasted the week.'],
+      [4, 'Earthy flavour, great in stir-fry. Slightly pricey.'], [5, 'Clean and dry, no sliminess at all.'], [4, 'Good value for the quality.']
+    ],
+    herbs: [
+      [5, 'So fragrant, the whole kitchen smelled amazing.'], [4, 'Fresh and aromatic. Bunch was a bit small.'],
+      [3, 'Leaves had some brown spots, flavour still good.'], [5, 'Lasted much longer than supermarket herbs.']
+    ],
+    'farm-more': [
+      [5, 'Delicious and you can tell it is made with real greens.'], [4, 'Tasty, a little pricey for the size.'], [5, 'Great value gift, everyone loved it.']
+    ]
+  };
+  function reviewerName(c) {
+    if (!c) return 'MEOD customer';
+    var parts = String(c.name).replace(/\s*\(demo\)\s*/i, '').trim().split(/\s+/);
+    return parts[0] + (parts.length > 1 ? ' ' + parts[parts.length - 1].charAt(0) + '.' : '');
+  }
+  function reviewsFor(productId) {
+    return (state.reviews || []).filter(function (r) { return r.productId === productId && r.status !== 'hidden'; })
+      .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function reviewStats(productId) {
+    var list = reviewsFor(productId), dist = [0, 0, 0, 0, 0];
+    list.forEach(function (r) { dist[r.rating - 1] += 1; });
+    var avg = list.length ? list.reduce(function (s, r) { return s + r.rating; }, 0) / list.length : 0;
+    return { count: list.length, avg: Math.round(avg * 10) / 10, dist: dist };
+  }
+  function reviewSummary(productId) {
+    var list = reviewsFor(productId), st = reviewStats(productId);
+    if (list.length < 3) return null; // too few to summarise fairly
+    var counts = REVIEW_ASPECTS.map(function (a) {
+      var pos = 0, neg = 0;
+      list.forEach(function (r) {
+        var t = r.text.toLowerCase();
+        if (a.neg && a.neg.test(t)) neg += 1;
+        else if (a.re && a.re.test(t)) pos += 1;
+      });
+      return { key: a.key, label: a.label, says: a.says || a.label.toLowerCase(), negLabel: a.negLabel || a.label, pos: pos, neg: neg };
+    });
+    var pros = counts.filter(function (c) { return c.pos >= 2 && c.pos > c.neg; }).sort(function (a, b) { return b.pos - a.pos; }).slice(0, 3);
+    var cons = counts.filter(function (c) { return c.neg >= 1; }).sort(function (a, b) { return b.neg - a.neg; }).slice(0, 2);
+    var happy = list.filter(function (r) { return r.rating >= 4; }).length;
+    var lower = function (s) { return s.charAt(0).toLowerCase() + s.slice(1); };
+    var join = function (xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1] : xs[0]; };
+    var text = happy + ' of ' + list.length + ' reviewers rate it 4 stars or more.';
+    if (pros.length) text += ' They most often praise ' + join(pros.map(function (c) { return c.says; })) + '.';
+    if (cons.length) text += ' ' + (cons[0].neg === 1 ? 'One reviewer' : cons[0].neg + ' reviewers') + ' mentioned: ' + lower(cons[0].negLabel) + (cons[1] ? '; ' + (cons[1].neg === 1 ? 'one' : cons[1].neg) + ' said ' + lower(cons[1].negLabel) : '') + '.';
+    return { text: text, pros: pros, cons: cons, stats: st, basedOn: list.length };
+  }
+  // A customer may review a product once they have a fulfilled order containing it.
+  function reviewCanWrite(customerId, productId) {
+    if (!customerId) return { ok: false };
+    var bought = state.orders.some(function (o) { return o.customerId === customerId && o.status === 'fulfilled' && o.items.some(function (i) { return i.productId === productId; }); });
+    var mine = (state.reviews || []).filter(function (r) { return r.customerId === customerId && r.productId === productId; })[0];
+    return { ok: bought && !mine, bought: bought, mine: mine || null };
+  }
+  function reviewAdd(customerId, productId, rating, text) {
+    var can = reviewCanWrite(customerId, productId);
+    if (!can.bought) return { ok: false, error: 'You can review products you\'ve received.' };
+    if (can.mine) return { ok: false, error: 'You\'ve already reviewed this.' };
+    rating = Math.round(Number(rating));
+    if (!(rating >= 1 && rating <= 5)) return { ok: false, error: 'Pick a star rating.' };
+    text = String(text || '').trim().slice(0, 300);
+    state.reviews = state.reviews || [];
+    var id = nextId('RV');
+    state.reviews.unshift({ id: id, productId: productId, customerId: customerId, rating: rating, text: text, at: new Date().toISOString(), verified: true, status: 'published' });
+    // Reviews also feed staff Feedback intelligence (themes, batch tracing).
+    state.feedback = state.feedback || [];
+    state.feedback.unshift({ id: nextId('FB'), source: 'review', customerId: customerId, accountId: null, who: null, productId: productId, deliveryKey: null, batchId: null,
+      rating: rating, text: text || (rating + '-star review'), at: new Date().toISOString(), loggedBy: null });
+    return { ok: true, id: id };
   }
 
   function load() {
@@ -1678,7 +1801,7 @@
     price: { label: 'Price', owner: 'Sales', tone: 'blue', re: /pric|expensive|cheaper|supermarket|costly/ },
     praise: { label: 'Praise', owner: 'Sales', tone: 'green', re: /fresh|love|great|delicious|crunchy|tasty|amazing|thank|best|lasted|meaty|enjoy|consistent/ }
   };
-  var FEEDBACK_SOURCES = { rating: 'Delivery rating', chat: 'WhatsApp chat', ticket: 'Support ticket', b2b: 'Trade buyer', visit: 'Visit survey', call: 'Phone call' };
+  var FEEDBACK_SOURCES = { rating: 'Delivery rating', chat: 'WhatsApp chat', ticket: 'Support ticket', b2b: 'Trade buyer', visit: 'Visit survey', call: 'Phone call', review: 'Product review' };
   var NEG_WORDS = /bad|disappoint|unhappy|poor|throw|threw|refund|not happy|complain/;
   function feedbackClassify(text, rating) {
     var t = String(text || '').toLowerCase();
@@ -2483,6 +2606,7 @@
     GROUP_TYPES: GROUP_TYPES,
     settings: { list: settingsList, validate: settingValidate, impact: settingsImpact, save: settingSave, resetAll: settingsResetAll, saveCost: costSave, CATS: CAT_LABELS },
     leaderFinder: { areas: leaderFinder, invite: leaderInvite },
+    reviews: { list: reviewsFor, stats: reviewStats, summary: reviewSummary, canWrite: reviewCanWrite, add: reviewAdd, name: reviewerName },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },

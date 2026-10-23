@@ -1732,3 +1732,5 @@ a.pill-btn { text-decoration: none; }
 .ops-brief.aligned > .ops-card > * { min-width: 0; }
 .ops-brief.aligned > .ops-card > .ops-est { align-self: start; }
 .ops-brief.aligned > .ops-card > .ops-foot { margin-top: 0; align-self: stretch; align-items: flex-end; }
+/* "Nudge these" sits beside the Prev/Next minis: same height, a little more weight. */
+.pager .btn { padding: 6px 14px; font-size: .8rem; line-height: 1.2; min-height: 0; }

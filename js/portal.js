@@ -162,14 +162,15 @@
         { label: 'Category', render: function (p) { return M.CATEGORIES[p.category].label; } },
         { label: 'Type', render: function (p) { return p.category === 'farm-more' ? 'Made by MEOD' : 'Fresh harvest'; } },
         { label: 'Price', num: true, render: function (p) { return money(p.priceCents); } },
-        { label: 'Qty', num: true, render: function (p) {
-          if (!M.stockStatus(p).known) return '—';
+        { label: 'Qty', num: true, render: function (p) { return M.stockStatus(p).known ? String(p.stock.qty) : '—'; } },
+        // Part of Qty that is listed on Buy to Clear: units left at the clearance price, plus
+        // the price and end date. Links to the Buy to Clear page where it can be ended early.
+        { label: 'On clearance', num: true, render: function (p) {
           var listing = S().clearance.filter(function (l) { return l.productId === p.id && M.clearance.isOpen(l); })[0];
-          // A block (not an inline span) so the tag always starts its own line, never
-          // wrapping onto the qty's line depending on available width.
-          return h('div', { class: 'qty-cell' },
-            h('div', { text: String(p.stock.qty) }),
-            listing ? h('div', { class: 'mini-chip', text: M.clearance.remaining(listing) + ' on clearance' }) : null);
+          if (!listing) return h('span', { class: 'muted-dash', text: '—' });
+          return h('a', { class: 'clear-cell', href: '#clearance', title: 'Open this listing in Buy to Clear' },
+            h('strong', { text: String(M.clearance.remaining(listing)) }),
+            h('small', { text: money(listing.clearancePriceCents) + ' · until ' + shortDate(listing.availableUntil) }));
         } },
         { label: 'Status', render: stockBadge },
         { label: 'Last synced', render: function (p) { return ago(p.stock.updatedAt); } }

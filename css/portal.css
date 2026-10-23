@@ -1085,3 +1085,11 @@ a.pill-btn { text-decoration: none; }
   .rd-layout { grid-template-columns: 1fr; }
   .rd-body { padding: 22px 18px 4px; }
 }
+
+/* Stock table: clearance share of Qty, in the Buy to Clear amber */
+.clear-cell { display: inline-grid; justify-items: end; gap: 1px; text-decoration: none; color: #8a5a00; }
+.clear-cell strong { font-size: .95rem; }
+.clear-cell small { color: var(--muted); font-size: .76rem; white-space: nowrap; }
+.clear-cell:hover strong, .clear-cell:focus-visible strong { text-decoration: underline; }
+.muted-dash { color: #b9b0a2; }
+@media (max-width: 640px) { .clear-cell { justify-items: end; text-align: right; } }

@@ -764,18 +764,25 @@
     return { ok: true, id: id };
   }
   // Records the real yield. Pre-orders are served first; only the rest goes into stock.
-  function batchHarvest(id, actualQty) {
+  // Optional grades { A, cosmetic, check } (staff-confirmed, e.g. from Tyllage Grade):
+  // "check" units are held back for inspection and never reach stock.
+  function batchHarvest(id, actualQty, grades) {
     var b = byId('batches', id);
     if (!b) return { ok: false, error: 'Batch not found.' };
     if (!(actualQty >= 0)) return { ok: false, error: 'Enter the harvested quantity.' };
+    if (grades && grades.A + grades.cosmetic + grades.check !== actualQty) {
+      return { ok: false, error: 'Grade A + Cosmetic + Check must add up to ' + actualQty + '.' };
+    }
     var reserved = batchPreordered(b);
-    var toStock = Math.max(0, actualQty - reserved);
+    var sellable = grades ? grades.A + grades.cosmetic : actualQty;
+    var toStock = Math.max(0, sellable - reserved);
+    if (grades) b.grades = { A: grades.A, cosmetic: grades.cosmetic, check: grades.check, photos: grades.photos || 0 };
     var p = byId('products', b.productId);
     if (p) p.stock.qty += toStock;
     b.status = 'harvested';
     b.actualQty = actualQty;
     b.harvestedAt = new Date().toISOString();
-    return { ok: true, reserved: reserved, served: Math.min(reserved, actualQty), toStock: toStock, shortfall: Math.max(0, reserved - actualQty) };
+    return { ok: true, reserved: reserved, served: Math.min(reserved, sellable), toStock: toStock, shortfall: Math.max(0, reserved - sellable), held: grades ? grades.check : 0 };
   }
   function batchCancel(id) {
     var b = byId('batches', id);

@@ -600,6 +600,185 @@
     return bar;
   }
 
+  /* ---- Record harvest dialog, with optional photo grading (Tyllage Grade, js/grade.js) ----
+   * Staff enter the real yield and can add sample photos. Each photo gets a suggested grade
+   * from a leaf-colour check; the share of grades splits the yield into Grade A / Cosmetic /
+   * Check, which staff can overrule. Cosmetic units can be listed on Buy to Clear in the same
+   * step; Check units are held back for inspection. Looks only — never a food-safety call. */
+  var COSMETIC_RATE = 0.7; // illustrative clearance price for cosmetic produce: 30% off
+  function openHarvestDialog(b) {
+    var H = M.harvest;
+    var p = M.byId('products', b.productId);
+    var reserved = H.preordered(b);
+    var gradable = Boolean(M.grade) && M.grade.canGrade(p);
+    var results = [];
+    var manual = false;
+    document.querySelectorAll('.grade-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var dlg = h('dialog', { class: 'receipt-dialog grade-dialog', 'aria-labelledby': 'gd-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+
+    var qtyInput = h('input', { type: 'number', min: 0, step: 1, value: String(b.expectedQty), 'aria-label': 'Harvested quantity' });
+    var aIn = h('input', { type: 'number', min: 0, step: 1, 'aria-label': 'Grade A units' });
+    var cIn = h('input', { type: 'number', min: 0, step: 1, 'aria-label': 'Cosmetic units' });
+    var kIn = h('input', { type: 'number', min: 0, step: 1, 'aria-label': 'Check units' });
+    var listCosmetic = h('input', { type: 'checkbox', checked: true });
+    var showMarks = h('input', { type: 'checkbox', checked: true });
+    var photoGrid = h('div', { class: 'gd-photos' });
+    var splitBar = h('div', { class: 'gd-split-bar', 'aria-hidden': 'true' });
+    var planBox = h('ul', { class: 'gd-plan' });
+    var errorBox = h('p', { class: 'pf-error', 'aria-live': 'polite' });
+    var busy = h('small', { class: 'gd-busy', 'aria-live': 'polite' });
+    var fileInput = h('input', { type: 'file', accept: 'image/*', multiple: true, class: 'visually-hidden', 'aria-label': 'Add harvest photos' });
+    var num = function (el) { var n = parseInt(el.value, 10); return isNaN(n) ? 0 : Math.max(0, n); };
+
+    function autoSplit() {
+      if (manual) return;
+      var qty = num(qtyInput);
+      var s = gradable ? M.grade.split(results.map(function (x) { return x.r; }), qty) : null;
+      aIn.value = String(s ? s.A : qty);
+      cIn.value = String(s ? s.cosmetic : 0);
+      kIn.value = String(s ? s.check : 0);
+    }
+    function plan() {
+      var qty = num(qtyInput), A = num(aIn), C = num(cIn), K = num(kIn);
+      var sellable = A + C;
+      var served = Math.min(reserved, sellable);
+      var toStock = Math.max(0, sellable - reserved);
+      var listQty = Math.min(C, toStock);
+      return { qty: qty, A: A, C: C, K: K, served: served, toStock: toStock, shortfall: Math.max(0, reserved - sellable), listQty: listQty, sumOk: A + C + K === qty };
+    }
+    function drawPlan() {
+      var pl = plan();
+      errorBox.textContent = pl.sumOk ? '' : 'Grade A + Cosmetic + Check is ' + (pl.A + pl.C + pl.K) + ' — it must add up to the ' + pl.qty + ' harvested.';
+      splitBar.textContent = '';
+      [['A', pl.A, 'seg-a'], ['C', pl.C, 'seg-c'], ['K', pl.K, 'seg-k']].forEach(function (s) {
+        if (!s[1] || !pl.qty) return;
+        var seg = h('span', { class: 'gd-seg ' + s[2] });
+        seg.style.width = (s[1] / pl.qty * 100) + '%';
+        splitBar.appendChild(seg);
+      });
+      var clearPrice = Math.round(p.priceCents * COSMETIC_RATE);
+      planBox.textContent = '';
+      append(planBox,
+        h('li', null, h('strong', { text: pl.served }), ' to pre-orders' + (reserved ? ' (' + reserved + ' reserved)' : '')),
+        h('li', null, h('strong', { text: pl.toStock }), ' into stock' + (pl.listQty && listCosmetic.checked ? ', of which ' : ''),
+          pl.listQty && listCosmetic.checked ? h('strong', { text: pl.listQty }) : null,
+          pl.listQty && listCosmetic.checked ? ' listed on Buy to Clear as Cosmetic at ' + money(clearPrice) + ' (was ' + money(p.priceCents) + ')' : null),
+        pl.K ? h('li', null, h('strong', { text: pl.K }), ' held back for a person to inspect — not sold') : null,
+        pl.shortfall ? h('li', { class: 'bag-value-low' }, 'Short by ' + pl.shortfall + ' for pre-orders — contact the affected customers.') : null);
+    }
+    function refresh() { autoSplit(); drawPlan(); }
+
+    function drawPhotos() {
+      photoGrid.textContent = '';
+      photoGrid.classList.toggle('marks-off', !showMarks.checked);
+      if (!results.length) {
+        append(photoGrid, h('p', { class: 'empty', text: 'No photos yet. Add 3–6 photos of different bunches from this harvest.' }));
+        return;
+      }
+      results.forEach(function (x, idx) {
+        append(photoGrid, h('figure', { class: 'gd-photo' },
+          h('div', { class: 'gd-img' },
+            h('img', { src: x.url, alt: x.label }),
+            h('img', { class: 'gd-mark', src: x.r.overlayUrl, alt: '' }),
+            h('button', { type: 'button', class: 'gd-remove', 'aria-label': 'Remove photo', onclick: function () { results.splice(idx, 1); drawPhotos(); refresh(); } }, iconCircle(ICONS.x, 'bare'))),
+          h('figcaption', null,
+            badge(x.r.label, x.r.tone),
+            h('small', { text: x.r.reason }),
+            x.simulated ? h('small', { class: 'gd-sim', text: x.label }) : null)));
+      });
+    }
+    function addResult(source, label, simulated) {
+      var url = source.toDataURL ? source.toDataURL('image/jpeg', 0.82) : source.src;
+      results.push({ label: label, simulated: simulated, url: url, r: M.grade.analyze(source) });
+    }
+    fileInput.addEventListener('change', function () {
+      var files = Array.prototype.slice.call(fileInput.files || []);
+      if (!files.length) return;
+      busy.textContent = 'Grading ' + files.length + ' photo(s)…';
+      Promise.all(files.map(function (f) {
+        var u = URL.createObjectURL(f);
+        return M.grade.loadImage(u).then(function (img) { addResult(img, f.name, false); });
+      })).catch(function () { toast('One of those files could not be read as an image.'); })
+        .then(function () { busy.textContent = ''; fileInput.value = ''; manual = false; drawPhotos(); refresh(); });
+    });
+    function useDemo() {
+      busy.textContent = 'Grading demo photos…';
+      M.grade.demoSamples(p.category).then(function (samples) {
+        samples.forEach(function (s) { addResult(s.source, s.label, s.simulated); });
+        busy.textContent = ''; manual = false; drawPhotos(); refresh();
+      });
+    }
+
+    qtyInput.addEventListener('input', refresh);
+    [aIn, cIn, kIn].forEach(function (el) { el.addEventListener('input', function () { manual = true; drawPlan(); }); });
+    listCosmetic.addEventListener('change', drawPlan);
+    showMarks.addEventListener('change', function () { photoGrid.classList.toggle('marks-off', !showMarks.checked); });
+
+    var confirmBtn = h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Confirm harvest', onclick: function () {
+      var pl = plan();
+      if (!pl.sumOk) { drawPlan(); return; }
+      var graded = results.length > 0 || pl.C > 0 || pl.K > 0;
+      var r = H.markHarvested(b.id, pl.qty, graded ? { A: pl.A, cosmetic: pl.C, check: pl.K, photos: results.length } : null);
+      if (!r.ok) { errorBox.textContent = r.error; return; }
+      var msg = p.title + ': ' + r.served + ' kept for pre-orders, ' + r.toStock + ' added to stock.';
+      if (pl.listQty && listCosmetic.checked) {
+        var until = new Date(Date.now() + 3 * 864e5);
+        var lr = M.clearance.create({
+          productId: p.id, qty: pl.listQty, clearancePriceCents: Math.round(p.priceCents * COSMETIC_RATE),
+          minPriceCents: Math.round(p.priceCents * M.RULES.clearanceDefaultMinRate), reason: 'cosmetic', availableUntil: M.clearance.dayKey(until)
+        }, session.email);
+        if (lr.ok) { M.audit(session.email, 'clearance.listed', lr.id); msg += ' ' + pl.listQty + ' cosmetic listed on Buy to Clear.'; }
+        else msg += ' Could not list cosmetic stock: ' + lr.error;
+      }
+      if (r.held) msg += ' ' + r.held + ' held for inspection.';
+      if (r.shortfall) msg += ' Short by ' + r.shortfall + ' — contact the affected customers.';
+      closeDialog();
+      commit('harvest.harvested', b.id, msg);
+    } });
+
+    var gradeSection = gradable
+      ? h('section', { class: 'gd-section' },
+          h('div', { class: 'gd-section-head' },
+            h('div', null, h('h3', { text: 'Grade from photos' }), h('span', { class: 'badge b-blue', text: 'Optional · AI-assisted' })),
+            h('p', { class: 'hint', text: 'Photograph a few bunches. Each photo is checked for yellowing and browning on the leaves, and the share of grades splits the harvest below. It judges looks only, never food safety, and you can change every number.' })),
+          h('div', { class: 'actions' },
+            h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Add photos', onclick: function () { fileInput.click(); } }),
+            h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Use demo photos', onclick: useDemo }),
+            h('label', { class: 'toggle' }, showMarks, h('span', { text: 'Show marked areas' })),
+            busy, fileInput),
+          photoGrid)
+      : h('p', { class: 'callout', text: 'Photo grading reads leaf colour, so it is only offered for leafy greens and herbs — not ' + M.CATEGORIES[p.category].label.toLowerCase() + '. Enter the split by hand if needed.' });
+
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'gd-body' },
+        h('h2', { id: 'gd-title', text: 'Record harvest — ' + p.title }),
+        h('p', { class: 'hint', text: 'Planned for ' + shortWeekday(dayKeyDate(b.harvestDate).toISOString()) + ' · expected ' + b.expectedQty + ' · ' + reserved + ' pre-ordered' }),
+        h('label', { class: 'gd-qty' }, 'Harvested quantity', qtyInput),
+        gradeSection,
+        h('section', { class: 'gd-section' },
+          h('h3', { text: 'Split' }),
+          splitBar,
+          h('div', { class: 'gd-split' },
+            h('label', null, h('span', { class: 'gd-dot seg-a' }), 'Grade A', aIn),
+            h('label', null, h('span', { class: 'gd-dot seg-c' }), 'Cosmetic', cIn),
+            h('label', null, h('span', { class: 'gd-dot seg-k' }), 'Check', kIn)),
+          h('label', { class: 'toggle' }, listCosmetic, h('span', { text: 'List cosmetic units on Buy to Clear (30% off, 3 days)' })),
+          errorBox,
+          h('strong', { class: 'gd-plan-title', text: 'What happens' }),
+          planBox)),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        confirmBtn));
+
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    if (gradable) drawPhotos();
+    refresh();
+    dlg.showModal();
+  }
+
   function harvestView(root) {
     var H = M.harvest;
     var upcoming = H.upcoming();
@@ -661,15 +840,7 @@
       });
       commit('campaign.submitted', id, 'Pre-order promo drafted in Campaign Studio — needs admin approval before it sends.');
     }
-    function recordHarvest(b) {
-      var p = M.byId('products', b.productId);
-      var raw = prompt('How many ' + p.title + ' did you actually harvest? (expected ' + b.expectedQty + ', ' + H.preordered(b) + ' already pre-ordered)', String(b.expectedQty));
-      if (raw === null) return;
-      var r = H.markHarvested(b.id, parseInt(raw, 10));
-      if (!r.ok) { toast(r.error); return; }
-      commit('harvest.harvested', b.id, p.title + ': ' + r.served + ' kept for pre-orders, ' + r.toStock + ' added to stock.' +
-        (r.shortfall ? ' Short by ' + r.shortfall + ' — contact the affected customers.' : ''));
-    }
+    function recordHarvest(b) { openHarvestDialog(b); }
     function cancelBatch(b) {
       var p = M.byId('products', b.productId);
       var lines = H.lines(b.id);
@@ -798,7 +969,12 @@
         var diff = b.actualQty - b.expectedQty;
         return h('span', null, String(b.actualQty), ' ', h('small', { class: diff < 0 ? 'bag-value-low' : 'bag-value-ok', text: (diff >= 0 ? '+' : '') + diff }));
       } },
-      { label: 'Pre-ordered', num: true, render: function (b) { return String(H.preordered(b)); } }
+      { label: 'Pre-ordered', num: true, render: function (b) { return String(H.preordered(b)); } },
+      { label: 'Grades', render: function (b) {
+        if (!b.grades) return '—';
+        return h('span', null, b.grades.A + ' A · ' + b.grades.cosmetic + ' cosmetic · ' + b.grades.check + ' check', h('br'),
+          h('small', { text: b.grades.photos ? 'from ' + b.grades.photos + ' photo(s), staff-confirmed' : 'entered by staff' }));
+      } }
     ], done, 'No harvests recorded yet.')));
   }
 

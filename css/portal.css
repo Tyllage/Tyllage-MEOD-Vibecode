@@ -956,3 +956,48 @@ a.pill-btn { text-decoration: none; }
 .pd-harvest > span:not(.icon-circle) { flex: 1 1 180px; min-width: 0; }
 .pd-harvest strong { display: block; font-size: .88rem; color: var(--forest); }
 .pd-harvest small { color: var(--ink); font-size: .82rem; }
+
+/* ---- Record harvest dialog with photo grading (Tyllage Grade) ---- */
+.grade-dialog { width: min(780px, calc(100vw - 24px)); }
+.gd-body { padding: 26px 28px 6px; display: grid; gap: 14px; }
+.gd-body h2 { margin: 0; color: var(--forest); font-size: 1.3rem; padding-right: 40px; }
+.gd-body > .hint { margin: -8px 0 0; }
+.gd-body h3 { margin: 0; color: var(--forest); font-size: 1rem; }
+.gd-qty { display: grid; gap: 4px; font-weight: 600; font-size: .88rem; max-width: 220px; }
+.grade-dialog .gd-section { display: grid; gap: 12px; border-top: 1px solid #eee8de; padding: 14px 0 0; }
+.gd-section-head > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gd-section-head .hint { margin: 6px 0 0; }
+.gd-section-head .badge { text-transform: none; }
+.gd-section .actions { align-items: center; flex-wrap: wrap; }
+.gd-busy { color: var(--muted); }
+.gd-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.gd-photos .empty { grid-column: 1 / -1; margin: 0; }
+.gd-photo { margin: 0; border: 1.5px solid #eee8de; border-radius: 12px; overflow: hidden; background: var(--white); }
+.gd-img { position: relative; aspect-ratio: 1; background: #f6f2e8; }
+.gd-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gd-img .gd-mark { mix-blend-mode: multiply; opacity: .9; image-rendering: pixelated; }
+.gd-photos.marks-off .gd-mark { display: none; }
+.gd-remove { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(255,255,255,.92); display: grid; place-items: center; cursor: pointer; }
+.gd-remove .icon-circle.bare { width: 14px; height: 14px; }
+.gd-photo figcaption { display: grid; gap: 4px; padding: 8px 10px 10px; justify-items: start; }
+.gd-photo figcaption small { color: var(--muted); font-size: .76rem; line-height: 1.35; }
+.gd-photo figcaption .badge { text-transform: none; }
+.gd-sim { font-style: italic; }
+.gd-split-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: #e6dfd3; }
+.gd-seg { display: block; height: 100%; }
+.seg-a { background: var(--leaf); }
+.seg-c { background: var(--gold); }
+.seg-k { background: var(--danger); }
+.gd-split { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.gd-split label { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; font-weight: 600; font-size: .86rem; }
+.gd-split input { grid-column: 1 / -1; }
+.gd-dot { width: 10px; height: 10px; border-radius: 50%; }
+.gd-plan-title { font-size: .88rem; color: var(--forest); }
+.gd-plan { margin: -6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: .9rem; }
+@media (max-width: 640px) {
+  .gd-body { padding: 22px 18px 4px; }
+  .gd-split { grid-template-columns: 1fr; }
+  .gd-photos { grid-template-columns: 1fr 1fr; }
+}
+.grade-dialog .toggle { white-space: normal; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

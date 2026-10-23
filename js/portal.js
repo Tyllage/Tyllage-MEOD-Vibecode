@@ -1168,12 +1168,115 @@
         return h('span', null, String(b.actualQty), ' ', h('small', { class: diff < 0 ? 'bag-value-low' : 'bag-value-ok', text: (diff >= 0 ? '+' : '') + diff }));
       } },
       { label: 'Pre-ordered', num: true, render: function (b) { return String(H.preordered(b)); } },
+      { label: 'Sell by', render: function (b) { return b.sellBy ? h('a', { href: '#rescue', text: shortWeekday(M.clearance.parseDayKey(b.sellBy).toISOString()) }) : '—'; } },
       { label: 'Grades', render: function (b) {
         if (!b.grades) return '—';
         return h('span', null, b.grades.A + ' A · ' + b.grades.cosmetic + ' cosmetic · ' + b.grades.check + ' check', h('br'),
           h('small', { text: b.grades.photos ? 'from ' + b.grades.photos + ' photo(s), staff-confirmed' : 'entered by staff' }));
       } }
     ], done, 'No harvests recorded yet.')));
+  }
+
+  /* ---------------- Harvest Rescue (staff + admin) ----------------
+   * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
+   * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
+   * Buy to Clear within the minimum price, or processing into MEOD products), and a log of
+   * what was done. Past the sell-by date, quality and food safety are a staff decision. */
+  var RESCUE_LEVEL = {
+    expired: ['Past sell-by', 'red'], urgent: ['Sell by tomorrow', 'red'], soon: ['2 days left', 'amber'], ok: ['On track', 'green']
+  };
+  var RESCUE_ACTION = { clear: 'Listed on Buy to Clear', offer: 'Offered to trade buyer', alert: 'Customer alert drafted', process: 'Processed into MEOD product', donate: 'Donated', compost: 'Composted' };
+  function rescueLevelLabel(x) {
+    if (x.level === 'ok') return [x.daysLeft + ' days left', 'green'];
+    if (x.level === 'urgent' && x.daysLeft === 0) return ['Sell by today', 'red'];
+    return RESCUE_LEVEL[x.level];
+  }
+  function rescueAlert(x) {
+    var p = x.product, a = audienceFor(p.id), id = M.nextId('CP');
+    S().campaigns.unshift({
+      id: id, kind: 'rescue-alert', productId: p.id, title: p.title + ' — fresh harvest offer', language: 'en',
+      message: 'Fresh from Kranji 🌱 We harvested extra ' + p.title + ' this week — order by ' + shortWeekday(M.clearance.parseDayKey(x.batch.sellBy).toISOString()) + ' for our next delivery' +
+        (x.listing ? ', or grab it on Buy to Clear at ' + money(x.listing.clearancePriceCents) : '') + '. Help us waste nothing! Reply STOP to opt out.',
+      audience: a.eligible, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+    });
+    M.rescue.log(x.batch.id, 'alert', 0, 0, session.email, a.eligible.length + ' opted-in customer(s)');
+    commit('rescue.alert', id, 'Alert for ' + p.title + ' drafted for ' + a.eligible.length + ' opted-in customer(s) — waiting for approval in Campaign Studio.');
+  }
+  function rescueWriteOff(x, action) {
+    var verb = { process: 'turned into ' + (x.product.category === 'herbs' ? 'Farm Pesto' : 'Vege Powder'), donate: 'donated', compost: 'composted' }[action];
+    var raw = prompt('How many ' + x.product.title + ' were ' + verb + '? (' + x.unsold + ' unsold)', String(x.unsold));
+    if (raw === null) return;
+    var q = Math.min(x.unsold, Math.max(0, parseInt(raw, 10) || 0));
+    if (!q) { toast('Enter a quantity above 0.'); return; }
+    M.rescue.log(x.batch.id, action, q, action === 'process' ? Math.round(q * x.product.priceCents * 0.5) : 0, session.email, '');
+    commit('rescue.' + action, x.batch.id, q + ' ' + x.product.title + ' ' + verb + ' — recorded and taken out of sellable stock.');
+  }
+  function runRescueOption(x, o) {
+    if (o.key === 'clear') {
+      var r = M.rescue.listOnClear(x, o, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('rescue.clear', r.id, x.unlisted + ' ' + x.product.title + ' listed on Buy to Clear at ' + money(o.priceCents) + ' until ' + shortDate(M.clearance.parseDayKey(x.batch.sellBy).toISOString()) + '.');
+    } else if (o.key === 'b2b') {
+      var acc = M.b2b.store().accounts.filter(function (a) { return a.id === o.accountIds[0]; })[0];
+      openB2BMessage('offer', { account: acc, product: x.product }, function () { M.rescue.log(x.batch.id, 'offer', 0, 0, session.email, acc.name); M.save(); });
+    } else if (o.key === 'alert') rescueAlert(x);
+    else if (o.key === 'process') rescueWriteOff(x, 'process');
+  }
+
+  function rescueView(root) {
+    var list = M.rescue.batches();
+    var at = list.filter(function (x) { return x.level !== 'ok'; });
+    var log = S().rescueLog || [];
+    var monthAgo = Date.now() - 30 * 864e5;
+    var recent = log.filter(function (r) { return new Date(r.at).getTime() > monthAgo; });
+    var rescuedCents = recent.reduce(function (s, r) { return s + (r.valueCents || 0); }, 0);
+    var rescuedUnits = recent.filter(function (r) { return r.action !== 'compost' && r.action !== 'alert' && r.action !== 'offer'; }).reduce(function (s, r) { return s + r.qty; }, 0);
+    append(root, h('div', { class: 'kpis' },
+      kpi('At risk', String(at.length) + ' batch(es)', 'sell-by within 2 days or passed'),
+      kpi('Unsold', String(list.reduce(function (s, x) { return s + x.unsold; }, 0)), 'units from recent harvests'),
+      kpi('Value at risk', money(at.reduce(function (s, x) { return s + x.valueCents; }, 0)), 'at normal price, at-risk batches'),
+      kpi('Rescued · 30 days', money(rescuedCents), rescuedUnits + ' units sold, processed or donated')));
+
+    var shelf = M.RULES.shelfDays;
+    append(root, panel(aiTitle('Batches to rescue'), 'Recent harvests with unsold stock, soonest sell-by first. Options are ranked: full-price trade sales before discounts. Shelf life (illustrative): ' +
+      Object.keys(shelf).map(function (k) { return M.CATEGORIES[k].label.toLowerCase() + ' ' + shelf[k] + ' days'; }).join(', ') + '.',
+      list.length ? h('div', { class: 'rescue-list' }, list.map(function (x) {
+        var lv = rescueLevelLabel(x);
+        var bar = h('span', { class: 'rescue-bar lv-' + x.level }, h('span'));
+        bar.firstChild.style.width = x.elapsedPct + '%';
+        var opts = M.rescue.options(x);
+        return h('article', { class: 'rescue-card lv-' + x.level },
+          h('div', { class: 'rescue-head' },
+            h('span', { class: 'rw-tier-cell' }, thumbMini(x.product), h('strong', { text: x.product.title })),
+            badge(lv[0], lv[1])),
+          h('div', { class: 'rescue-meta' },
+            h('small', { text: 'Harvested ' + shortDate(x.batch.harvestedAt || M.clearance.parseDayKey(x.batch.harvestDate).toISOString()) + ' · sell by ' + shortWeekday(M.clearance.parseDayKey(x.batch.sellBy).toISOString()) + ' · ' + x.shelf + '-day shelf life' }),
+            bar),
+          h('div', { class: 'rescue-nums' },
+            h('div', null, h('strong', { text: String(x.unsold) }), h('small', { text: 'unsold' })),
+            h('div', null, h('strong', { text: money(x.valueCents) }), h('small', { text: 'at normal price' })),
+            h('div', null, h('strong', { text: String(x.onClear) }), h('small', { text: 'on Buy to Clear' })),
+            h('div', null, h('strong', { text: String(x.sold) }), h('small', { text: 'sold since harvest' }))),
+          h('ol', { class: 'rescue-opts' }, opts.map(function (o, i) {
+            var btn = null;
+            if (o.key === 'clear') btn = mini('List', function () { runRescueOption(x, o); });
+            else if (o.key === 'b2b') btn = mini('Draft offer', function () { runRescueOption(x, o); });
+            else if (o.key === 'alert') btn = mini('Draft alert', function () { runRescueOption(x, o); });
+            else if (o.key === 'process') btn = mini('Record', function () { runRescueOption(x, o); });
+            return h('li', { class: i === 0 ? 'best' : '' },
+              h('span', { class: 'rescue-opt-text' }, h('strong', { text: (i === 0 ? 'Best: ' : '') + o.title }), h('small', { text: o.why })), btn);
+          })),
+          x.level === 'expired' ? h('div', { class: 'rescue-writeoff' }, h('small', { text: 'Not fit to sell?' }),
+            mini('Donated', function () { rescueWriteOff(x, 'donate'); }), mini('Composted', function () { rescueWriteOff(x, 'compost'); }, { danger: true })) : null);
+      })) : h('p', { class: 'empty', text: 'No recent harvests with unsold stock. Nice!' })));
+
+    append(root, panel('Rescue log', 'What was done with at-risk produce. "Recovered" is the sale value for listings and the kitchen value (50%) for processing.', table([
+      { label: 'When', render: function (r) { return h('span', null, shortDate(r.at), h('br'), h('small', { text: r.by })); } },
+      { label: 'Produce', render: function (r) { var p = M.byId('products', r.productId); return p ? p.title : '—'; } },
+      { label: 'Action', render: function (r) { return h('span', null, RESCUE_ACTION[r.action] || r.action, r.note ? [h('br'), h('small', { text: r.note })] : null); } },
+      { label: 'Qty', num: true, render: function (r) { return r.qty ? String(r.qty) : '—'; } },
+      { label: 'Recovered', num: true, render: function (r) { return r.valueCents ? money(r.valueCents) : '—'; } }
+    ], log.slice(0, 30), 'Nothing rescued yet — actions you take above are recorded here.')));
   }
 
   /* ---------------- B2B Buyer Growth (staff + admin) ----------------
@@ -1217,7 +1320,7 @@
     if (kind === 'lead') return { subject: 'Fresh local greens for ' + l.name.replace(/\s*\(demo\)\s*/i, ''), body: 'Hi there,\n\nFollowing up on our chat — ' + leadPitch(l) + '\n\nCould we send a free sample box, or arrange a quick farm visit to show you what we grow?' + sign };
     return { subject: 'Hello from MEOD Farm', body: 'Hi ' + name + ',\n\n' + sign };
   }
-  function openB2BMessage(kind, x) {
+  function openB2BMessage(kind, x, onSent) {
     document.querySelectorAll('.b2b-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
     var target = x.account || x.lead;
     var d0 = b2bDraft(kind, x);
@@ -1240,6 +1343,7 @@
         h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
         h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: function () {
           M.b2b.logContact(target, channel.value, body.value, session.email);
+          if (onSent) onSent();
           closeDialog();
           commit('b2b.contacted', target.id, 'Message to ' + target.name + ' sent by ' + (channel.value === 'email' ? 'email' : 'WhatsApp') + ' (simulated).');
         } })));
@@ -1410,6 +1514,12 @@
     if (tickets.length) push(82, 'Customers', ICONS.shield, tickets.length + ' customer issue(s) need a person', tickets.map(function (t) { return t.intent; }).join(', ') + ' — the bot has stopped handling these.', { label: 'Inbox', href: '#inbox' });
     var bagDays = M.radar.deliveryKeys(2).map(function (k) { return M.radar.pickList(k).pendingBags; }).reduce(function (a, b) { return a + b; }, 0);
     if (bagDays) push(78, 'Farm ops', ICONS.bag, bagDays + ' Surprise Harvest Bag(s) need their contents approved', 'Approve before packing day so stock is reserved.', { label: 'Buy to Clear', href: '#clearance' });
+    // Harvest Rescue: batches near or past their sell-by date.
+    var risky = M.rescue.batches().filter(function (x) { return x.level !== 'ok'; });
+    if (risky.length) {
+      var r0 = risky[0];
+      push(r0.level === 'expired' ? 94 : 89, 'Farm ops', ICONS.clock, risky.length + ' harvest batch(es) near or past sell-by', r0.product.title + ': ' + r0.unsold + ' unsold (' + money(r0.valueCents) + '), sell by ' + shortWeekday(M.clearance.parseDayKey(r0.batch.sellBy).toISOString()) + '. Trade buyers first, then Buy to Clear.', { label: 'Harvest Rescue', href: '#rescue' });
+    }
     // Trade buyers: standing orders not placed yet, lapsed accounts, lead follow-ups due.
     var bi = M.b2b.insights();
     var missing = bi.filter(function (x) { return x.kind === 'missing'; });
@@ -2468,6 +2578,7 @@
     harvest: { label: 'Harvest', tone: 'green' },
     rewards: { label: 'Rewards', tone: 'amber' },
     b2b: { label: 'B2B', tone: 'blue' },
+    rescue: { label: 'Harvest Rescue', tone: 'amber' },
     briefing: { label: 'Briefing', tone: 'green' }
   };
   var AUDIT_LABELS = {
@@ -2484,7 +2595,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -4125,6 +4236,7 @@
       { id: 'radar', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
+      { id: 'rescue', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
       { id: 'rewards', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },

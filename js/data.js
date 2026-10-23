@@ -54,7 +54,9 @@
     preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
     preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
     // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
-    growDays: { 'asian-greens': 30, lettuces: 40, fungi: 14, herbs: 45 }
+    growDays: { 'asian-greens': 30, lettuces: 40, fungi: 14, herbs: 45 },
+    // Days a harvest stays at its best for sale (Harvest Rescue sell-by). Illustrative — MEOD to set.
+    shelfDays: { 'asian-greens': 4, lettuces: 5, fungi: 7, herbs: 6 }
   };
 
   // Demo sign-in. The password is shared by every demo account and is NOT a
@@ -654,6 +656,34 @@
       });
       s.migrations.b2bV1 = true;
     }
+    if (!s.migrations.rescueV1) {
+      // Recently harvested batches with sell-by dates, so Harvest Rescue has a realistic mix:
+      // one past its sell-by, one due tomorrow (partly on Buy to Clear), two with a few days left.
+      s.rescueLog = s.rescueLog || [];
+      var pR = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      s.batches.forEach(function (b) {
+        if (b.status !== 'harvested' || b.sellBy) return;
+        var p = s.products.filter(function (x) { return x.id === b.productId; })[0];
+        b.toStock = b.toStock != null ? b.toStock : Math.max(0, (b.actualQty || b.expectedQty) - 0);
+        var hv = new Date(b.harvestedAt || parseDayKey(b.harvestDate));
+        b.sellBy = bagDayKey(new Date(hv.getTime() + ((p && RULES.shelfDays[p.category]) || 4) * 864e5));
+      });
+      // [title, harvested N days ago, qty into stock]
+      [['Bayam', 5, 30], ['Mesclun Mix', 4, 22], ['Sweet Basil', 2, 18], ['Kangkong', 1, 40]].forEach(function (r) {
+        var p = pR(r[0]);
+        if (!p) return;
+        var hv = new Date(today.getTime() - r[1] * 864e5 + 7 * 36e5);
+        s.seq += 1;
+        s.batches.push({
+          id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(new Date(hv.getTime() - (RULES.growDays[p.category] || 30) * 864e5)), harvestDate: bagDayKey(hv),
+          expectedQty: r[2] + 4, preorderCap: 0, preorderPriceCents: p.priceCents, status: 'harvested', actualQty: r[2], toStock: r[2],
+          harvestedAt: hv.toISOString(), sellBy: bagDayKey(new Date(hv.getTime() + (RULES.shelfDays[p.category] || 4) * 864e5)),
+          createdBy: 'admin@meod.test', createdAt: new Date(hv.getTime() - 40 * 864e5).toISOString()
+        });
+      });
+      s.migrations.rescueV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -1018,6 +1048,9 @@
     b.status = 'harvested';
     b.actualQty = actualQty;
     b.harvestedAt = new Date().toISOString();
+    // Harvest Rescue: how much went into stock, and when it should be sold by.
+    b.toStock = toStock;
+    b.sellBy = bagDayKey(new Date(Date.now() + ((p && RULES.shelfDays[p.category]) || 4) * 864e5));
     return { ok: true, reserved: reserved, served: Math.min(reserved, sellable), toStock: toStock, shortfall: Math.max(0, reserved - sellable), held: grades ? grades.check : 0 };
   }
   function batchCancel(id) {
@@ -1357,6 +1390,88 @@
         categories: cats
       };
     });
+  }
+
+  /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
+   * Each recorded harvest gets a sell-by date (harvest day + the category's shelf days). Unsold
+   * units are estimated first-in-first-out: what went into stock, minus regular sales of that
+   * product since the harvest, capped by stock on hand. Anything already on Buy to Clear is
+   * shown separately. Rescue actions are suggestions; MEOD staff decide what's fit to sell,
+   * and every outcome (listed, offered, alerted, processed, donated, composted) is logged.
+   */
+  function rescueBatches() {
+    var now = Date.now();
+    return state.batches.filter(function (b) { return b.status === 'harvested' && b.sellBy && (b.toStock || 0) > 0; }).map(function (b) {
+      var p = byId('products', b.productId);
+      if (!p) return null;
+      var harvested = new Date(b.harvestedAt || parseDayKey(b.harvestDate)).getTime();
+      var sold = 0;
+      state.orders.forEach(function (o) {
+        if (o.status === 'cancelled' || new Date(o.createdAt).getTime() < harvested) return;
+        o.items.forEach(function (i) { if (i.productId === p.id && !i.preorderBatchId) sold += i.qty; });
+      });
+      var logged = (state.rescueLog || []).filter(function (r) { return r.batchId === b.id && r.removesStock; }).reduce(function (s, r) { return s + r.qty; }, 0);
+      // Every active Buy to Clear listing for this product counts (there can be more than one).
+      var listings = clearanceListActive().filter(function (l) { return l.productId === p.id; });
+      var listing = listings[0] || null;
+      var onClear = listings.reduce(function (s, l) { return s + clearanceRemaining(l); }, 0);
+      var st = stockStatus(p);
+      var stock = st.known ? Math.max(0, p.stock.qty) : 0;
+      var unsold = Math.max(0, Math.min(stock, b.toStock - sold - logged));
+      var sellBy = parseDayKey(b.sellBy).getTime();
+      var today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      var daysLeft = Math.round((sellBy - today0.getTime()) / 864e5);
+      var shelf = Math.max(1, Math.round((sellBy - harvested) / 864e5));
+      var level = unsold <= 0 ? 'clear' : daysLeft < 0 ? 'expired' : daysLeft <= 1 ? 'urgent' : daysLeft <= 2 ? 'soon' : 'ok';
+      return {
+        batch: b, product: p, unsold: unsold, sold: sold, onClear: onClear, unlisted: Math.max(0, unsold - onClear), listing: listing,
+        daysLeft: daysLeft, shelf: shelf, elapsedPct: Math.max(0, Math.min(100, Math.round((now - harvested) / (sellBy + 864e5 - harvested) * 100))),
+        valueCents: unsold * p.priceCents, level: level, stockKnown: st.known
+      };
+    }).filter(function (x) { return x && x.level !== 'clear' && x.daysLeft >= -3; })
+      .sort(function (a, b) { return a.daysLeft - b.daysLeft || b.valueCents - a.valueCents; });
+  }
+  // Ranked rescue options for one at-risk batch, with a reason for each.
+  var PROCESS_INTO = { herbs: 'Farm Pesto', 'asian-greens': 'Vege Powder', lettuces: null, fungi: 'Vege Powder' };
+  function rescueOptions(x) {
+    var opts = [];
+    var buyers = b2bStore().accounts.filter(function (a) {
+      return a.status === 'active' && a.usual.some(function (u) { var p = byId('products', u.productId); return p && p.category === x.product.category; });
+    });
+    var optedBuyers = 0, seen = {};
+    state.orders.forEach(function (o) { o.items.forEach(function (i) { var p = byId('products', i.productId); if (p && p.category === x.product.category) seen[o.customerId] = true; }); });
+    Object.keys(seen).forEach(function (id) { var c = byId('customers', id); if (c && c.consentMarketing) optedBuyers++; });
+    if (x.level === 'expired') {
+      opts.push({ key: 'check', score: 100, title: 'Check quality before selling', why: 'Past its sell-by date. MEOD staff decide if it\'s still fit to sell; if not, record it as donated or composted.' });
+    }
+    if (buyers.length && x.daysLeft >= 1) {
+      opts.push({ key: 'b2b', score: 80 + x.daysLeft * 4, title: 'Offer to ' + buyers.length + ' trade buyer(s)', why: buyers.map(function (a) { return a.name.replace(/\s*\(demo\)/i, ''); }).slice(0, 2).join(', ') + ' already buy ' + CATEGORIES[x.product.category].label.toLowerCase() + ' — a full-price sale, no discount needed.', accountIds: buyers.map(function (a) { return a.id; }) });
+    }
+    if (x.unlisted > 0 && x.daysLeft >= 0) {
+      var price = Math.round(x.product.priceCents * 0.7), min = Math.round(x.product.priceCents * RULES.clearanceDefaultMinRate);
+      opts.push({ key: 'clear', score: x.daysLeft <= 1 ? 90 : 60, title: 'List ' + x.unlisted + ' on Buy to Clear at ' + money(price), why: '30% off, above the ' + money(min) + ' minimum, until the sell-by date. It also goes into Surprise Harvest Bags.', priceCents: price, minCents: min });
+    }
+    if (optedBuyers && x.daysLeft >= 0) {
+      opts.push({ key: 'alert', score: 70 - x.daysLeft, title: 'Alert ' + optedBuyers + ' opted-in customer(s)', why: 'People who bought ' + CATEGORIES[x.product.category].label.toLowerCase() + ' before and agreed to messages. Drafted for admin approval.' });
+    }
+    if (PROCESS_INTO[x.product.category] && x.unsold >= 8) {
+      opts.push({ key: 'process', score: 50, title: 'Turn into ' + PROCESS_INTO[x.product.category], why: 'Larger leftovers can go into the kitchen for MEOD\'s own products instead of discounting.' });
+    }
+    return opts.sort(function (a, b) { return b.score - a.score; });
+  }
+  function rescueLogOutcome(batchId, action, qty, valueCents, actor, note) {
+    state.rescueLog = state.rescueLog || [];
+    // Processed / donated / composted take units out of sellable stock; offers and alerts don't.
+    var removes = ['process', 'donate', 'compost'].indexOf(action) > -1;
+    var b = byId('batches', batchId), p = b && byId('products', b.productId);
+    if (removes && p) p.stock.qty = Math.max(0, p.stock.qty - qty);
+    state.rescueLog.unshift({ id: nextId('RS'), batchId: batchId, productId: b ? b.productId : null, action: action, qty: qty, valueCents: valueCents || 0,
+      removesStock: removes, by: actor, note: note || '', at: new Date().toISOString() });
+  }
+  function rescueListOnClear(x, opt, actor) {
+    var r = clearanceCreate({ productId: x.product.id, qty: x.unlisted, clearancePriceCents: opt.priceCents, minPriceCents: opt.minCents, reason: 'short_dated', availableUntil: x.batch.sellBy }, actor);
+    if (r.ok) rescueLogOutcome(x.batch.id, 'clear', x.unlisted, x.unlisted * opt.priceCents, actor, 'until ' + parseDayKey(x.batch.sellBy).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }));
+    return r;
   }
 
   /* ---------- Tyllage Buyer Growth: B2B accounts, standing orders, insights, leads ----------
@@ -1806,6 +1921,7 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },
     b2b: {
       TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,
       createUsualOrder: b2bCreateUsualOrder, logContact: b2bLogContact, moveLead: b2bMoveLead, addLead: b2bAddLead, ordersOf: b2bOrdersOf

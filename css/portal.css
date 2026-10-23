@@ -596,10 +596,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .chat-send .icon-circle.bare { width: 20px; height: 20px; }
 .chat-side { display: grid; gap: 16px; }
 .chat-side .panel { margin: 0; }
-.help-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; }
+.help-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 20px; }
 .help-list li { display: flex; gap: 12px; align-items: center; }
 .help-list strong { display: block; font-size: .92rem; }
-.help-list small { color: var(--muted); font-size: .8rem; }
+.help-list small { display: block; margin-top: 3px; color: var(--muted); font-size: .8rem; line-height: 1.4; }
 .human-card { background: #fff8ea; border: 1px solid #f1dfb6; }
 @media (prefers-reduced-motion: reduce) { .bubble.typing i { animation: none; } }
 

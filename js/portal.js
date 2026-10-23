@@ -2314,7 +2314,7 @@
     [sel, lose, cancel].forEach(function (el) { el.addEventListener('change', draw); });
     [hr, dr].forEach(function (el) { el.addEventListener('input', draw); });
     draw();
-    append(root, panel(aiTitle('Farm Decision Twin'), 'A model of the next 2 weeks for one crop — MEOD\'s orders, harvests and buyers, not the greenhouse. Move the sliders or run a stress test, and compare what each response would earn.',
+    append(root, panel(aiTitle('Try a what-if'), 'A model of the next 2 weeks for one crop — MEOD\'s orders, harvests and buyers, not the greenhouse. Move the sliders or run a stress test, and compare what each response would earn.',
       h('div', { class: 'tw-controls' },
         h('label', null, 'Crop', sel),
         h('label', { class: 'tw-range' }, h('span', null, 'Harvest ', hrOut), hr),

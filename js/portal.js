@@ -125,6 +125,17 @@
     var newBookings = S().bookings.filter(function (b) { return b.status === 'new'; });
     var payable = M.ledger().reduce(function (s, e) { return s + e.payableCents; }, 0);
 
+    // Weekly AI briefing teaser: how many priorities, and the top one.
+    if (M.auth.can(session, 'radar')) {
+      var pr = briefingPriorities();
+      append(root, h('a', { class: 'brief-teaser', href: '#briefing' },
+        iconCircle('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>', 'soft'),
+        h('span', { class: 'brief-teaser-text' },
+          h('span', { class: 'brief-teaser-head' }, h('strong', { text: 'Weekly AI briefing' }), aiPill()),
+          h('small', { text: pr.length ? pr.length + ' priorities this week · top: ' + pr[0].title : 'Nothing urgent this week' })),
+        h('span', { class: 'pill-btn', text: 'Open →' })));
+    }
+
     append(root, h('div', { class: 'kpis' },
       kpi('Orders · 7 days', String(recent.length), money(revenue) + ' net of refunds'),
       kpi('Open tickets', String(openTickets.length), 'Human handover queue'),
@@ -1165,6 +1176,195 @@
     ], done, 'No harvests recorded yet.')));
   }
 
+  /* ---------------- Weekly AI briefing (staff + admin) ----------------
+   * One page to open on Monday: ranked priorities across farm ops, sales and customers,
+   * the next harvest & pack list, a sales pulse, the week's calendar, and a short digest the
+   * manager can copy or "send". Everything is pulled from data already in Tyllage (Demand
+   * Radar, Harvest Planner, Buy to Clear, Visits, Campaigns, Inbox, Stock). PROTOTYPE: the
+   * ranking is rule-based; a language model could word the digest in the live version. */
+  function weekBounds() {
+    var d = new Date(); d.setHours(0, 0, 0, 0);
+    var monday = new Date(d.getTime() - ((d.getDay() + 6) % 7) * 864e5);
+    return { start: monday, end: new Date(monday.getTime() + 6 * 864e5) };
+  }
+  function briefingPriorities() {
+    var out = [];
+    var push = function (score, area, icon, title, why, action) { out.push({ score: score, area: area, icon: icon, title: title, why: why, action: action }); };
+    var crops = M.radar.crops();
+    var shorts = crops.filter(function (c) { return c.status === 'short'; }).sort(function (a, b) { return a.gap - b.gap; });
+    var surplus = crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; });
+    if (shorts.length) {
+      var s0 = shorts[0];
+      push(90 + Math.min(9, Math.abs(s0.gap) / 10), 'Farm ops', ICONS.leaf, s0.product.title + ' is ' + Math.abs(s0.gap) + ' units short over the next ' + M.radar.weeks + ' weeks',
+        (shorts.length > 1 ? shorts.length - 1 + ' other crop(s) are short too. ' : '') + (s0.trendPct > 5 ? 'Demand is up ' + s0.trendPct + '%. ' : '') + 'Hold back promotions and consider sowing another batch.',
+        { label: 'Open Demand Radar', href: '#radar' });
+    }
+    if (surplus.length) {
+      var u0 = surplus[0];
+      push(80 + Math.min(9, u0.gap / 10), 'Farm ops', ICONS.tag, u0.product.title + ' has about ' + u0.gap + ' units more than expected demand',
+        (u0.trendPct < -5 ? 'Demand is down ' + Math.abs(u0.trendPct) + '%. ' : '') + 'Promote it this week, push pre-orders, or plan to list extra on Buy to Clear.' + (surplus.length > 1 ? ' ' + (surplus.length - 1) + ' more crop(s) in surplus.' : ''),
+        { label: 'See surplus crops', href: '#radar' });
+    }
+    var ending = M.clearance.listActive().filter(function (l) { return new Date(l.availableUntil).getTime() - Date.now() < 2.5 * 864e5; });
+    if (ending.length) {
+      var e0 = ending.sort(function (a, b) { return M.clearance.remaining(b) - M.clearance.remaining(a); })[0];
+      var ep = M.byId('products', e0.productId);
+      push(85, 'Farm ops', ICONS.clock, ending.length + ' Buy to Clear listing(s) end within 2 days',
+        M.clearance.remaining(e0) + ' ' + ep.title + ' still unsold, ending ' + shortDate(e0.availableUntil) + '. Send an approved alert or bundle it before it loses value.', { label: 'Buy to Clear', href: '#clearance' });
+    }
+    var due = M.harvest.upcoming().filter(function (b) { return M.harvest.stage(b) === 'due'; });
+    if (due.length) push(88, 'Farm ops', ICONS.box, due.length + ' harvest batch(es) due but not recorded', 'Record the real yield so pre-orders are served first and the rest goes into stock.', { label: 'Harvest Planner', href: '#harvest' });
+    var slow = M.harvest.open().filter(function (b) { return M.harvest.signal(b).key === 'slow'; });
+    if (slow.length) {
+      var sp = M.byId('products', slow[0].productId);
+      push(70, 'Sales', ICONS.clock, 'Pre-orders are slow for ' + sp.title + (slow.length > 1 ? ' and ' + (slow.length - 1) + ' more' : ''), M.harvest.signal(slow[0]).reason.split('.')[0] + '. A pre-order nudge to past buyers can fill it.', { label: 'Harvest Planner', href: '#harvest' });
+    }
+    var enquiries = S().bookings.filter(function (b) { return b.status === 'new'; });
+    if (enquiries.length) {
+      var oldest = enquiries.slice().sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); })[0];
+      var pax = enquiries.reduce(function (s, b) { return s + b.pax; }, 0);
+      push(75 + Math.min(10, enquiries.length * 2), 'Sales', ICONS.users, enquiries.length + ' farm-visit enquiry(s) waiting for a reply (' + pax + ' guests)',
+        'Oldest: ' + (oldest.org || oldest.name) + ', ' + ago(oldest.createdAt) + '. AI reply drafts are ready to check.', { label: 'Visits', href: '#visits' });
+    }
+    var toApprove = S().campaigns.filter(function (c) { return c.status === 'pending_approval'; });
+    if (toApprove.length) push(65, 'Sales', ICONS.chat, toApprove.length + ' campaign(s) waiting for approval', 'Drafts from restock reminders, rewards nudges and Demand Radar. Nothing sends until an admin approves.', { label: 'Campaigns', href: '#campaigns' });
+    var tickets = S().tickets.filter(function (t) { return t.status === 'open'; });
+    if (tickets.length) push(82, 'Customers', ICONS.shield, tickets.length + ' customer issue(s) need a person', tickets.map(function (t) { return t.intent; }).join(', ') + ' — the bot has stopped handling these.', { label: 'Inbox', href: '#inbox' });
+    var bagDays = M.radar.deliveryKeys(2).map(function (k) { return M.radar.pickList(k).pendingBags; }).reduce(function (a, b) { return a + b; }, 0);
+    if (bagDays) push(78, 'Farm ops', ICONS.bag, bagDays + ' Surprise Harvest Bag(s) need their contents approved', 'Approve before packing day so stock is reserved.', { label: 'Buy to Clear', href: '#clearance' });
+    var soldOut = S().products.filter(function (p) { var st = M.stockStatus(p); return st.key === 'out' || st.key === 'stale'; });
+    if (soldOut.length) push(55, 'Farm ops', ICONS.box, soldOut.length + ' product(s) sold out or not syncing', soldOut.map(function (p) { return p.title; }).slice(0, 3).join(', ') + '. Customers see "Sold out" or "Checking stock".', { label: 'Stock', href: '#inventory' });
+    return out.sort(function (a, b) { return b.score - a.score; });
+  }
+  function salesPulse() {
+    var now = Date.now();
+    var sum = function (from, to) {
+      return S().orders.filter(function (o) { var t = new Date(o.createdAt).getTime(); return o.status !== 'cancelled' && t >= from && t < to; })
+        .reduce(function (acc, o) { acc.n++; acc.cents += o.netCents - (o.refundedCents || 0); return acc; }, { n: 0, cents: 0 });
+    };
+    var thisWk = sum(now - 7 * 864e5, now), lastWk = sum(now - 14 * 864e5, now - 7 * 864e5);
+    var rising = M.radar.crops().filter(function (c) { return c.trendPct > 5; }).sort(function (a, b) { return b.trendPct - a.trendPct; }).slice(0, 3);
+    var wk = weekBounds();
+    var visits = S().bookings.filter(function (b) { if (b.status !== 'confirmed') return false; var t = M.clearance.parseDayKey(b.date).getTime(); return t >= Date.now() - 864e5 && t <= wk.end.getTime() + 7 * 864e5; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    return { thisWk: thisWk, lastWk: lastWk, change: lastWk.cents ? Math.round((thisWk.cents - lastWk.cents) / lastWk.cents * 100) : null, rising: rising, visits: visits };
+  }
+  function briefingDigest(pr, pulse, pick) {
+    var lines = ['🌱 MEOD weekly briefing — ' + weekBounds().start.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })];
+    lines.push('');
+    lines.push('Top priorities:');
+    pr.slice(0, 5).forEach(function (p, i) { lines.push((i + 1) + '. ' + p.title); });
+    lines.push('');
+    if (pick && pick.rows.length) lines.push('Next delivery (' + shortWeekday(M.clearance.parseDayKey(pick.dayKey).toISOString()) + '): ' + pick.rows.reduce(function (s, r) { return s + r.pick; }, 0) + ' units to harvest & pack for ' + pick.orderCount + ' order(s).');
+    lines.push('Sales last 7 days: ' + money(pulse.thisWk.cents) + ' from ' + pulse.thisWk.n + ' order(s)' + (pulse.change !== null ? ' (' + (pulse.change >= 0 ? '+' : '') + pulse.change + '% vs the week before)' : '') + '.');
+    if (pulse.rising.length) lines.push('Rising demand: ' + pulse.rising.map(function (c) { return c.product.title + ' +' + c.trendPct + '%'; }).join(', ') + '.');
+    if (pulse.visits.length) lines.push('Visits coming up: ' + pulse.visits.map(function (b) { return (b.org || b.name) + ' (' + b.pax + ', ' + shortWeekday(M.clearance.parseDayKey(b.date).toISOString()) + ')'; }).join('; ') + '.');
+    lines.push('');
+    lines.push('Open Tyllage → Weekly briefing for details.');
+    return lines.join('\n');
+  }
+  function showDigest(text) {
+    var ta = h('textarea', { rows: 14, 'aria-label': 'Weekly summary', value: text });
+    ta.value = text;
+    var dlg = h('dialog', { class: 'receipt-dialog digest-dialog', 'aria-labelledby': 'dg-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'dg-title', text: 'Weekly summary' }), aiPill(), h('small', { class: 'ai-note', text: 'Edit before sharing' })),
+        h('p', { class: 'hint', text: 'A short version for the team chat or the manager\'s WhatsApp. In production this could be sent automatically every Monday at 8am, to staff only.' }),
+        h('label', { class: 'digest-field' }, 'Message', ta)),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Copy', onclick: function () {
+          (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(function () { toast('Summary copied.'); }, function () { toast('Copy not available here — select the text instead.'); });
+        } }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send to me (simulated)', onclick: function () {
+          closeDialog(); commit('briefing.sent', session.email, 'Weekly summary sent to ' + session.email + ' (simulated).');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+
+  function briefingView(root) {
+    var pr = briefingPriorities();
+    var pulse = salesPulse();
+    var nextDay = M.radar.deliveryKeys(1)[0];
+    var pick = M.radar.pickList(nextDay);
+    var wk = weekBounds();
+    var crops = M.radar.crops();
+    var pickUnits = pick.rows.reduce(function (s, r) { return s + r.pick; }, 0);
+
+    append(root, h('section', { class: 'brief-hero' },
+      h('div', null,
+        h('span', { class: 'picks-eyebrow', text: 'Week of ' + wk.start.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) + ' – ' + wk.end.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) }),
+        h('h2', { text: 'Good ' + (new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening') + ', ' + session.name }),
+        h('p', { text: pr.length ? pr.length + ' thing(s) need attention this week. The most important are at the top.' : 'Nothing urgent this week — the farm is on track.' })),
+      h('div', { class: 'brief-actions' },
+        h('button', { class: 'btn btn-sm btn-gold', type: 'button', text: 'Share weekly summary', onclick: function () { showDigest(briefingDigest(pr, pulse, pick)); } }))));
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Next delivery', shortWeekday(M.clearance.parseDayKey(nextDay).toISOString()), pickUnits + ' units for ' + pick.orderCount + ' order(s)'),
+      kpi('Crops short', String(crops.filter(function (c) { return c.status === 'short'; }).length), 'next ' + M.radar.weeks + ' weeks'),
+      kpi('Sales · 7 days', money(pulse.thisWk.cents), pulse.change === null ? pulse.thisWk.n + ' order(s)' : (pulse.change >= 0 ? '+' : '') + pulse.change + '% vs week before'),
+      kpi('Waiting on you', String(S().bookings.filter(function (b) { return b.status === 'new'; }).length + S().campaigns.filter(function (c) { return c.status === 'pending_approval'; }).length + S().tickets.filter(function (t) { return t.status === 'open'; }).length),
+        'enquiries, approvals and tickets')));
+
+    /* ---- Top priorities ---- */
+    var top = pr.slice(0, 6), rest = pr.slice(6);
+    append(root, panel(aiTitle('Top priorities this week'), 'Ranked by urgency across farm ops, sales and customers. Each one links to where you act on it.',
+      top.length ? h('ol', { class: 'brief-list' }, top.map(function (p, i) {
+        return h('li', { class: 'brief-item area-' + p.area.toLowerCase().replace(/\s/g, '-') },
+          h('span', { class: 'brief-rank', text: String(i + 1) }),
+          iconCircle(p.icon, 'soft'),
+          h('div', { class: 'brief-text' },
+            h('div', { class: 'brief-title-row' }, h('strong', { text: p.title }), badge(p.area, p.area === 'Farm ops' ? 'green' : p.area === 'Sales' ? 'amber' : 'blue')),
+            h('p', { text: p.why })),
+          h('a', { class: 'btn btn-sm btn-outline brief-go', href: p.action.href, text: p.action.label + ' →' }));
+      })) : h('p', { class: 'empty', text: 'Nothing urgent. Enjoy the quiet week!' }),
+      rest.length ? h('details', { class: 'brief-more' }, h('summary', { text: 'Also this week (' + rest.length + ')' }),
+        h('ul', null, rest.map(function (p) { return h('li', null, h('a', { href: p.action.href, text: p.title })); }))) : null));
+
+    /* ---- Next delivery + sales pulse ---- */
+    var pickPanel = panel('Next harvest & pack · ' + shortWeekday(M.clearance.parseDayKey(nextDay).toISOString()), null,
+      pick.rows.length ? h('ul', { class: 'brief-pick' }, pick.rows.slice(0, 5).map(function (r) {
+        return h('li', null, h('span', { class: 'rw-tier-cell' }, thumbMini(r.product), r.product.title), h('strong', { text: String(r.pick) }));
+      })) : h('p', { class: 'empty', text: 'Nothing to pack for the next delivery yet.' }),
+      pick.rows.length > 5 ? h('small', { class: 'hint', text: '+ ' + (pick.rows.length - 5) + ' more item(s)' }) : null,
+      h('div', { class: 'panel-foot' }, h('a', { class: 'pill-btn', href: '#radar', text: 'Full pick list →' })));
+    var pulsePanel = panel('Sales pulse', null,
+      h('div', { class: 'brief-pulse' },
+        h('div', null, h('small', { text: 'Last 7 days' }), h('strong', { text: money(pulse.thisWk.cents) }), h('small', { text: pulse.thisWk.n + ' order(s) in Tyllage' })),
+        h('div', null, h('small', { text: 'Week before' }), h('strong', { text: money(pulse.lastWk.cents) }), h('small', { text: pulse.lastWk.n + ' order(s)' }))),
+      pulse.rising.length ? h('div', { class: 'brief-rising' }, h('small', { text: 'Rising demand (MEOD Fresh history):' }),
+        pulse.rising.map(function (c) { return h('span', { class: 'mini-chip', text: c.product.title + ' ↑ ' + c.trendPct + '%' }); })) : null,
+      h('div', { class: 'brief-visits' }, h('small', { text: 'Visits coming up' }),
+        pulse.visits.length ? h('ul', null, pulse.visits.map(function (b) { return h('li', null, h('strong', { text: b.org || b.name }), ' · ' + b.pax + ' guests · ' + shortWeekday(M.clearance.parseDayKey(b.date).toISOString())); }))
+          : h('p', { class: 'empty', text: 'No confirmed visits in the next two weeks.' })));
+    append(root, h('div', { class: 'two-col' }, pickPanel, pulsePanel));
+
+    /* ---- This week's calendar ---- */
+    // The next 7 days from today (more useful mid-week than a Monday–Sunday grid).
+    var days = [], today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    for (var i = 0; i < 7; i++) days.push(new Date(today0.getTime() + i * 864e5));
+    var todayKey = M.clearance.dayKey(new Date());
+    append(root, panel('Next 7 days', 'Delivery days, harvests and farm visits at a glance.',
+      h('ol', { class: 'brief-week' }, days.map(function (d) {
+        var key = M.clearance.dayKey(d);
+        var isDelivery = M.DELIVERY_DAYS.indexOf(d.getDay()) > -1;
+        var harvests = S().batches.filter(function (b) { return b.harvestDate === key && b.status !== 'cancelled'; });
+        var visits = S().bookings.filter(function (b) { return b.date === key && b.status === 'confirmed'; });
+        var pl = isDelivery ? M.radar.pickList(key) : null;
+        var items = [];
+        if (isDelivery) items.push(h('li', { class: 'ev-delivery', text: 'Delivery · ' + (pl ? pl.orderCount : 0) + ' order(s)' }));
+        harvests.forEach(function (b) { items.push(h('li', { class: 'ev-harvest', text: 'Harvest ' + M.byId('products', b.productId).title })); });
+        visits.forEach(function (b) { items.push(h('li', { class: 'ev-visit', text: 'Visit · ' + (b.org || b.name) })); });
+        return h('li', { class: 'brief-day' + (key === todayKey ? ' today' : '') + (key < todayKey ? ' past' : '') },
+          h('div', { class: 'brief-day-head' }, h('strong', { text: d.toLocaleDateString('en-SG', { weekday: 'short' }) }), h('small', { text: d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) })),
+          items.length ? h('ul', null, items) : h('small', { class: 'brief-none', text: '—' }));
+      }))));
+  }
+
   /* ---------------- Demand Radar + harvest & pack list (staff + admin) ----------------
    * Radar: per crop, next few weeks of supply (stock + planned harvests) against demand
    * (confirmed pre-orders + expected sales from weekly history), with a plain suggestion and
@@ -2095,7 +2295,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -3727,6 +3927,7 @@
   var NAV = {
     staff: [
       { id: 'overview', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
+      { id: 'briefing', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
       { id: 'inventory', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },

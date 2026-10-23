@@ -247,7 +247,8 @@
   var REPLY_LABEL = { confirm: 'Confirmed', details: 'Asked for details', alternative: 'Offered other dates' };
   function openReplyDialog(b) {
     document.querySelectorAll('.reply-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
-    var kind = b.status === 'confirmed' ? 'details' : 'confirm', tone = 'warm', edited = false;
+    var full = b.status !== 'confirmed' && !M.visits.fits(b).fits;
+    var kind = b.status === 'confirmed' ? 'details' : full ? 'alternative' : 'confirm', tone = 'warm', edited = false;
     var dlg = h('dialog', { class: 'receipt-dialog reply-dialog', 'aria-labelledby': 'rd-title' });
     function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
     var kindSel = h('select', { 'aria-label': 'Type of reply' }, REPLY_KINDS.map(function (k) {
@@ -364,7 +365,11 @@
         { label: 'Ref', render: function (b) { return h('span', null, h('strong', { text: b.id }), h('br'), h('small', { text: ago(b.createdAt) })); } },
         { label: 'Contact', render: function (b) { return h('span', null, b.org ? h('strong', { text: b.org }) : null, b.org ? h('br') : null, b.name, h('br'), h('small', { text: b.email })); } },
         { label: 'Experience', render: function (b) { return b.experience + ' · ' + b.pax + ' pax' + (M.visits.sessions(b.pax) > 1 ? ' (' + M.visits.sessions(b.pax) + ' sessions)' : ''); } },
-        { label: 'Date', render: function (b) { return date(b.date); } },
+        { label: 'Date', render: function (b) {
+          if (b.status !== 'new') return date(b.date);
+          var f = M.visits.fits(b);
+          return h('span', null, date(b.date), h('br'), h('small', { class: f.fits ? 'cap-ok' : 'cap-warn', text: f.fits ? f.booked + ' of ' + f.cap + ' sessions booked that day' : 'Fully booked (' + f.booked + ' of ' + f.cap + ' taken)' }));
+        } },
         { label: 'Message', render: function (b) { return b.message || '—'; } },
         { label: 'Status', render: function (b) { return statusBadge(b.status); } },
         { label: 'Actions', render: function (b) {
@@ -411,23 +416,114 @@
     var first = M.auth.can(session, 'customers.pii') ? c.name.split(' ')[0] : M.maskName(c.name).split(' ')[0];
     return text.replace('{first_name}', first).replace('{days}', String(days));
   }
+  /* ---- Campaign Advisor: one ranked list of what to send this week ----
+   * Pulls together the campaign ideas that used to live on separate pages: Harvest Rescue
+   * alerts, Demand Radar surplus promos, Harvest Planner pre-order nudges, restock reminders
+   * and Rewards nudges. Farm-ops ones (food that would otherwise go to waste) rank first.
+   * It also warns against promoting crops that are short, and skips anything already drafted
+   * in the last 7 days. Every "Draft it" still goes through admin approval. */
+  var ADVISOR_SOURCE = { rescue: ['Harvest Rescue', 'red'], radar: ['Demand Radar', 'green'], preorder: ['Harvest Planner', 'green'], restock: ['Restock', 'blue'], rewards: ['Rewards', 'amber'], hold: ['Hold off', 'grey'] };
+  function recentlyDrafted(productId, kinds) {
+    var weekAgo = Date.now() - 7 * 864e5;
+    return S().campaigns.filter(function (c) {
+      return c.productId === productId && kinds.indexOf(c.kind) > -1 && c.status !== 'rejected' && new Date(c.createdAt).getTime() > weekAgo;
+    })[0] || null;
+  }
+  function campaignAdvice() {
+    var out = [];
+    var crops = M.radar.crops();
+    var shortIds = crops.filter(function (c) { return c.status === 'short'; }).map(function (c) { return c.product.id; });
+    // 1. Harvest Rescue: batches about to pass their sell-by date.
+    M.rescue.batches().filter(function (x) { return (x.level === 'urgent' || x.level === 'soon') && x.unsold > 0; }).forEach(function (x) {
+      var a = audienceFor(x.product.id);
+      out.push({ source: 'rescue', score: 95 - x.daysLeft, product: x.product, audience: a.eligible.length, done: recentlyDrafted(x.product.id, ['rescue-alert']),
+        title: 'Sell ' + x.unsold + ' ' + x.product.title + ' before ' + shortWeekday(M.clearance.parseDayKey(x.batch.sellBy).toISOString()),
+        why: 'Harvested ' + shortDate(x.batch.harvestedAt || M.clearance.parseDayKey(x.batch.harvestDate).toISOString()) + ', ' + money(x.valueCents) + ' at risk. An alert to past buyers sells it at full price before it needs a discount.',
+        label: 'Draft alert', run: function () { rescueAlert(x); } });
+    });
+    // 2. Demand Radar: crops with more supply than demand.
+    crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 2).forEach(function (c) {
+      if (out.some(function (o) { return o.product && o.product.id === c.product.id; })) return;
+      var a = audienceFor(c.product.id);
+      out.push({ source: 'radar', score: 80 + Math.min(9, c.gap / 10), product: c.product, audience: a.eligible.length, done: recentlyDrafted(c.product.id, ['radar-surplus']),
+        title: (c.openBatch ? 'Pre-order push: ' : 'Promote ') + c.product.title,
+        why: 'About ' + c.gap + ' more than expected demand over ' + M.radar.weeks + ' weeks' + (c.trendPct < -5 ? ', and demand is down ' + Math.abs(c.trendPct) + '%' : '') + '. Promoting it now avoids a discount later.',
+        label: 'Draft promo', run: function () { radarPromo(c); } });
+    });
+    // 3. Restock reminders from order history.
+    M.restockDue().slice(0, 2).forEach(function (g) {
+      out.push({ source: 'restock', score: shortIds.indexOf(g.product.id) > -1 ? 30 : 66 + Math.min(6, g.customers.length), product: g.product, audience: g.customers.length, done: recentlyDrafted(g.product.id, ['restock']),
+        title: g.customers.length + ' customer(s) due to reorder ' + g.product.title,
+        why: 'They bought it ' + (g.minDays === g.maxDays ? g.minDays : g.minDays + '–' + g.maxDays) + ' days ago and haven\'t since. A reminder in their own language, with a recipe tip.',
+        label: 'Draft reminder', run: function () { restockDraft(g); } });
+    });
+    // 4. Rewards: pre-order nudges, clear-with-points, tiers, unused points, win-backs.
+    rewardsInsights(M.rewards.members()).forEach(function (x) {
+      var p = x.ctx && x.ctx.product;
+      if (p && out.some(function (o) { return o.product && o.product.id === p.id && o.source !== 'restock'; })) return;
+      out.push({ source: x.kind === 'preorder' ? 'preorder' : 'rewards', score: x.area === 'Farm ops' ? 76 : 58, product: p || null, audience: x.audience.length,
+        done: p ? recentlyDrafted(p.id, ['rewards-' + x.kind]) : null, title: x.title, why: x.why + ' ' + x.estimate + '.', label: 'Review draft', run: function () { openNudgeComposer(x); } });
+    });
+    // 5. Short crops: say what NOT to promote.
+    crops.filter(function (c) { return c.status === 'short'; }).sort(function (a, b) { return a.gap - b.gap; }).slice(0, 2).forEach(function (c) {
+      out.push({ source: 'hold', score: 20, product: c.product, audience: 0, hold: true,
+        title: 'Don\'t promote ' + c.product.title + ' this week',
+        why: 'About ' + Math.abs(c.gap) + ' units short of demand. A promo would only disappoint customers — leave it out of campaigns until the next harvest.' });
+    });
+    // Never promote a short crop (a rescue alert for stock already harvested is the exception).
+    out = out.filter(function (x) { return x.hold || x.source === 'rescue' || !x.product || shortIds.indexOf(x.product.id) < 0; });
+    return out.sort(function (a, b) { return (a.done ? 1 : 0) - (b.done ? 1 : 0) || b.score - a.score; });
+  }
+  function campaignAdvisorPanel() {
+    var adv = campaignAdvice();
+    var todo = adv.filter(function (x) { return !x.hold && !x.done; });
+    return panel(aiTitle('Recommended campaigns'), 'One list from Harvest Rescue, Demand Radar, Harvest Planner, restock history and Rewards — food that would otherwise be wasted comes first. Only opted-in customers are messaged, and an admin approves every draft.',
+      adv.length ? adviceCards(adv, todo) : h('p', { class: 'empty', text: 'Nothing to send right now — supply and demand are balanced.' }));
+  }
+  // Top 6 to act on (plus "don't promote" warnings) first; the rest behind a toggle.
+  function adviceCards(adv, todo) {
+    var first = adv.filter(function (x) { return x.hold || todo.indexOf(x) > -1 && todo.indexOf(x) < 6; });
+    var rest = adv.filter(function (x) { return first.indexOf(x) < 0; });
+    var grid = function (list) { return h('div', { class: 'ops-brief adv-list' }, list.map(function (x) {
+        var src = ADVISOR_SOURCE[x.source];
+        return h('article', { class: 'ops-card' + (x.hold ? ' adv-hold' : x.source === 'rescue' || x.source === 'radar' || x.source === 'preorder' ? ' farm' : '') + (x.done ? ' adv-done' : '') },
+          h('div', { class: 'ops-card-head' },
+            x.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(x.product)) : iconCircle(ICONS.users, 'soft'),
+            h('span', { class: 'badge b-' + src[1], text: (x.hold ? '' : (todo.indexOf(x) + 1 || '✓') + ' · ') + src[0] })),
+          h('strong', { class: 'ops-title', text: x.title }),
+          h('p', { text: x.why }),
+          h('div', { class: 'ops-foot' },
+            h('small', { text: x.hold ? 'Pause promotions' : x.audience + ' opted-in ' + (x.audience === 1 ? 'person' : 'people') }),
+            x.hold ? h('a', { class: 'mini', href: '#radar', text: 'Demand Radar' })
+              : x.done ? h('small', { class: 'pending-note', text: 'Drafted ' + ago(x.done.createdAt) })
+              : !x.audience ? h('small', { class: 'hint', text: 'Nobody opted in yet' })
+              : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: x.label, onclick: x.run })));
+    })); };
+    return h('div', null, grid(first),
+      rest.length ? h('details', { class: 'adv-more' }, h('summary', { text: rest.length + ' more idea' + (rest.length === 1 ? '' : 's') + ' (lower priority or already drafted)' }), grid(rest)) : null);
+  }
+
+  function restockNextLabel() { return M.nextDeliveryDay(new Date()).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  // One draft per language for a restock group; also used by the Campaign Advisor.
+  function restockDraft(g) {
+    var next = restockNextLabel();
+    var byLang = {};
+    g.customers.forEach(function (x) { (byLang[restockLang(x.customer)] = byLang[restockLang(x.customer)] || []).push(x.customer.id); });
+    var langs = Object.keys(byLang);
+    langs.forEach(function (lang) {
+      S().campaigns.unshift({
+        id: M.nextId('CP'), kind: 'restock', productId: g.product.id, language: lang,
+        title: g.product.title + ' — Restock reminder' + (langs.length > 1 ? ' (' + LANG_SHORT[lang] + ')' : ''),
+        message: RESTOCK_DRAFTS[lang](g.product, next, M.recipes ? M.recipes.tipLine(g.product, lang) : ''),
+        audience: byLang[lang], status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+      });
+    });
+    commit('campaign.submitted', g.product.title, langs.length + ' restock reminder draft(s) for ' + g.product.title + ' added — waiting for admin approval.');
+  }
   function restockPanel() {
     var groups = M.restockDue();
-    var next = M.nextDeliveryDay(new Date()).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' });
-    function draft(g) {
-      var byLang = {};
-      g.customers.forEach(function (x) { (byLang[restockLang(x.customer)] = byLang[restockLang(x.customer)] || []).push(x.customer.id); });
-      var langs = Object.keys(byLang);
-      langs.forEach(function (lang) {
-        S().campaigns.unshift({
-          id: M.nextId('CP'), kind: 'restock', productId: g.product.id, language: lang,
-          title: g.product.title + ' — Restock reminder' + (langs.length > 1 ? ' (' + LANG_SHORT[lang] + ')' : ''),
-          message: RESTOCK_DRAFTS[lang](g.product, next, M.recipes ? M.recipes.tipLine(g.product, lang) : ''),
-          audience: byLang[lang], status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
-        });
-      });
-      commit('campaign.submitted', g.product.title, langs.length + ' restock reminder draft(s) for ' + g.product.title + ' added — waiting for admin approval.');
-    }
+    var next = restockNextLabel();
+    var draft = restockDraft;
     var rows = table([
       { label: 'Product', render: function (g) {
         var x = g.customers[0];
@@ -452,6 +548,7 @@
   }
 
   function campaignsView(root) {
+    append(root, campaignAdvisorPanel());
     append(root, restockPanel());
     var inStock = S().products.filter(function (p) { var s = M.stockStatus(p); return s.known && s.qty > 0; });
     var form = h('form', { class: 'form-grid', novalidate: true });
@@ -1366,7 +1463,7 @@
     function resolve(g) {
       var note = prompt('What was done? (optional)', g.theme === 'late' ? 'Route reviewed with the driver' : g.batch ? 'Cold-room checked; packing step fixed' : '');
       if (note === null) return;
-      M.feedback.resolve(g.key, session.email, note);
+      M.feedback.resolve(g.key, session.email, note, g.title);
       commit('feedback.resolved', g.key, 'Marked as resolved.');
     }
     var active = clusters.filter(function (g) { return !g.resolved; });
@@ -1389,6 +1486,15 @@
             people && !g.apologised ? mini('Message ' + people + ' affected', function () { openApology(g); }) : null,
             mini('Mark resolved', function () { resolve(g); })));
       })) : h('p', { class: 'empty', text: 'No open issues in the last 14 days. 🌱' })));
+
+    /* ---- Resolved ---- */
+    var done = M.feedback.resolvedList();
+    append(root, panel('Resolved', 'Issues marked as resolved, with what was done. Reopen one if the problem comes back.', table([
+      { label: 'Resolved', render: function (r) { return h('span', null, shortDate(r.at), h('br'), h('small', { text: r.by })); } },
+      { label: 'Issue', render: function (r) { var th = M.feedback.THEMES[r.theme]; return h('span', { class: 'fb-cell' }, h('strong', { text: r.title || r.label + ' issue' }), h('span', { class: 'fb-tags' }, badge(r.label, th ? th.tone : 'grey'))); } },
+      { label: 'What was done', render: function (r) { return r.note || '—'; } },
+      { label: 'Actions', render: function (r) { return mini('Reopen', function () { var x = M.feedback.reopen(r.key, session.email); if (!x.ok) { toast(x.error); return; } commit('feedback.reopened', r.key, 'Issue reopened.'); }); } }
+    ], done, 'Nothing resolved yet.')));
 
     /* ---- Themes + praise ---- */
     var trends = M.feedback.trends().filter(function (t) { return t.now || t.before; });
@@ -2321,6 +2427,26 @@
       kpi('Opted in', String(f.signups), pctOf(f.signups) + '% now get harvest updates'),
       kpi('Sales from visits', money(f.salesCents), money(f.perVisitorCents) + ' per visitor')));
 
+    // Capacity, next 14 days: confirmed sessions vs the daily limit. Sundays only show when
+    // something is booked or requested that day.
+    var capDays = [];
+    for (var ci = 0; ci < 14; ci++) {
+      var cd = new Date(); cd.setHours(0, 0, 0, 0); cd = new Date(cd.getTime() + ci * 864e5);
+      var cc = M.visits.capacity(M.clearance.dayKey(cd));
+      if (cd.getDay() !== 0 || cc.booked || cc.requested) capDays.push(cc);
+    }
+    append(root, panel('Visit capacity · next 2 weeks', 'Sessions of up to ' + M.RULES.visitSessionMax + ' guests; the farm hosts ' + M.RULES.visitSessionsPerDay + ' a day (change both in Settings). Confirming a visit on a full day is blocked — the reply draft offers free dates instead.',
+      h('ul', { class: 'cap-days' }, capDays.map(function (c) {
+        var cls = c.booked >= c.cap ? 'full' : c.booked ? 'some' : 'free';
+        var cells = [];
+        for (var i = 0; i < c.cap; i++) cells.push(h('span', { class: i < c.booked ? 'on' : '' }));
+        return h('li', { class: 'cap-' + cls },
+          h('strong', { text: M.clearance.parseDayKey(c.dayKey).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }) }),
+          h('span', { class: 'cap-cells', 'aria-hidden': 'true' }, cells),
+          h('small', { text: c.booked >= c.cap ? 'Full' : (c.cap - c.booked) + ' of ' + c.cap + ' free' }),
+          c.requested ? h('small', { class: 'cap-req', text: c.requested + ' requested' }) : null);
+      }))));
+
     var steps = [['Visitors', f.visitors], ['Bought on the day', f.buyers], ['Opted in to updates', f.signups], ['Ordered again later', f.repeatBuyers]];
     append(root, panel('From visit to customer', 'Everyone who visited, how many ordered with their group\'s code, how many opted in to messages, and how many came back to order again without the code.',
       h('div', { class: 'visit-funnel' }, steps.map(function (s) {
@@ -2789,8 +2915,68 @@
       append(root, panel('New group buy', 'Leaders see their own events only.', f));
     }
 
+    append(root, leaderFinderPanel());
+
     append(root, panel('Commission ledger', 'Worked out from the order records each time, so the numbers always match.',
       ledgerTable(entries, true)));
+  }
+
+  /* ---- Group-leader finder: neighbourhoods with regular buyers but no leader ---- */
+  function openLeaderInvite(a) {
+    document.querySelectorAll('.lf-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var c = a.candidate.customer;
+    var first = M.auth.can(session, 'customers.pii') ? c.name.replace(/\s*\(demo\)/i, '').split(' ')[0] : 'there';
+    var channel = h('select', { 'aria-label': 'Channel' }, h('option', { value: 'whatsapp', text: 'WhatsApp' }), h('option', { value: 'email', text: 'Email' }));
+    var body = h('textarea', { rows: 10, 'aria-label': 'Message' });
+    body.value = 'Hi ' + first + ' 🌱\n\nThank you for being a regular MEOD Fresh customer! ' + (a.active - 1) + ' other neighbours in ' + a.area + ' order from us too, and we\'d love to start a ' + a.area + ' group buy — would you like to lead it?\n\n' +
+      'How it works: you share a group code, neighbours get ' + Math.round(M.RULES.groupDiscountRate * 100) + '% off, and you earn ' + Math.round(M.RULES.commissionRate * 100) + '% commission on the group\'s orders. We deliver everything to one pickup point near you.\n\n' +
+      'Reply YES and we\'ll call you to set it up, or reply with any questions.\n\n— The MEOD Farm team';
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog lf-dialog', 'aria-labelledby': 'lf-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'lf-title', text: 'Invite a ' + a.area + ' group leader' }), aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
+        h('div', { class: 'rd-form' },
+          h('div', { class: 'rd-controls' }, h('label', null, 'Send by', channel), h('label', null, 'To', h('input', { value: customerLabel(c.id), readonly: true }))),
+          h('label', null, 'Message', body))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: function () {
+          var r = M.leaderFinder.invite(c.id, a.area, channel.value, session.email);
+          if (!r.ok) { toast(r.error); return; }
+          closeDialog();
+          commit('groupbuy.invited', c.id, 'Leader invite sent to ' + customerLabel(c.id) + ' for ' + a.area + ' (simulated).');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+  function leaderFinderPanel() {
+    var areas = M.leaderFinder.areas();
+    var suggest = areas.filter(function (a) { return a.suggest; });
+    var others = areas.filter(function (a) { return !a.suggest; });
+    return panel(aiTitle('Find new group-buy leaders'), 'Neighbourhoods with 3+ active customers but no group-buy leader, and the regular who\'d likely make a good one. Only customers who opted in to messages are suggested. Areas come from the delivery postal district.',
+      suggest.length ? h('div', { class: 'ops-brief' }, suggest.map(function (a) {
+        var x = a.candidate;
+        return h('article', { class: 'ops-card farm' },
+          h('div', { class: 'ops-card-head' }, iconCircle(ICONS.pin, 'soft'), badge(a.active + ' active customers', 'green')),
+          h('strong', { class: 'ops-title', text: a.area + ' has no group buy yet' }),
+          h('p', { text: a.active + ' customers ordered in the last 60 days (' + money(a.recentCents) + '). A group buy saves them ' + money(a.estimate.memberSavingCents) + ' a month on delivery-day orders, with one drop-off instead of ' + a.active + '.' }),
+          h('div', { class: 'lf-cand' },
+            h('small', { text: 'Suggested leader' }),
+            h('strong', { text: customerLabel(x.customer.id) }),
+            h('small', { text: x.why.join(' · ') })),
+          h('small', { class: 'ops-est', text: 'Rough estimate: about ' + money(a.estimate.monthlyCents) + ' a month through the group, ' + money(a.estimate.commissionCents) + ' commission for the leader.' }),
+          h('div', { class: 'ops-foot' },
+            h('small', { text: LANG_LABEL[x.customer.language] || 'English' }),
+            a.invite ? h('small', { class: 'pending-note', text: 'Invited ' + ago(a.invite.at) })
+              : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Draft invite', onclick: function () { openLeaderInvite(a); } })));
+      })) : h('p', { class: 'empty', text: 'Every area with 3+ active customers already has a leader.' }),
+      others.length ? h('ul', { class: 'lf-areas' }, others.map(function (a) {
+        var note = a.covered ? 'Leader: ' + a.covered.leader.name + (a.covered.open ? '' : ' (no open group buy)') : a.active < 3 ? 'Only ' + a.active + ' active — not enough yet' : 'No opted-in regular to suggest';
+        return h('li', null, h('strong', { text: a.area }), h('small', { text: a.customers.length + ' customer(s) · ' + a.active + ' active' }), h('small', { class: 'lf-note', text: note }));
+      })) : null);
   }
 
   function ledgerTable(entries, showLeader) {
@@ -3009,6 +3195,7 @@
     booking: { label: 'Support', tone: 'red' },
     groupbuy: { label: 'Group buys', tone: 'amber' },
     user: { label: 'Users', tone: 'red' },
+    settings: { label: 'Settings', tone: 'red' },
     inventory: { label: 'Stock', tone: 'grey' },
     consent: { label: 'Privacy', tone: 'grey' },
     profile: { label: 'Privacy', tone: 'grey' },
@@ -3036,7 +3223,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'settings.changed': 'Changed an AI assumption', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -3137,13 +3324,98 @@
         extra || null));
   }
 
+  /* ---- Editable AI assumptions (admin) ----
+   * Every number the AI features rely on, with which features use it, the demo value, and
+   * a live preview of what changes before it's saved. Every save is audited. */
+  function aiSettingsPanel() {
+    var list = M.settings.list();
+    var changed = list.filter(function (d) { return d.changed; }).length;
+    var groups = [];
+    list.forEach(function (d) { if (groups.indexOf(d.group) < 0) groups.push(d.group); });
+    function row(d) {
+      var input = h('input', { type: 'number', min: d.min, max: d.max, step: d.pct ? '0.5' : '1', 'aria-label': d.label, class: 'as-input' });
+      input.value = String(d.value);
+      var impact = h('small', { class: 'as-impact', 'aria-live': 'polite' });
+      var saveBtn = mini('Save', function () {
+        var r = M.settings.save(d.key, input.value, session.email);
+        if (!r.ok) { toast(r.error); return; }
+        commit('settings.changed', d.key, d.label + ' changed from ' + r.from + ' to ' + r.to + ' ' + d.unit + '.');
+      }, { disabled: true });
+      function preview() {
+        impact.textContent = '';
+        impact.className = 'as-impact';
+        var same = Number(input.value) === d.value;
+        saveBtn.disabled = same;
+        if (same) return;
+        var r = M.settings.impact(d.key, input.value);
+        if (!r.ok) { impact.textContent = r.error; impact.classList.add('bad'); saveBtn.disabled = true; return; }
+        impact.textContent = r.lines.length ? 'If saved: ' + r.lines.join(' · ') + '.' : 'If saved: no change to this week\'s numbers.';
+      }
+      input.addEventListener('input', preview);
+      return h('li', { class: 'as-row' + (d.changed ? ' changed' : '') },
+        h('div', { class: 'as-text' },
+          h('strong', { text: d.label }),
+          h('small', { text: d.note }),
+          h('span', { class: 'as-used' }, d.usedBy.map(function (u) { return h('span', { class: 'as-chip', text: u }); }))),
+        h('div', { class: 'as-control' },
+          h('label', { class: 'as-field' }, input, h('span', { text: d.unit })),
+          h('small', { class: 'as-demo', text: d.changed ? 'Demo value: ' + d.demo : 'Demo value' }),
+          saveBtn),
+        impact);
+    }
+    return panel(aiTitle('AI assumptions'), 'The numbers behind Demand Radar, Harvest Rescue, Price Advisor, Margin Guard, B2B and Visits. They\'re demo values until MEOD enters its own. Type a new value to preview what changes before saving.',
+      h('div', { class: 'as-groups' }, groups.map(function (g) {
+        return h('section', { class: 'as-group' }, h('h3', { text: g }), h('ul', { class: 'as-list' }, list.filter(function (d) { return d.group === g; }).map(row)));
+      })),
+      h('div', { class: 'as-foot' },
+        h('small', { class: 'hint', text: changed ? changed + ' setting(s) changed from the demo values.' : 'All settings are on their demo values.' }),
+        changed ? mini('Reset to demo values', function () {
+          if (!confirm('Put every AI assumption back to its demo value?')) return;
+          M.settings.resetAll();
+          commit('settings.reset', 'ai', 'AI assumptions reset to demo values.');
+        }, { danger: true }) : null));
+  }
+  function unitCostPanel() {
+    var prods = S().products.filter(function (p) { return !p.bagOffer; });
+    var toCents = function (el) { return Math.round((parseFloat(el.value) || 0) * 100); };
+    return panel('Unit costs', 'Growing, packaging and handling cost per unit. Margin Guard uses these to stop prices going below cost. Illustrative until MEOD enters real costs.', table([
+      { label: 'Product', render: function (p) { return h('span', { class: 'rw-tier-cell' }, thumbMini(p), h('strong', { text: p.title })); } },
+      { label: 'Price', num: true, render: function (p) { return money(p.priceCents); } },
+      { label: 'Costs (S$)', render: function (p) {
+        var c = M.pricing.cost(p.id);
+        var mk = function (v, label) { var i = h('input', { type: 'number', min: 0, step: '0.05', class: 'uc-input', 'aria-label': label + ' cost for ' + p.title, title: label }); i.value = (v / 100).toFixed(2); return i; };
+        var g = mk(c.growCents, 'Growing'), pk = mk(c.packCents, 'Packaging'), hd = mk(c.handleCents, 'Handling');
+        var out = h('small', { class: 'uc-out' });
+        var btn = mini('Save', function () {
+          var r = M.settings.saveCost(p.id, { growCents: toCents(g), packCents: toCents(pk), handleCents: toCents(hd) });
+          if (!r.ok) { toast(r.error); return; }
+          commit('settings.cost', p.id, p.title + ' unit cost set to ' + money(r.cost.totalCents) + '.');
+        }, { disabled: true });
+        function upd() {
+          var tot = toCents(g) + toCents(pk) + toCents(hd);
+          var m = p.priceCents ? Math.round((p.priceCents - tot) / p.priceCents * 100) : 0;
+          out.textContent = money(tot) + ' total · ' + m + '% margin at full price';
+          out.className = 'uc-out' + (m < M.RULES.minMarginRate * 100 ? ' bad' : '');
+          btn.disabled = tot === c.totalCents;
+        }
+        [g, pk, hd].forEach(function (i) { i.addEventListener('input', upd); });
+        upd(); btn.disabled = true;
+        return h('div', { class: 'uc-cell' },
+          h('div', { class: 'uc-inputs' }, h('label', null, h('span', { text: 'Grow' }), g), h('label', null, h('span', { text: 'Pack' }), pk), h('label', null, h('span', { text: 'Handle' }), hd), btn),
+          out);
+      } }
+    ], prods, 'No products.'));
+  }
+
   function settingsView(root) {
     var R = M.RULES;
     var fmt = function (h24) { return (h24 % 12 || 12) + (h24 < 12 ? 'am' : 'pm'); };
     var hours = fmt(R.humanHours.start) + ' – ' + fmt(R.humanHours.end);
     var online = M.withinHumanHours();
 
-    append(root, h('p', { class: 'callout', text: 'These are example values kept in js/data.js. MEOD needs to confirm each one; in production they live on the server and changes are audited.' }));
+    append(root, h('p', { class: 'callout', text: 'All values are examples until MEOD confirms them. AI assumptions and unit costs can be changed here (saved in this browser for the demo); in production they live on the server. Every change is audited.' }));
+    append(root, aiSettingsPanel());
+    append(root, unitCostPanel());
 
     var groups = [
       ['Pricing & delivery', [

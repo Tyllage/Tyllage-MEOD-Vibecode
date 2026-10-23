@@ -64,6 +64,9 @@
       if (k.morning) out.morning = true;
     });
     if (sessions > 1) out.flags.push('Large group: ' + b.pax + ' guests split into ' + sessions + ' sessions of up to ' + M.RULES.visitSessionMax + '.');
+    var fit = b.status !== 'confirmed' && M.visits.fits ? M.visits.fits(b) : null;
+    out.full = !!(fit && !fit.fits);
+    if (out.full) out.flags.push('Fully booked: ' + fit.booked + ' of ' + fit.cap + ' sessions already taken that day. Offer other dates.');
     if (day.getDay() === 0) out.flags.push('Sunday visit: check the farm is staffed that day.');
     if (daysAway >= 0 && daysAway < 7) out.flags.push('Less than a week away: reply today.');
     if (!String(b.phone || '').trim()) { out.flags.push('No phone number: the draft asks for one.'); out.asks.unshift('a mobile number we can reach on the day'); }
@@ -86,6 +89,9 @@
     return list;
   }
   function altDates(b) {
+    // Days with room for the whole group (Visits capacity), else simply the next two days.
+    var free = M.visits.freeDays ? M.visits.freeDays(b, 2) : [];
+    if (free.length) return free.map(function (k) { return shortDay(M.clearance.parseDayKey(k)); });
     var d = M.clearance.parseDayKey(b.date), out = [];
     while (out.length < 2) {
       d = new Date(d.getTime() + 864e5);

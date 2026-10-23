@@ -46,6 +46,8 @@
     },
     b2bPriceRate: 0.8,              // trade (B2B) price = 80% of retail, illustrative
     visitSessionMax: 40,            // guests per farm-visit session; bigger groups split into sessions
+    visitSessionsPerDay: 3,         // visit sessions the farm can host in one day (illustrative)
+    radarTolerance: 0.1,            // Demand Radar: a gap within this share of demand counts as balanced
     visitMaxPax: 200,               // largest group the booking form accepts
     visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
     visitCodeDays: 7,               // a visit's farm-shop code stays open this long after the visit
@@ -770,6 +772,42 @@
       ].filter(Boolean);
       s.migrations.contentV1 = true;
     }
+    if (!s.migrations.leaderFinderV1) {
+      // Neighbourhoods for the demo customers (in production: postal district only), plus a
+      // few Tampines regulars, so the group-leader finder has one clear area with buyers but
+      // no leader. Names are fictional and marked (demo).
+      var AREAS = ['Punggol', 'Tampines', 'Jurong West', 'Tampines', 'Sengkang', 'Punggol', 'Jurong West', 'Bukit Batok', 'Sengkang', 'Tampines', 'Woodlands', 'Jurong West'];
+      s.customers.forEach(function (c, i) { if (!c.area) c.area = AREAS[i % AREAS.length]; });
+      var pT = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      [['Mei Ling Koh (demo)', 'zh', true, [[['Xiao Bai Cai', 2], ['Kai Lan', 2]], 6], [[['Cos Lettuce', 1], ['HK Cai Xin', 2]], 20], [[['Shiitake Mushroom', 1]], 41]],
+       ['Farid Ismail (demo)', 'ms', true, [[['Kangkong', 3], ['Bayam', 2]], 4], [[['Kangkong', 2]], 18]],
+       ['Rachel Ng (demo)', 'en', true, [[['Mesclun Mix', 2]], 9], [[['Mesclun Mix', 1], ['Sweet Basil', 1]], 27]],
+       ['Kumar Pillai (demo)', 'en', false, [[['Tuscan Kale', 1]], 12]]
+      ].forEach(function (r) {
+        s.seq += 1;
+        var cust = { id: 'C-' + s.seq, name: r[0], phone: '+65 8000 ' + (3100 + s.seq % 900), email: '', language: r[1], consentMarketing: r[2], consentPersonalisation: r[2], area: 'Tampines', source: 'shopify-mock' };
+        s.customers.push(cust);
+        r.slice(3).forEach(function (o) {
+          var items = o[0].map(function (l) { var p = pT(l[0]); return p ? { productId: p.id, title: p.title, qty: l[1], priceCents: p.priceCents } : null; }).filter(Boolean);
+          s.seq += 1;
+          s.orders.push(Object.assign({ id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: cust.id, groupEventId: null, status: 'fulfilled', items: items, refundedCents: 0,
+            createdAt: new Date(Date.now() - o[1] * 864e5).toISOString(), source: 'shopify-mock' }, priceOrder(items, false)));
+        });
+      });
+      s.leaderInvites = [];
+      s.migrations.leaderFinderV1 = true;
+    }
+    if (!s.migrations.capacityV1) {
+      // A new enquiry on the same day as the big community visit, so the capacity check has
+      // something to catch (that day's 3 sessions are already taken).
+      var rcB = s.bookings.filter(function (b) { return /Maple Grove/.test(b.org || ''); })[0];
+      if (rcB) {
+        s.seq += 1;
+        s.bookings.push({ id: 'B-' + s.seq, name: 'Ms Rani (demo)', email: 'hello@brightkids-demo.test', phone: '+65 8000 0204', org: 'Bright Kids Childcare (demo)', groupType: 'school',
+          experience: 'Farm Tour', pax: 25, date: String(rcB.date).slice(0, 10), message: 'Preschoolers aged 5-6, mornings preferred.', status: 'new', createdAt: new Date(Date.now() - 5 * 36e5).toISOString() });
+      }
+      s.migrations.capacityV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -815,6 +853,7 @@
 
   function reset() {
     state = migrate(buildSeed());
+    applySettings();
     save();
     window.MEOD.state = state;
   }
@@ -1180,10 +1219,42 @@
     booking.eventId = event.id;
     return event;
   }
+  // Visits capacity: the farm hosts RULES.visitSessionsPerDay sessions a day. Confirmed
+  // bookings use sessions; new enquiries are shown as requested but don't hold a slot.
+  function visitDayKey(d) { return String(d || '').slice(0, 10); }
+  function visitCapacity(dayKey, excludeId) {
+    var cap = RULES.visitSessionsPerDay, booked = 0, requested = 0;
+    state.bookings.forEach(function (b) {
+      if (b.id === excludeId || visitDayKey(b.date) !== dayKey) return;
+      if (b.status === 'confirmed') booked += visitSessions(b.pax);
+      else if (b.status === 'new') requested += visitSessions(b.pax);
+    });
+    return { dayKey: dayKey, cap: cap, booked: booked, requested: requested, left: Math.max(0, cap - booked) };
+  }
+  function visitFits(b) {
+    var c = visitCapacity(visitDayKey(b.date), b.id), need = visitSessions(b.pax);
+    return Object.assign({ need: need, fits: c.booked + need <= c.cap }, c);
+  }
+  // The next days (not Sundays) after a booking's date with room for the whole group.
+  function visitFreeDays(b, n) {
+    var need = visitSessions(b.pax), out = [];
+    var d = parseDayKey(visitDayKey(b.date));
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (d < today) d = today;
+    for (var i = 1; i <= 30 && out.length < (n || 3); i++) {
+      var x = new Date(d.getTime() + i * 864e5);
+      if (x.getDay() === 0) continue;
+      var c = visitCapacity(bagDayKey(x), b.id);
+      if (c.booked + need <= c.cap) out.push(bagDayKey(x));
+    }
+    return out;
+  }
   function visitConfirm(bookingId) {
     var b = byId('bookings', bookingId);
     if (!b) return { ok: false, error: 'Booking not found.' };
     if (b.eventId) return { ok: true, event: byId('events', b.eventId) };
+    var f = visitFits(b);
+    if (!f.fits) return { ok: false, full: true, error: 'Fully booked: ' + f.booked + ' of ' + f.cap + ' sessions are taken that day and this group needs ' + f.need + '. Offer other dates instead.' };
     return { ok: true, event: createVisitGroup(state, b) };
   }
   // Group discount always applies; collecting at the farm has no delivery fee.
@@ -1701,16 +1772,184 @@
     state.feedbackActions = state.feedbackActions || [];
     state.feedbackActions.unshift({ key: key, action: action, by: actor, at: new Date().toISOString(), note: note || '' });
   }
-  function feedbackResolve(key, actor, note) {
+  function feedbackResolve(key, actor, note, title) {
     state.feedbackResolved = state.feedbackResolved || {};
-    state.feedbackResolved[key] = { by: actor, at: new Date().toISOString(), note: note || '' };
+    state.feedbackResolved[key] = { by: actor, at: new Date().toISOString(), note: note || '', title: title || '' };
     feedbackLog(key, 'resolved', actor, note);
+  }
+  // Resolved issues, newest first. Reopening puts the issue back in the active list.
+  function feedbackResolvedList() {
+    var r = state.feedbackResolved || {};
+    return Object.keys(r).map(function (k) {
+      var th = FEEDBACK_THEMES[k.split('|')[0]];
+      return Object.assign({ key: k, theme: k.split('|')[0], label: th ? th.label : 'Other' }, r[k]);
+    }).sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function feedbackReopen(key, actor) {
+    if (!state.feedbackResolved || !state.feedbackResolved[key]) return { ok: false, error: 'That issue isn\'t resolved.' };
+    delete state.feedbackResolved[key];
+    feedbackLog(key, 'reopened', actor, '');
+    return { ok: true };
   }
   function feedbackFlagBatch(batchId, theme, actor, note) {
     var b = byId('batches', batchId);
     if (!b) return { ok: false, error: 'Batch not found.' };
     b.qualityFlag = { theme: theme, by: actor, at: new Date().toISOString(), note: note || '' };
     return { ok: true, batch: b };
+  }
+
+  /* ---------- Editable AI assumptions ----------
+   * The numbers the AI features rely on, editable by an admin on the Settings page. Saved
+   * values live in state.aiSettings and are laid over the demo defaults in RULES whenever
+   * the state loads, so every feature reads them the same way it always has. A change can
+   * be previewed first: settingsImpact() applies it temporarily, measures what moves
+   * (batches at risk, prices blocked, crops short or in surplus), then puts it back.
+   */
+  var CAT_LABELS = { 'asian-greens': 'Asian greens', lettuces: 'Lettuces', fungi: 'Mushrooms', herbs: 'Herbs' };
+  var AI_SETTINGS = [
+    { key: 'minMarginRate', group: 'Pricing & margins', label: 'Minimum margin', unit: '%', min: 0, max: 60, pct: true, usedBy: ['Margin Guard', 'Price Advisor'], note: 'Margin Guard blocks any price that leaves less than this after the unit cost.' },
+    { key: 'clearanceDefaultMinRate', group: 'Pricing & margins', label: 'Lowest discounted price', unit: '% of normal', min: 30, max: 95, pct: true, usedBy: ['Margin Guard', 'Buy to Clear', 'Harvest Rescue'], note: 'No discount may go below this share of the normal price.' },
+    { key: 'b2bPriceRate', group: 'Pricing & margins', label: 'Trade price', unit: '% of retail', min: 50, max: 100, pct: true, usedBy: ['B2B buyers'], note: 'What restaurants, cafés and offices pay for standing orders.' },
+    { key: 'radarTolerance', group: 'Demand', label: 'Balanced band', unit: '± % of demand', min: 0, max: 30, pct: true, usedBy: ['Demand Radar', 'Price Advisor', 'Weekly briefing'], note: 'A gap between supply and demand within this band counts as balanced, not short or surplus.' }
+  ].concat(Object.keys(CAT_LABELS).map(function (c) {
+    return { key: 'shelfDays.' + c, group: 'Harvest & freshness', label: CAT_LABELS[c] + ' shelf life', unit: 'days', min: 1, max: 21, usedBy: ['Harvest Rescue', 'Price Advisor'], note: 'Days after harvest a batch should be sold by.' };
+  })).concat(Object.keys(CAT_LABELS).map(function (c) {
+    return { key: 'growDays.' + c, group: 'Harvest & freshness', label: CAT_LABELS[c] + ' grow time', unit: 'days', min: 5, max: 120, usedBy: ['Harvest Planner'], note: 'Typical days from sowing to harvest, used when planning new batches.' };
+  })).concat([
+    { key: 'visitSessionMax', group: 'Visits', label: 'Guests per session', unit: 'guests', min: 10, max: 100, usedBy: ['Visits', 'Booking form'], note: 'Bigger groups are split into several sessions.' },
+    { key: 'visitSessionsPerDay', group: 'Visits', label: 'Sessions per day', unit: 'sessions', min: 1, max: 10, usedBy: ['Visits', 'Inbox'], note: 'How many visit sessions the farm can host in one day.' },
+    { key: 'visitFundRate', group: 'Visits', label: 'Visit group fund', unit: '% of orders', min: 0, max: 20, pct: true, usedBy: ['Visits'], note: 'Share of a visit group\'s farm-shop orders paid back to its fund.' }
+  ]);
+  function rulePath(key) { var parts = key.split('.'); return parts.length === 2 ? [RULES[parts[0]], parts[1]] : [RULES, key]; }
+  function ruleGet(key) { var p = rulePath(key); return p[0][p[1]]; }
+  function ruleSet(key, v) { var p = rulePath(key); p[0][p[1]] = v; }
+  var RULE_DEFAULTS = {};
+  AI_SETTINGS.forEach(function (d) { RULE_DEFAULTS[d.key] = ruleGet(d.key); });
+  function applySettings() {
+    var saved = state.aiSettings || {};
+    AI_SETTINGS.forEach(function (d) { ruleSet(d.key, saved[d.key] != null ? saved[d.key] : RULE_DEFAULTS[d.key]); });
+    refreshSellBy();
+  }
+  // Sell-by dates follow the current shelf-life setting: harvest day + shelf days.
+  function refreshSellBy() {
+    (state.batches || []).forEach(function (b) {
+      if (b.status !== 'harvested' || !b.sellBy || !b.harvestDate) return;
+      var p = byId('products', b.productId);
+      b.sellBy = bagDayKey(new Date(parseDayKey(b.harvestDate).getTime() + ((p && RULES.shelfDays[p.category]) || 4) * 864e5 + 12 * 36e5));
+    });
+  }
+  // Display value (percent settings shown as whole percents) <-> stored value.
+  function settingShown(d, v) { return d.pct ? Math.round(v * 1000) / 10 : v; }
+  function settingStored(d, shown) { return d.pct ? Math.round(shown * 10) / 1000 : Math.round(shown); }
+  function settingsList() {
+    return AI_SETTINGS.map(function (d) {
+      var saved = (state.aiSettings || {})[d.key];
+      return Object.assign({}, d, { value: settingShown(d, ruleGet(d.key)), demo: settingShown(d, RULE_DEFAULTS[d.key]), changed: saved != null && saved !== RULE_DEFAULTS[d.key] });
+    });
+  }
+  function settingDef(key) { return AI_SETTINGS.filter(function (d) { return d.key === key; })[0]; }
+  function settingValidate(key, shown) {
+    var d = settingDef(key), n = Number(shown);
+    if (!d) return { ok: false, error: 'Unknown setting.' };
+    if (shown === '' || shown == null || !isFinite(n)) return { ok: false, error: 'Enter a number.' };
+    if (n < d.min || n > d.max) return { ok: false, error: d.label + ' must be between ' + d.min + ' and ' + d.max + '.' };
+    if (!d.pct && n !== Math.round(n)) return { ok: false, error: 'Use a whole number.' };
+    return { ok: true, def: d, stored: settingStored(d, n) };
+  }
+  function settingsMetrics() {
+    var crops = radarCrops(), rescue = rescueBatches(), sugs = priceSuggestions();
+    var fresh = state.products.filter(function (p) { return p.meodGrown && p.category !== 'farm-more' && !p.bagOffer; });
+    return {
+      atRisk: rescue.filter(function (x) { return x.level !== 'ok'; }).length,
+      short: crops.filter(function (c) { return c.status === 'short'; }).length,
+      surplus: crops.filter(function (c) { return c.status === 'surplus'; }).length,
+      blocked: sugs.filter(function (s) { return s.kind !== 'hold' && !s.guard.ok; }).length,
+      lowMargin: fresh.filter(function (p) { return !marginGuard(p.id, Math.round(p.priceCents * 0.8)).ok; }).length
+    };
+  }
+  var METRIC_LABELS = { atRisk: ['batch at risk', 'batches at risk'], short: ['crop short', 'crops short'], surplus: ['crop in surplus', 'crops in surplus'], blocked: ['price suggestion blocked', 'price suggestions blocked'], lowMargin: ['product that can\'t take 20% off', 'products that can\'t take 20% off'] };
+  // What would change if this setting were saved: measured, then rolled back.
+  function settingsImpact(key, shown) {
+    var v = settingValidate(key, shown);
+    if (!v.ok) return { ok: false, error: v.error, lines: [] };
+    var before = settingsMetrics(), old = ruleGet(key), after;
+    ruleSet(key, v.stored); refreshSellBy();
+    try { after = settingsMetrics(); } finally { ruleSet(key, old); refreshSellBy(); }
+    var lines = Object.keys(before).filter(function (k) { return before[k] !== after[k]; }).map(function (k) {
+      var d = after[k] - before[k], n = Math.abs(d);
+      return (d > 0 ? n + ' more ' : n + ' fewer ') + METRIC_LABELS[k][n === 1 ? 0 : 1];
+    });
+    return { ok: true, lines: lines };
+  }
+  function settingSave(key, shown, actor) {
+    var v = settingValidate(key, shown);
+    if (!v.ok) return v;
+    var from = ruleGet(key);
+    state.aiSettings = state.aiSettings || {};
+    if (v.stored === RULE_DEFAULTS[key]) delete state.aiSettings[key]; else state.aiSettings[key] = v.stored;
+    applySettings();
+    return { ok: true, from: settingShown(v.def, from), to: settingShown(v.def, v.stored), def: v.def };
+  }
+  function settingsResetAll() { state.aiSettings = {}; applySettings(); }
+  function costSave(productId, c) {
+    var vals = [c.growCents, c.packCents, c.handleCents];
+    if (vals.some(function (x) { return !(x >= 0) || x > 100000; })) return { ok: false, error: 'Costs must be between S$0 and S$1,000.' };
+    state.costs = state.costs || {};
+    state.costs[productId] = { growCents: Math.round(c.growCents), packCents: Math.round(c.packCents), handleCents: Math.round(c.handleCents) };
+    return { ok: true, cost: unitCost(productId) };
+  }
+  applySettings();
+
+  /* ---------- Group-leader finder ----------
+   * Groups customers by neighbourhood and finds areas with several regular buyers but no
+   * group-buy leader. For each, it suggests the customer most likely to make a good leader:
+   * opted in to messages, orders often, and has bought through a group buy before. Staff send
+   * the invite; nothing is sent automatically. Areas are demo values (in production: the
+   * postal district from the delivery address, never the full address).
+   */
+  function leaderFinder() {
+    var since = Date.now() - 60 * 864e5;
+    var covered = {};
+    state.leaders.filter(function (l) { return l.kind !== 'visit'; }).forEach(function (l) {
+      var open = state.events.some(function (e) { return e.leaderId === l.id && e.status === 'open'; });
+      covered[l.area] = { leader: l, open: open };
+    });
+    var areas = {};
+    state.customers.forEach(function (c) {
+      if (!c.area) return;
+      var orders = state.orders.filter(function (o) { return o.customerId === c.id && o.status !== 'cancelled' && o.status !== 'refunded'; });
+      var recent = orders.filter(function (o) { return new Date(o.createdAt).getTime() > since; });
+      var a = areas[c.area] = areas[c.area] || { area: c.area, customers: [], recentCents: 0, recentOrders: 0 };
+      var spend = recent.reduce(function (s, o) { return s + (o.totalCents || 0); }, 0);
+      a.customers.push({ customer: c, orders: orders.length, recent: recent.length, spendCents: spend, groupOrders: orders.filter(function (o) { return o.groupEventId; }).length });
+      a.recentCents += spend; a.recentOrders += recent.length;
+    });
+    var invites = state.leaderInvites || [];
+    return Object.keys(areas).map(function (k) {
+      var a = areas[k];
+      a.covered = covered[k] || null;
+      a.active = a.customers.filter(function (x) { return x.recent > 0; }).length;
+      var cands = a.customers.filter(function (x) { return x.customer.consentMarketing && x.orders >= 2; }).map(function (x) {
+        var why = [x.orders + ' orders'];
+        if (x.groupOrders) why.push('has joined a group buy before');
+        if (x.recent >= 2) why.push('ordered ' + x.recent + ' times in 60 days');
+        return Object.assign({ score: x.orders * 2 + x.recent * 2 + x.groupOrders * 3 + x.spendCents / 2000, why: why }, x);
+      }).sort(function (p, q) { return q.score - p.score; });
+      a.candidate = cands[0] || null;
+      a.invite = a.candidate ? invites.filter(function (i) { return i.customerId === a.candidate.customer.id; })[0] || null : null;
+      // Rough monthly estimate: neighbours' spend over 60 days, halved, with the group discount
+      // for members and the leader's commission on it.
+      var monthly = Math.round(a.recentCents / 2);
+      a.estimate = { monthlyCents: monthly, memberSavingCents: Math.round(monthly * RULES.groupDiscountRate), commissionCents: Math.round(monthly * (1 - RULES.groupDiscountRate) * RULES.commissionRate) };
+      a.suggest = !a.covered && a.active >= 3 && !!a.candidate;
+      return a;
+    }).sort(function (p, q) { return (q.suggest ? 1 : 0) - (p.suggest ? 1 : 0) || q.active - p.active || q.recentCents - p.recentCents; });
+  }
+  function leaderInvite(customerId, area, channel, actor) {
+    state.leaderInvites = state.leaderInvites || [];
+    if (state.leaderInvites.some(function (i) { return i.customerId === customerId; })) return { ok: false, error: 'Already invited.' };
+    state.leaderInvites.unshift({ customerId: customerId, area: area, channel: channel, by: actor, at: new Date().toISOString(), status: 'invited' });
+    return { ok: true };
   }
 
   /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
@@ -1951,8 +2190,8 @@
       var supply = stock + harvest;
       var demand = confirmed + expected;
       var gap = supply - demand;
-      // A gap within ~10% of demand (at least 3 units) counts as balanced.
-      var tolerance = Math.max(3, Math.round(demand * 0.1));
+      // A gap within RULES.radarTolerance of demand (at least 3 units) counts as balanced.
+      var tolerance = Math.max(3, Math.round(demand * RULES.radarTolerance));
       var status = !st.known ? 'unknown' : supply === 0 && demand === 0 ? 'idle'
         : gap < -tolerance ? 'short' : gap > Math.max(tolerance, supply * 0.25) ? 'surplus' : 'balanced';
       return {
@@ -2242,8 +2481,10 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    settings: { list: settingsList, validate: settingValidate, impact: settingsImpact, save: settingSave, resetAll: settingsResetAll, saveCost: costSave, CATS: CAT_LABELS },
+    leaderFinder: { areas: leaderFinder, invite: leaderInvite },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
-    feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, flagBatch: feedbackFlagBatch },
+    feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },
     b2b: {
       TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,
@@ -2256,7 +2497,7 @@
       capCents: voucherCapCents, preview: previewPoints, useVoucher: useVoucher, tips: rewardsTips, members: rewardsMembers
     },
     visits: {
-      sessions: visitSessions, confirm: visitConfirm, byCode: visitEventByCode, order: visitOrder, totals: visitTotals,
+      sessions: visitSessions, confirm: visitConfirm, capacity: visitCapacity, fits: visitFits, freeDays: visitFreeDays, byCode: visitEventByCode, order: visitOrder, totals: visitTotals,
       stats: visitStats, funnel: visitFunnel
     },
     harvest: {

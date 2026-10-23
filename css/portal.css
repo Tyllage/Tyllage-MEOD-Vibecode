@@ -1268,3 +1268,13 @@ a.pill-btn { text-decoration: none; }
   .ai-ask-form .btn { width: 100%; justify-content: center; }
   .members-toolbar select { width: 100%; }
 }
+
+/* ---- One "AI-assisted" pill for every AI feature ---- */
+.ai-pill { text-transform: none; white-space: nowrap; letter-spacing: 0; flex: none; }
+.rw-head .badge, .rd-head .badge { text-transform: none; }
+.ai-note { color: var(--muted); font-size: .8rem; }
+.picks-head .rw-head { margin: 6px 0 4px; }
+.picks-head .rw-head h2 { margin: 0; }
+.chat-title { display: inline-flex; align-items: center; gap: 8px; }
+.pd-recipe summary .ai-pill { margin-left: auto; }
+.panel > .rw-head { margin-bottom: 4px; }

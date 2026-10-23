@@ -69,12 +69,17 @@
         }))));
   }
   function kpi(label, value, note) { return h('div', { class: 'kpi' }, h('span', { text: label }), h('strong', { text: value }), note ? h('small', { text: note }) : null); }
+  // One look for every AI-assisted feature (insights, drafts, suggestions, AI search, grading):
+  // a blue "AI-assisted" pill beside its heading. aiTitle() builds that heading for panel().
+  function aiPill() { return h('span', { class: 'badge b-blue ai-pill', text: 'AI-assisted' }); }
+  function aiTitle(text, tag) { return h('div', { class: 'rw-head' }, h(tag || 'h2', { text: text }), aiPill()); }
   var currentTitle = '';
   function panel(title, hint) {
     var rest = Array.prototype.slice.call(arguments, 2);
     // Skip the heading when it would just repeat the page title above it.
-    if (title && title.toLowerCase() === currentTitle.toLowerCase()) title = null;
-    return h('section', { class: 'panel' }, title ? h('h2', { text: title }) : null, hint ? h('p', { class: 'hint', text: hint }) : null, rest);
+    if (typeof title === 'string' && title.toLowerCase() === currentTitle.toLowerCase()) title = null;
+    var head = !title ? null : typeof title === 'string' ? h('h2', { text: title }) : title;
+    return h('section', { class: 'panel' }, head, hint ? h('p', { class: 'hint', text: hint }) : null, rest);
   }
   function mini(label, onclick, opts) {
     opts = opts || {};
@@ -296,7 +301,7 @@
       h('div', { class: 'rd-body' },
         h('div', { class: 'rd-head' },
           h('h2', { id: 'rd-title', text: 'Reply to ' + (b.org || b.name) }),
-          h('span', { class: 'badge b-blue', text: 'AI draft · you review and send' })),
+          aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
         h('div', { class: 'rd-layout' },
           notes,
           h('div', { class: 'rd-form' },
@@ -343,7 +348,7 @@
         } }
       ], tickets, 'No tickets.')));
 
-    append(root, panel('Farm visit bookings', 'From the Experiences page. In production, confirming sends an approved WhatsApp template or an email.',
+    append(root, panel(aiTitle('Farm visit bookings'), 'From the Experiences page. In production, confirming sends an approved WhatsApp template or an email.',
       table([
         { label: 'Ref', render: function (b) { return h('span', null, h('strong', { text: b.id }), h('br'), h('small', { text: ago(b.createdAt) })); } },
         { label: 'Contact', render: function (b) { return h('span', null, b.org ? h('strong', { text: b.org }) : null, b.org ? h('br') : null, b.name, h('br'), h('small', { text: b.email })); } },
@@ -431,7 +436,7 @@
       } },
       { label: 'Actions', render: function (g) { return mini('Draft reminder', function () { draft(g); }); } }
     ], groups, 'Nobody is due right now — everyone who opted in has bought recently, has it on pre-order, or was reminded in the last ' + M.RULES.restockCooldownDays + ' days.');
-    return panel('Restock reminders', 'Opted-in customers who bought an item ' + M.RULES.restockAfterDays + '–' + M.RULES.restockWindowDays + ' days ago and haven\'t bought it since. Suggested from order history; drafting creates one message per language, and an admin still has to approve it.',
+    return panel(aiTitle('Restock reminders'), 'Opted-in customers who bought an item ' + M.RULES.restockAfterDays + '–' + M.RULES.restockWindowDays + ' days ago and haven\'t bought it since. Suggested from order history; drafting creates one message per language, and an admin still has to approve it.',
       h('div', { class: 'restock-table' }, rows));
   }
 
@@ -493,7 +498,7 @@
       commit('campaign.submitted', id, 'Campaign sent for approval.');
     });
 
-    append(root, panel('New campaign', 'Pick a product. The system finds past buyers who agreed to marketing, and AI drafts the message. An admin who did not write it must approve before it can be sent.',
+    append(root, panel(aiTitle('New campaign'), 'Pick a product. The system finds past buyers who agreed to marketing, and AI drafts the message. An admin who did not write it must approve before it can be sent.',
       audienceBox, form));
 
     var canApprove = M.auth.can(session, 'campaigns.approve');
@@ -555,7 +560,7 @@
 
     /* ---- a. Candidates ---- */
     var candidates = M.clearance.candidates();
-    append(root, panel('Clearance candidates', 'High stock, low recent sales — a plain-English reason for each.',
+    append(root, panel(aiTitle('Clearance candidates'), 'High stock, low recent sales — a plain-English reason for each.',
       table([
         { label: 'Product', render: function (c) { return c.product.title; } },
         { label: 'In stock', num: true, render: function (c) { return String(c.qty); } },
@@ -922,7 +927,7 @@
     var gradeSection = gradable
       ? h('section', { class: 'gd-section' },
           h('div', { class: 'gd-section-head' },
-            h('div', null, h('h3', { text: 'Grade from photos' }), h('span', { class: 'badge b-blue', text: 'Optional · AI-assisted' })),
+            h('div', null, h('h3', { text: 'Grade from photos (optional)' }), aiPill()),
             h('p', { class: 'hint', text: 'Photograph a few bunches. Each photo is checked for yellowing and browning on the leaves, and the share of grades splits the harvest below. It judges looks only, never food safety, and you can change every number.' })),
           h('div', { class: 'actions' },
             h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Add photos', onclick: function () { fileInput.click(); } }),
@@ -1032,7 +1037,7 @@
       commit('harvest.cancelled', b.id, p.title + ' batch cancelled.' + (lines.length ? ' Refund ' + lines.length + ' pre-order line(s) in Orders.' : ''));
     }
 
-    append(root, panel('Upcoming batches', 'Pre-orders reserve part of the expected yield before it is picked. The demand note is rule-based and only advises — it never changes prices or quantities.',
+    append(root, panel(aiTitle('Upcoming batches'), 'Pre-orders reserve part of the expected yield before it is picked. The demand note is rule-based and only advises — it never changes prices or quantities.',
       h('div', { class: 'harvest-table' }, table([
         { label: 'Product', render: function (b) { var p = M.byId('products', b.productId); return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: b.id })); } },
         { label: 'Harvest', render: function (b) {
@@ -1257,7 +1262,7 @@
       ], confirmed, 'No confirmed visits yet.'))));
 
     var pending = S().bookings.filter(function (b) { return b.status === 'new'; });
-    append(root, panel('Enquiries waiting', 'Confirming creates the group\'s farm-shop code. In production this also sends an approved WhatsApp template or email.',
+    append(root, panel(aiTitle('Enquiries waiting'), 'Confirming creates the group\'s farm-shop code. In production this also sends an approved WhatsApp template or email.',
       table([
         { label: 'Organisation', render: function (b) { return h('span', null, h('strong', { text: b.org || b.name }), h('br'), h('small', { text: (M.GROUP_TYPES[b.groupType] || { label: 'Individual' }).label + ' · ' + b.email })); } },
         { label: 'Experience', render: function (b) { return b.experience; } },
@@ -1452,7 +1457,7 @@
     append(dlg,
       h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
       h('div', { class: 'rd-body' },
-        h('div', { class: 'rd-head' }, h('h2', { id: 'nd-title', text: opts.title || NUDGE_KIND_LABEL[kind] }), h('span', { class: 'badge b-blue', text: 'AI draft · you review' })),
+        h('div', { class: 'rd-head' }, h('h2', { id: 'nd-title', text: opts.title || NUDGE_KIND_LABEL[kind] }), aiPill(), h('small', { class: 'ai-note', text: 'You review before it goes to approval' })),
         h('div', { class: 'rd-layout' },
           h('aside', { class: 'rd-notes' },
             h('h3', { text: 'Audience' }),
@@ -1534,7 +1539,7 @@
     /* ---- 1. AI ops brief ---- */
     var insights = rewardsInsights(members);
     append(root, h('section', { class: 'panel' },
-      h('div', { class: 'rw-head' }, h('h2', { text: 'AI ops brief' }), h('span', { class: 'badge b-blue', text: 'AI-assisted' })),
+      aiTitle('AI ops brief'),
       h('p', { class: 'hint', text: 'What to do with rewards this week, linking what members buy with what the farm needs to sell. Each one opens a draft for you to check.' }),
       insights.length ? h('div', { class: 'ops-brief' }, insights.map(function (x, i) {
         return h('article', { class: 'ops-card' + (x.area === 'Farm ops' ? ' farm' : '') },
@@ -1624,7 +1629,7 @@
     }
     drawMembers();
     append(root, h('section', { class: 'panel' },
-      h('div', { class: 'rw-head' }, h('h2', { text: 'Members' }), h('span', { class: 'badge b-blue', text: 'AI search' })),
+      aiTitle('Members'),
       h('p', { class: 'hint', text: 'Ask in plain English, or filter by tier. Shows 20 at a time — in production the search runs on the server across every member.' }),
       askForm, examples, understood,
       h('div', { class: 'user-toolbar members-toolbar' }, tierChips, sortSel),
@@ -2185,7 +2190,7 @@
     var head = h('div', { class: 'picks-head' },
       h('div', null,
         h('span', { class: 'picks-eyebrow' }, svgIcon('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'), personal ? 'Smart picks' : 'Fresh this week'),
-        h('h2', { text: personal ? 'Picked for you, ' + c.name.split(' ')[0] : 'What\'s fresh this week' }),
+        personal ? aiTitle('Picked for you, ' + c.name.split(' ')[0]) : h('h2', { text: 'What\'s fresh this week' }),
         h('p', { text: personal
           ? 'Based on what you buy, when you last bought it, and what goes well with your usual basket. Only items in stock.'
           : 'Personalised picks are off. Turn them on in Preferences to get suggestions based on your orders.' })));
@@ -2326,7 +2331,7 @@
     var TIP_ICONS = { tier: TIER_ICONS.sprout, redeem: ICON_GIFT, preorder: ICONS.clock, clearance: ICONS.tag, expiry: ICONS.clock };
     var tips = M.rewards.tips(c);
     var tipsPanel = h('section', { class: 'panel' },
-      h('div', { class: 'rw-head' }, h('h2', { text: 'Smart tips' }), h('span', { class: 'badge b-blue', text: 'AI-assisted' })),
+      aiTitle('Smart tips'),
       h('p', { class: 'hint', text: 'From your own orders, what\'s growing and what needs clearing.' }),
       tips.length ? h('ul', { class: 'rw-tips' }, tips.map(function (t) {
         var act = null;
@@ -2454,7 +2459,7 @@
     var r = M.recipes && M.recipes.forProduct(p);
     if (!r) return null;
     return h('details', { class: 'pd-recipe' },
-      h('summary', null, h('span', { class: 'pd-recipe-label', text: 'Recipe idea' }), h('strong', { text: r.name.en }), h('small', { text: r.minutes + ' min' })),
+      h('summary', null, h('span', { class: 'pd-recipe-label', text: 'Recipe idea' }), h('strong', { text: r.name.en }), h('small', { text: r.minutes + ' min' }), aiPill()),
       h('div', { class: 'pd-recipe-body' },
         h('div', null, h('b', { text: 'You need' }), h('ul', null, r.ingredients.map(function (x) { return h('li', { text: x }); }))),
         h('div', null, h('b', { text: 'Steps' }), h('ol', null, r.steps.map(function (x) { return h('li', { text: x }); })))),
@@ -3536,7 +3541,7 @@
       h('section', { class: 'chat-card' },
         h('header', { class: 'chat-header' },
           h('span', { class: 'avatar av-bot big', 'aria-hidden': 'true', text: 'M' }),
-          h('div', null, h('strong', { text: 'Ask MEOD' }),
+          h('div', null, h('span', { class: 'chat-title' }, h('strong', { text: 'Ask MEOD' }), aiPill()),
             h('small', null, h('span', { class: 'status-dot on', text: 'Bot online 24/7' }), ' · ', online ? 'Team online now' : 'Team back Mon–Sat 9am'))),
         log, chips, form),
       h('aside', { class: 'chat-side' },

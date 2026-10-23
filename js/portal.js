@@ -216,6 +216,13 @@
       ], rows, 'No orders with this status.')));
   }
 
+  // Confirming any booking gives it a visitor farm-shop code (see M.visits in data.js).
+  function confirmVisit(b) {
+    var r = M.visits.confirm(b.id);
+    if (!r.ok) { toast(r.error); return; }
+    commit('booking.confirmed', b.id, b.id + ' confirmed (WhatsApp mock). Farm-shop code ' + r.event.code + ' is ready in Visits.');
+  }
+
   function inboxView(root) {
     var tickets = S().tickets.slice().sort(function (a, b) { return (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1); });
     append(root, panel('Support tickets', 'Created when the assistant hands over. During human hours (Mon–Sat 9am–6pm) customers are told someone will reply soon; outside them, that the team is offline.',
@@ -237,15 +244,15 @@
     append(root, panel('Farm visit bookings', 'From the Experiences page. In production, confirming sends an approved WhatsApp template or an email.',
       table([
         { label: 'Ref', render: function (b) { return h('span', null, h('strong', { text: b.id }), h('br'), h('small', { text: ago(b.createdAt) })); } },
-        { label: 'Contact', render: function (b) { return h('span', null, b.name, h('br'), h('small', { text: b.email })); } },
-        { label: 'Experience', render: function (b) { return b.experience + ' · ' + b.pax + ' pax'; } },
+        { label: 'Contact', render: function (b) { return h('span', null, b.org ? h('strong', { text: b.org }) : null, b.org ? h('br') : null, b.name, h('br'), h('small', { text: b.email })); } },
+        { label: 'Experience', render: function (b) { return b.experience + ' · ' + b.pax + ' pax' + (M.visits.sessions(b.pax) > 1 ? ' (' + M.visits.sessions(b.pax) + ' sessions)' : ''); } },
         { label: 'Date', render: function (b) { return date(b.date); } },
         { label: 'Message', render: function (b) { return b.message || '—'; } },
         { label: 'Status', render: function (b) { return statusBadge(b.status); } },
         { label: 'Actions', render: function (b) {
           if (b.status !== 'new') return '—';
           return h('div', { class: 'actions' },
-            mini('Confirm', function () { b.status = 'confirmed'; commit('booking.confirmed', b.id, b.id + ' confirmed (WhatsApp mock).'); }),
+            mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
         } }
       ], S().bookings, 'No bookings yet.')));
@@ -1049,6 +1056,118 @@
     ], done, 'No harvests recorded yet.')));
   }
 
+  /* ---------------- Visits: learning journeys → farm sales (staff + admin) ---------------- */
+  function visitShopUrl(code) { return new URL('visit.html?code=' + encodeURIComponent(code), location.href).href; }
+  // QR codes come from qrcodejs (cdnjs), loaded only when a QR is first shown. If it can't
+  // load (offline), the dialog still shows the link and code.
+  var qrLib = null;
+  function loadQrLib() {
+    if (window.QRCode) return Promise.resolve(window.QRCode);
+    if (qrLib) return qrLib;
+    qrLib = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      s.onload = function () { resolve(window.QRCode); };
+      s.onerror = function () { qrLib = null; reject(new Error('QR library unavailable')); };
+      document.head.appendChild(s);
+    });
+    return qrLib;
+  }
+  function showVisitQr(b, ev) {
+    var type = M.GROUP_TYPES[b.groupType] || M.GROUP_TYPES.other;
+    var url = visitShopUrl(ev.code);
+    var qrBox = h('div', { class: 'vq-code', 'aria-label': 'QR code for the visitor farm shop' }, h('small', { text: 'Loading QR code…' }));
+    var dlg = h('dialog', { class: 'receipt-dialog visit-qr-dialog', 'aria-labelledby': 'vq-title' });
+    append(dlg,
+      h('div', { class: 'vq-card' },
+        h('img', { src: 'assets/img/favicon.png', alt: '', width: 40, height: 40 }),
+        h('h2', { id: 'vq-title', text: 'Take the farm home' }),
+        h('p', { text: b.org || b.name }),
+        qrBox,
+        h('p', { class: 'vq-steps', text: 'Scan to order today\'s harvest · ' + Math.round(M.RULES.groupDiscountRate * 100) + '% off · ' + Math.round(M.RULES.visitFundRate * 100) + '% goes to your ' + type.fund }),
+        h('span', { class: 'code-box', text: ev.code }),
+        h('small', { class: 'vq-url', text: url })),
+      h('div', { class: 'r-actions no-print' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Copy link', onclick: function () {
+          (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast('Link copied.'); }, function () { toast(url); });
+        } }),
+        h('a', { class: 'btn btn-sm btn-outline', href: url, target: '_blank', rel: 'noopener', text: 'Open shop' }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Print', onclick: function () { window.print(); } }),
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: function () { dlg.close(); } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    loadQrLib().then(function (QR) {
+      qrBox.textContent = '';
+      new QR(qrBox, { text: url, width: 200, height: 200, colorDark: '#033a0d', colorLight: '#ffffff' });
+    }, function () { qrBox.textContent = ''; append(qrBox, h('small', { text: 'QR code needs an internet connection — share the link or code below instead.' })); });
+  }
+
+  function visitsView(root) {
+    var f = M.visits.funnel();
+    var pctOf = function (n) { return f.visitors ? Math.round(n / f.visitors * 100) : 0; };
+    append(root, h('div', { class: 'kpis' },
+      kpi('Visitors', String(f.visitors), 'across ' + f.visitedGroups + ' visit(s) so far'),
+      kpi('Bought on the day', pctOf(f.buyers) + '%', f.buyers + ' of ' + f.visitors + ' visitors'),
+      kpi('Opted in', String(f.signups), pctOf(f.signups) + '% now get harvest updates'),
+      kpi('Sales from visits', money(f.salesCents), money(f.perVisitorCents) + ' per visitor')));
+
+    var steps = [['Visitors', f.visitors], ['Bought on the day', f.buyers], ['Opted in to updates', f.signups], ['Ordered again later', f.repeatBuyers]];
+    append(root, panel('From visit to customer', 'Everyone who visited, how many ordered with their group\'s code, how many opted in to messages, and how many came back to order again without the code.',
+      h('div', { class: 'visit-funnel' }, steps.map(function (s) {
+        var bar = h('span', { class: 'vf-bar' }, h('span', { class: 'vf-fill' }));
+        bar.firstChild.style.width = (f.visitors ? Math.max(2, s[1] / f.visitors * 100) : 0) + '%';
+        return h('div', { class: 'vf-row' }, h('span', { class: 'vf-label', text: s[0] }), bar,
+          h('span', { class: 'vf-num' }, h('strong', { text: String(s[1]) }), h('small', { text: pctOf(s[1]) + '%' })));
+      }))));
+
+    var confirmed = S().bookings.filter(function (b) { return b.status === 'confirmed'; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    append(root, panel('Visits', 'Each confirmed visit has its own farm-shop code. Show the QR on the day; ' + Math.round(M.RULES.visitFundRate * 100) + '% of the group\'s orders goes back to its fund (illustrative rate).',
+      h('div', { class: 'visits-table' }, table([
+        { label: 'Organisation', render: function (b) {
+          var type = M.GROUP_TYPES[b.groupType] || M.GROUP_TYPES.other;
+          return h('span', null, h('strong', { text: b.org || b.name }), h('br'), h('small', { text: type.label + ' · ' + b.experience }));
+        } },
+        { label: 'Visit', render: function (b) {
+          var st = M.visits.stats(b);
+          return h('span', null, shortWeekday(M.clearance.parseDayKey(b.date).toISOString()), h('br'),
+            h('small', { text: (st.visited ? 'visited' : inDaysText(b.date)) + (st.sessions > 1 ? ' · ' + st.sessions + ' sessions' : '') }));
+        } },
+        { label: 'Pax', num: true, render: function (b) { return String(b.pax); } },
+        { label: 'Code', render: function (b) {
+          var st = M.visits.stats(b);
+          return st.event ? h('div', { class: 'actions' }, h('span', { class: 'code-box', text: st.event.code }), mini('QR & link', function () { showVisitQr(b, st.event); })) : '—';
+        } },
+        { label: 'Bought', num: true, render: function (b) { var st = M.visits.stats(b); return st.visited || st.buyers ? st.buyers + ' / ' + b.pax : '—'; } },
+        { label: 'Opted in', num: true, render: function (b) { var st = M.visits.stats(b); return st.visited || st.signups ? String(st.signups) : '—'; } },
+        { label: 'Sales', num: true, render: function (b) {
+          var st = M.visits.stats(b);
+          if (!st.salesCents) return '—';
+          return h('span', null, h('strong', { text: money(st.salesCents) }), h('br'),
+            h('small', { text: money(st.daySalesCents) + ' on the day' + (st.laterSalesCents ? ' + ' + money(st.laterSalesCents) + ' later' : '') }));
+        } },
+        { label: 'Per visitor', num: true, render: function (b) { var st = M.visits.stats(b); return st.salesCents ? money(st.perVisitorCents) : '—'; } },
+        { label: 'Group fund', num: true, render: function (b) { var st = M.visits.stats(b); return st.fundCents ? money(st.fundCents) : '—'; } }
+      ], confirmed, 'No confirmed visits yet.'))));
+
+    var pending = S().bookings.filter(function (b) { return b.status === 'new'; });
+    append(root, panel('Enquiries waiting', 'Confirming creates the group\'s farm-shop code. In production this also sends an approved WhatsApp template or email.',
+      table([
+        { label: 'Organisation', render: function (b) { return h('span', null, h('strong', { text: b.org || b.name }), h('br'), h('small', { text: (M.GROUP_TYPES[b.groupType] || { label: 'Individual' }).label + ' · ' + b.email })); } },
+        { label: 'Experience', render: function (b) { return b.experience; } },
+        { label: 'Date', render: function (b) { return shortWeekday(M.clearance.parseDayKey(b.date).toISOString()); } },
+        { label: 'Pax', num: true, render: function (b) { return String(b.pax) + (M.visits.sessions(b.pax) > 1 ? ' (' + M.visits.sessions(b.pax) + ' sessions)' : ''); } },
+        { label: 'Message', render: function (b) { return b.message || '—'; } },
+        { label: 'Actions', render: function (b) {
+          return h('div', { class: 'actions' },
+            mini('Confirm', function () { confirmVisit(b); }),
+            mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
+        } }
+      ], pending, 'No enquiries waiting.')));
+  }
+
   function groupBuyAdminView(root) {
     var entries = M.ledger();
     function eventStats(ev) {
@@ -1086,7 +1205,7 @@
     if (canManage) {
       var f = h('form', { class: 'form-grid', novalidate: true },
         h('label', null, 'Title', h('input', { name: 'title', required: true, maxlength: 60 })),
-        h('label', null, 'Leader', h('select', { name: 'leader' }, S().leaders.map(function (l) { return h('option', { value: l.id, text: l.name + ' (' + l.area + ')' }); }))),
+        h('label', null, 'Leader', h('select', { name: 'leader' }, S().leaders.filter(function (l) { return l.kind !== 'visit'; }).map(function (l) { return h('option', { value: l.id, text: l.name + ' (' + l.area + ')' }); }))),
         h('label', null, 'Code', h('input', { name: 'code', required: true, maxlength: 24, placeholder: 'e.g. TAMPINES-GREENS' })),
         h('label', null, 'Ends on', h('input', { name: 'ends', type: 'date', required: true, min: new Date().toISOString().slice(0, 10) })),
         h('label', { style: 'grid-column:1/-1' }, 'Pickup / terms', h('input', { name: 'terms', maxlength: 140 })),
@@ -2791,6 +2910,7 @@
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },

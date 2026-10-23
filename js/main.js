@@ -326,6 +326,22 @@
     var minDate = new Date(Date.now() + 864e5 * 3).toISOString().slice(0, 10);
     var dateInput = $('input[name="date"]', booking);
     if (dateInput) dateInput.min = minDate;
+    var maxPax = M.RULES.visitMaxPax;
+
+    // Live note under group size: how many sessions a larger group is split into.
+    var paxInput = $('input[name="pax"]', booking);
+    var sessionNote = $('[data-session-note]', booking);
+    if (paxInput && sessionNote) {
+      var renderSessions = function () {
+        var n = Number(paxInput.value);
+        var sessions = n > 0 ? M.visits.sessions(n) : 1;
+        sessionNote.textContent = n > M.RULES.visitSessionMax && n <= maxPax
+          ? 'We\'ll split your group into ' + sessions + ' sessions of up to ' + M.RULES.visitSessionMax + '.'
+          : 'Up to ' + M.RULES.visitSessionMax + ' per session, ' + maxPax + ' in total.';
+      };
+      paxInput.addEventListener('input', renderSessions);
+      renderSessions();
+    }
 
     booking.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -335,7 +351,8 @@
       if (!String(fd.get('name') || '').trim()) errors.push('Please enter your name.');
       if (!/^\S+@\S+\.\S+$/.test(String(fd.get('email') || ''))) errors.push('Please enter a valid email.');
       if (!fd.get('experience')) errors.push('Please choose an experience.');
-      if (!(pax >= 1 && pax <= 40)) errors.push('Group size must be between 1 and 40.');
+      if (!(pax >= 1 && pax <= maxPax)) errors.push('Group size must be between 1 and ' + maxPax + '.');
+      if (fd.get('groupType') && !String(fd.get('org') || '').trim()) errors.push('Please enter your organisation\'s name.');
       if (!fd.get('date') || fd.get('date') < minDate) errors.push('Please pick a date at least 3 days ahead.');
       var errBox = $('[data-form-errors]', booking);
       if (errors.length) {
@@ -350,6 +367,8 @@
         name: String(fd.get('name')).trim(),
         email: String(fd.get('email')).trim(),
         phone: String(fd.get('phone') || '').trim(),
+        org: String(fd.get('org') || '').trim().slice(0, 80),
+        groupType: fd.get('groupType') || null,
         experience: fd.get('experience'),
         pax: pax,
         date: fd.get('date'),

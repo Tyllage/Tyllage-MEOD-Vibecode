@@ -26,6 +26,10 @@
     clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
     clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
+    visitSessionMax: 40,            // guests per farm-visit session; bigger groups split into sessions
+    visitMaxPax: 200,               // largest group the booking form accepts
+    visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
+    visitCodeDays: 7,               // a visit's farm-shop code stays open this long after the visit
     restockAfterDays: 7,            // a buyer is "due" this many days after they last bought an item...
     restockWindowDays: 45,          // ...until this many days (after that they're lapsed, not due)
     restockCooldownDays: 14,        // don't suggest the same reminder to someone again within this
@@ -89,6 +93,14 @@
     fungi: '<path d="M10 32c0-12 10-20 22-20s22 8 22 20H10z"/><path d="M25 32v16a7 7 0 0 0 14 0V32"/><circle cx="22" cy="24" r="2"/><circle cx="36" cy="20" r="2"/><circle cx="44" cy="27" r="1.5"/>',
     herbs: '<path d="M32 58V14"/><path d="M32 22c-6 0-10-4-10-9 6 0 10 4 10 9z"/><path d="M32 22c6 0 10-4 10-9-6 0-10 4-10 9z"/><path d="M32 36c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 36c8 0 13-5 13-11-8 0-13 5-13 11z"/><path d="M32 50c-8 0-13-5-13-11 8 0 13 5 13 11z"/><path d="M32 50c8 0 13-5 13-11-8 0-13 5-13 11z"/>',
     'farm-more': '<rect x="18" y="22" width="28" height="34" rx="5"/><path d="M20 14h24v8H20z"/><path d="M18 34h28"/>'
+  };
+
+  // Who books learning journeys, and what their share of group orders goes towards.
+  var GROUP_TYPES = {
+    school: { label: 'School', fund: 'class or eco-club fund' },
+    company: { label: 'Company', fund: 'team or CSR fund' },
+    community: { label: 'Community group', fund: 'community fund' },
+    other: { label: 'Other group', fund: 'group fund' }
   };
 
   function minutesAgo(m) { return new Date(Date.now() - m * 60000).toISOString(); }
@@ -463,6 +475,66 @@
       });
       s.migrations.restockSeedV1 = true;
     }
+    if (!s.migrations.visitsV1) {
+      // Demo learning journeys: two past visits with visitor orders (and some repeat orders
+      // afterwards), one large upcoming community visit, and the existing new enquiry.
+      // Organisation and visitor names are fictional and marked (demo).
+      var old = s.bookings.filter(function (b) { return b.id === 'B-1001'; })[0];
+      if (old) { old.org = old.org || 'Demo Primary School'; old.groupType = old.groupType || 'school'; }
+      var prodByTitle = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      var dayKeyAgo = function (n) { return bagDayKey(new Date(Date.now() - n * 864e5)); };
+      var addBooking = function (b) {
+        s.seq += 1;
+        var booking = Object.assign({ id: 'B-' + s.seq, status: 'new', message: '', createdAt: new Date(parseDayKey(b.date).getTime() - 21 * 864e5).toISOString() }, b);
+        s.bookings.push(booking);
+        return booking;
+      };
+      var visitorOrders = function (booking, ev, visitors) {
+        visitors.forEach(function (v, idx) {
+          s.seq += 1;
+          var cust = { id: 'C-' + s.seq, name: v[0], phone: '+65 8000 ' + (2100 + s.seq % 900), email: '', language: v[1], consentMarketing: v[2], consentPersonalisation: v[2],
+            source: 'visit', bookingId: booking.id, groupCode: ev.code, joinedAt: parseDayKey(booking.date).toISOString() };
+          s.customers.push(cust);
+          var mk = function (lines, at, groupEventId) {
+            var items = lines.map(function (l) { var p = prodByTitle(l[0]); return p ? { productId: p.id, title: p.title, qty: l[1], priceCents: p.priceCents } : null; }).filter(Boolean);
+            s.seq += 1;
+            var fulfil = groupEventId ? (idx % 2 ? 'delivery' : 'collect') : undefined;
+            s.orders.push(Object.assign({
+              id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: cust.id, groupEventId: groupEventId, status: 'fulfilled',
+              items: items, refundedCents: 0, createdAt: at.toISOString(), source: groupEventId ? 'visit' : 'shopify-mock', fulfilment: fulfil
+            }, groupEventId ? visitTotals(items, fulfil) : priceOrder(items, false)));
+          };
+          var visitAt = atTime(parseDayKey(booking.date), 11, 10 + idx * 4);
+          mk(v[3], visitAt, ev.id);
+          if (v[4]) mk(v[4][0], new Date(Date.now() - v[4][1] * 864e5), null);
+        });
+      };
+      var school = addBooking({ name: 'Ms Tan (demo)', email: 'teacher@sunrise-demo.test', phone: '+65 8000 0201', org: 'Sunrise Primary School (demo)', groupType: 'school',
+        experience: 'School Visit', pax: 36, date: dayKeyAgo(12), message: 'Primary 5 science — food security.' });
+      var schoolEv = createVisitGroup(s, school);
+      visitorOrders(school, schoolEv, [
+        // [name, language, opted in, visit-day order, [later order, days ago]]
+        ['Parent Lim (demo)', 'en', true, [['Xiao Bai Cai', 2], ['Farm Pesto', 1]], [[['Xiao Bai Cai', 2], ['Kai Lan', 2]], 4]],
+        ['Parent Wong (demo)', 'zh', true, [['Kai Lan', 2], ['Shiitake Mushroom', 1]], null],
+        ['Teacher Ng (demo)', 'en', true, [['Goodness Gracious Gelato', 2]], [[['Goodness Gracious Gelato', 1], ['Mesclun Mix', 1]], 3]],
+        ['Parent Aziz (demo)', 'ms', false, [['Kangkong', 3]], null],
+        ['Parent Chua (demo)', 'zh', true, [['Cos Lettuce', 2], ['Veggie Crackers', 1]], null],
+        ['Parent Raj (demo)', 'en', false, [['Tuscan Kale', 1]], null]
+      ]);
+      var company = addBooking({ name: 'HR team (demo)', email: 'hr@acme-demo.test', phone: '+65 8000 0202', org: 'Acme Logistics (demo)', groupType: 'company',
+        experience: 'Workshop', pax: 24, date: dayKeyAgo(26), message: 'Sustainability day for staff.' });
+      var companyEv = createVisitGroup(s, company);
+      visitorOrders(company, companyEv, [
+        ['Staff Ho (demo)', 'en', true, [['Shiitake Mushroom', 2], ['Farm Pesto', 1]], [[['Shiitake Mushroom', 2]], 9]],
+        ['Staff Devi (demo)', 'en', true, [['Mesclun Mix', 2], ['Vege Powder', 1]], null],
+        ['Staff Goh (demo)', 'zh', false, [['HK Cai Xin', 2]], null],
+        ['Staff Iskandar (demo)', 'ms', true, [['Veggie Crackers', 2], ['Kai Lan', 1]], null]
+      ]);
+      var rc = addBooking({ name: 'Mr Lee (demo)', email: 'rc@maplegrove-demo.test', phone: '+65 8000 0203', org: 'Maple Grove RC (demo)', groupType: 'community',
+        experience: 'Farm Tour', pax: 85, date: bagDayKey(new Date(Date.now() + 9 * 864e5)), message: 'Residents and seniors — morning slots, please.' });
+      createVisitGroup(s, rc);
+      s.migrations.visitsV1 = true;
+    }
     return s;
   }
 
@@ -811,6 +883,134 @@
     if (b) b.status = 'cancelled';
   }
 
+  /* ---------- Tyllage Visits: learning journeys that turn into farm sales ----------
+   * Confirming a group booking gives that organisation its own group-buy code (reusing
+   * GroupBuy): visitors scan a QR on the day, order from the visitor shop with the group
+   * discount, and RULES.visitFundRate of the group's orders accrues to the group's fund
+   * through the normal commission ledger. Visitors can opt in to future messages, which is
+   * how a one-off visit becomes repeat customers. All rates are illustrative.
+   */
+  function visitSessions(pax) { return Math.max(1, Math.ceil(pax / RULES.visitSessionMax)); }
+  function visitCodeFor(st, booking) {
+    var words = String(booking.org || booking.name || 'GROUP').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(function (w) { return w && w !== 'DEMO'; });
+    var d = parseDayKey(booking.date);
+    var base = (words.slice(0, 2).map(function (w) { return w.slice(0, 8); }).join('-') || 'GROUP') + '-' + pad2(d.getDate()) + pad2(d.getMonth() + 1);
+    var code = base.slice(0, 22), n = 2;
+    while (st.events.some(function (e) { return e.code === code; })) code = base.slice(0, 20) + '-' + n++;
+    return code;
+  }
+  // Works on any state object so the seed migration can use it before `state` exists.
+  function createVisitGroup(st, booking) {
+    var type = GROUP_TYPES[booking.groupType] || GROUP_TYPES.other;
+    st.seq += 1;
+    var leader = { id: 'L-' + st.seq, name: booking.org || booking.name, area: type.label + ' visit', commissionRate: RULES.visitFundRate, kind: 'visit', bookingId: booking.id };
+    st.seq += 1;
+    var code = visitCodeFor(st, booking);
+    var visitDay = parseDayKey(booking.date);
+    var event = {
+      id: 'G-' + st.seq, leaderId: leader.id, title: 'Farm visit — ' + (booking.org || booking.name), code: code,
+      endsAt: new Date(visitDay.getTime() + (RULES.visitCodeDays + 1) * 864e5).toISOString(),
+      terms: 'Visitor farm shop for the ' + booking.date + ' visit. Collect at the farm or get it delivered. ' + Math.round(RULES.visitFundRate * 100) + '% of orders go to the ' + type.fund + '.',
+      status: 'open', bookingId: booking.id, kind: 'visit'
+    };
+    st.leaders.push(leader);
+    st.events.push(event);
+    booking.status = 'confirmed';
+    booking.eventId = event.id;
+    return event;
+  }
+  function visitConfirm(bookingId) {
+    var b = byId('bookings', bookingId);
+    if (!b) return { ok: false, error: 'Booking not found.' };
+    if (b.eventId) return { ok: true, event: byId('events', b.eventId) };
+    return { ok: true, event: createVisitGroup(state, b) };
+  }
+  // Group discount always applies; collecting at the farm has no delivery fee.
+  function visitTotals(items, fulfilment) {
+    var t = priceOrder(items, true);
+    if (fulfilment !== 'delivery') { t.deliveryCents = 0; t.totalCents = t.netCents; }
+    return t;
+  }
+  function visitEventByCode(code) {
+    code = String(code || '').trim().toUpperCase();
+    return state.events.filter(function (e) { return e.kind === 'visit' && e.code === code; })[0] || null;
+  }
+  // Visitor shop checkout. Fails closed on stale or short stock; reuses a customer with the
+  // same phone number, otherwise creates one tagged with the visit it came from.
+  function visitOrder(code, contact, lines, fulfilment) {
+    var ev = visitEventByCode(code);
+    if (!ev || ev.status !== 'open' || new Date(ev.endsAt).getTime() < Date.now()) return { ok: false, error: 'This visit code has closed.' };
+    if (!String(contact.name || '').trim()) return { ok: false, error: 'Please enter your name.' };
+    var phone = String(contact.phone || '').replace(/[^\d+ ]/g, '').trim();
+    if (phone.replace(/\D/g, '').length < 8) return { ok: false, error: 'Please enter a phone number with at least 8 digits.' };
+    var items = [];
+    for (var i = 0; i < lines.length; i++) {
+      var p = byId('products', lines[i].productId);
+      var s = p && stockStatus(p);
+      if (!p || !s.known) return { ok: false, error: (p ? p.title : 'An item') + '\'s stock can\'t be confirmed right now.' };
+      if (p.stock.qty < lines[i].qty) return { ok: false, error: 'Only ' + p.stock.qty + ' ' + p.title + ' left.' };
+      items.push({ productId: p.id, title: p.title, qty: lines[i].qty, priceCents: p.priceCents });
+    }
+    if (!items.length) return { ok: false, error: 'Add something to your order first.' };
+    var booking = byId('bookings', ev.bookingId);
+    var c = state.customers.filter(function (x) { return x.phone && x.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''); })[0];
+    if (!c) {
+      c = { id: nextId('C'), name: String(contact.name).trim().slice(0, 60), phone: phone, email: '', language: contact.language || 'en',
+        consentMarketing: Boolean(contact.consentMarketing), consentPersonalisation: Boolean(contact.consentMarketing),
+        source: 'visit', bookingId: ev.bookingId, groupCode: ev.code, joinedAt: new Date().toISOString() };
+      state.customers.push(c);
+    } else if (contact.consentMarketing && !c.consentMarketing) {
+      c.consentMarketing = true;
+    }
+    items.forEach(function (it) { byId('products', it.productId).stock.qty -= it.qty; });
+    var id = nextId('O');
+    var order = Object.assign({
+      id: id, ref: '#MF' + (5000 + state.orders.length + 1), customerId: c.id, groupEventId: ev.id, status: 'pending_payment',
+      items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'visit', fulfilment: fulfilment === 'delivery' ? 'delivery' : 'collect'
+    }, visitTotals(items, fulfilment));
+    state.orders.push(order);
+    return { ok: true, order: order, customer: c, booking: booking };
+  }
+  // Everything that came out of one visit: on-the-day orders (with the visit code), how many
+  // visitors opted in, and orders those visitors placed later without the code.
+  function visitStats(booking) {
+    var ev = booking.eventId ? byId('events', booking.eventId) : null;
+    var live = function (o) { return o.status !== 'cancelled'; };
+    var codeOrders = ev ? state.orders.filter(function (o) { return o.groupEventId === ev.id && live(o); }) : [];
+    var fromVisit = state.customers.filter(function (c) { return c.bookingId === booking.id; });
+    var fromIds = {};
+    fromVisit.forEach(function (c) { fromIds[c.id] = true; });
+    var later = state.orders.filter(function (o) { return fromIds[o.customerId] && live(o) && (!ev || o.groupEventId !== ev.id); });
+    var net = function (list) { return list.reduce(function (s, o) { return s + o.netCents - (o.refundedCents || 0); }, 0); };
+    var buyers = {};
+    codeOrders.forEach(function (o) { buyers[o.customerId] = true; });
+    var repeatBuyers = {};
+    later.forEach(function (o) { repeatBuyers[o.customerId] = true; });
+    var salesCents = net(codeOrders) + net(later);
+    var fund = ev ? ledger(ev.leaderId).reduce(function (s, e) { return s + e.payableCents; }, 0) : 0;
+    var visited = parseDayKey(booking.date).getTime() <= Date.now();
+    return {
+      event: ev, visited: visited, sessions: visitSessions(booking.pax),
+      buyers: Object.keys(buyers).length, orders: codeOrders.length, signups: fromVisit.filter(function (c) { return c.consentMarketing; }).length,
+      repeatBuyers: Object.keys(repeatBuyers).length, laterOrders: later.length,
+      daySalesCents: net(codeOrders), laterSalesCents: net(later), salesCents: salesCents,
+      perVisitorCents: booking.pax ? Math.round(salesCents / booking.pax) : 0, fundCents: fund
+    };
+  }
+  function visitFunnel() {
+    var f = { enquiries: state.bookings.length, confirmed: 0, visitedGroups: 0, visitors: 0, buyers: 0, signups: 0, repeatBuyers: 0, salesCents: 0 };
+    state.bookings.forEach(function (b) {
+      if (b.status === 'confirmed') f.confirmed++;
+      if (b.status !== 'confirmed') return;
+      var st = visitStats(b);
+      if (!st.visited) return;
+      f.visitedGroups++; f.visitors += b.pax; f.buyers += st.buyers; f.signups += st.signups;
+      f.repeatBuyers += st.repeatBuyers; f.salesCents += st.salesCents;
+    });
+    f.perVisitorCents = f.visitors ? Math.round(f.salesCents / f.visitors) : 0;
+    return f;
+  }
+
   // Commission ledger derived from orders so every figure is reproducible.
   // Basis: net merchandise (subtotal − discount), delivery excluded; accrues
   // once paid/fulfilled; refunds post a matching negative adjustment.
@@ -1032,6 +1232,11 @@
       nextBagCutoff: nextBagCutoff, dayKey: bagDayKey, parseDayKey: parseDayKey, bagOrdersForDay: bagOrdersForDay, bagsLeftForDay: bagsLeftForDay,
       proposeBagContents: proposeBagContents, approveBagContents: approveBagContents,
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
+    },
+    GROUP_TYPES: GROUP_TYPES,
+    visits: {
+      sessions: visitSessions, confirm: visitConfirm, byCode: visitEventByCode, order: visitOrder, totals: visitTotals,
+      stats: visitStats, funnel: visitFunnel
     },
     harvest: {
       dayOnOrAfter: harvestDayOnOrAfter, lines: batchLines, preordered: batchPreordered, left: batchLeft,

@@ -1024,3 +1024,27 @@ a.pill-btn { text-decoration: none; }
   .pd-recipe-body { grid-template-columns: 1fr; }
 }
 .restock-tag { color: var(--leaf); font-weight: 600; }
+
+/* ---- Visits (learning journeys → farm sales) ---- */
+.visit-funnel { display: grid; gap: 12px; }
+.vf-row { display: grid; grid-template-columns: 170px 1fr 70px; gap: 12px; align-items: center; }
+.vf-label { font-weight: 600; font-size: .9rem; color: var(--ink); }
+.vf-bar { height: 14px; border-radius: 999px; background: #eee8de; overflow: hidden; }
+.vf-fill { display: block; height: 100%; background: var(--leaf); border-radius: inherit; }
+.vf-row:nth-child(3) .vf-fill { background: var(--gold-dark); }
+.vf-row:nth-child(4) .vf-fill { background: var(--berry); }
+.vf-num { text-align: right; }
+.vf-num strong { display: block; color: var(--forest); }
+.vf-num small { color: var(--muted); }
+@media (max-width: 640px) { .vf-row { grid-template-columns: 1fr 60px; } .vf-bar { grid-column: 1 / -1; grid-row: 2; } }
+.visits-table .actions { flex-wrap: nowrap; align-items: center; }
+@media (max-width: 640px) { .visits-table .actions { flex-wrap: wrap; } }
+.visit-qr-dialog { width: min(420px, calc(100vw - 24px)); }
+.vq-card { display: grid; justify-items: center; gap: 8px; padding: 28px 28px 8px; text-align: center; }
+.vq-card h2 { margin: 4px 0 0; font-family: var(--font-script); font-weight: 400; font-size: 2.2rem; color: var(--forest); }
+.vq-card p { margin: 0; }
+.vq-code { width: 216px; height: 216px; display: grid; place-items: center; padding: 8px; border: 1px solid #eee8de; border-radius: 12px; background: #fff; }
+.vq-code small { color: var(--muted); padding: 10px; }
+.vq-steps { color: var(--muted); font-size: .88rem; max-width: 300px; }
+.vq-url { color: var(--muted); font-size: .74rem; word-break: break-all; max-width: 320px; }
+.visit-qr-dialog .r-actions { flex-wrap: wrap; justify-content: center; }

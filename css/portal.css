@@ -1280,3 +1280,18 @@ a.pill-btn { text-decoration: none; }
 .chat-header .ai-pill { margin-left: auto; align-self: center; padding: 5px 12px; }
 .pd-recipe summary .ai-pill { margin-left: auto; }
 .panel > .rw-head { margin-bottom: 4px; }
+
+/* ---- Table cards on small screens: desktop min-widths must not push the card wider ----
+   In card mode (phones, or .as-cards) each value sits beside its label, so values may
+   shrink, long text wraps, and group / visit codes can break across lines. */
+@media (max-width: 640px) {
+  .table-wrap td > * { min-width: 0; max-width: 100%; }
+  .table-wrap .restock-product, .table-wrap .signal-cell, .table-wrap .po-cell { min-width: 0; }
+  .table-wrap .code-box { white-space: normal; overflow-wrap: anywhere; text-align: right; }
+  .visits-table .code-box { width: auto; }
+  .table-wrap td .actions { justify-content: flex-end; flex-wrap: wrap; }
+}
+.table-wrap.as-cards td > * { min-width: 0; max-width: 100%; }
+.table-wrap.as-cards .restock-product, .table-wrap.as-cards .signal-cell, .table-wrap.as-cards .po-cell { min-width: 0; }
+.table-wrap.as-cards .code-box { white-space: normal; overflow-wrap: anywhere; }
+.visits-table .table-wrap.as-cards .code-box { width: auto; }

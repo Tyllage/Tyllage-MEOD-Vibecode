@@ -515,7 +515,7 @@
         { label: 'Campaign', render: function (c) {
           return h('span', null, h('strong', { text: c.title }), h('br'), h('small', { text: c.message.slice(0, 90) + (c.message.length > 90 ? '…' : '') }),
             c.kind === 'restock' ? [h('br'), h('small', { class: 'restock-tag', text: 'Restock reminder · {first_name} and {days} are filled in per person' })] : null,
-            c.kind === 'tier-nudge' ? [h('br'), h('small', { class: 'restock-tag', text: 'Rewards nudge · {first_name} and {bunches_to_go} are filled in per person' })] : null);
+            (c.kind === 'tier-nudge' || /^rewards-/.test(c.kind || '')) ? [h('br'), h('small', { class: 'restock-tag', text: 'Rewards nudge · names, bunches and points are filled in per person' })] : null);
         } },
         { label: 'Product', render: function (c) { var p = M.byId('products', c.productId); return p ? p.title : '—'; } },
         { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
@@ -1274,84 +1274,361 @@
       ], pending, 'No enquiries waiting.')));
   }
 
-  /* ---------------- Rewards (staff + admin) ---------------- */
-  var TIER_NUDGE = {
-    en: function (n) { return 'Hi {first_name} 🌱 You\'re just {bunches_to_go} bunches of MEOD greens away from ' + n.emoji + ' ' + n.label + (n.voucherCents ? ' — and a ' + money(n.voucherCents) + ' voucher' : '') + '. Every bunch supports Singapore farming. Reply STOP to opt out.'; },
-    zh: function (n) { return '{first_name} 您好 🌱 再买 {bunches_to_go} 份 MEOD 蔬菜即可升级为 ' + n.emoji + ' ' + n.label + (n.voucherCents ? '，并获得 ' + money(n.voucherCents) + ' 优惠券' : '') + '。每一份都在支持本地农业。回复 STOP 取消订阅。'; },
-    ms: function (n) { return 'Hai {first_name} 🌱 Hanya {bunches_to_go} ikat sayur MEOD lagi untuk ' + n.emoji + ' ' + n.label + (n.voucherCents ? ' — dan baucar ' + money(n.voucherCents) : '') + '. Setiap ikat menyokong pertanian Singapura. Balas STOP untuk berhenti.'; }
+  /* ---------------- Rewards (staff + admin): AI for farm ops ----------------
+   * 1. AI ops brief — ranked suggestions that connect rewards to the farm: clear surplus with
+   *    2× points, fill a slow harvest batch, nudge members near a tier, remind unused points,
+   *    win back lapsed members. Each opens the nudge composer.
+   * 2. Nudge composer — audience, one editable message per language, an optional "support
+   *    local by 2035" line, a personalised preview and a rough estimate. Drafts go to Campaign
+   *    Studio for approval; nothing is sent from here.
+   * 3. Members — built for a large customer base: plain-English "Ask AI" search, tier chips,
+   *    sorting and paging, plus "Nudge these" for the filtered, opted-in group.
+   * PROTOTYPE: insights and the search are ranked rules over the demo data; in production
+   * they'd run on the server over the full member base (and could be phrased by an LLM). */
+  var NUDGE_LANGS = { en: 'English', zh: '中文', ms: 'Melayu' };
+  var NUDGE_STOP = { en: 'Reply STOP to opt out.', zh: '回复 STOP 取消订阅。', ms: 'Balas STOP untuk berhenti.' };
+  var NUDGE_LOCAL = {
+    en: 'Every bunch helps Singapore grow more of its own food by 2035.',
+    zh: '每一份都在帮助新加坡在 2035 年前生产更多本地粮食。',
+    ms: 'Setiap ikat membantu Singapura menghasilkan lebih banyak makanan sendiri menjelang 2035.'
   };
+  function dayShort(d) { return new Date(d).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  // Message bodies per nudge kind. {first_name}, {bunches_to_go} and {points} are filled per person.
+  var NUDGE_BODY = {
+    tier: {
+      en: function (x) { return 'Hi {first_name} 🌱 You\'re just {bunches_to_go} bunches of MEOD greens away from ' + x.next.label + (x.next.voucherCents ? ' — and a ' + money(x.next.voucherCents) + ' voucher' : '') + '.'; },
+      zh: function (x) { return '{first_name} 您好 🌱 再买 {bunches_to_go} 份 MEOD 蔬菜即可升级为 ' + x.next.label + (x.next.voucherCents ? '，并获得 ' + money(x.next.voucherCents) + ' 优惠券' : '') + '。'; },
+      ms: function (x) { return 'Hai {first_name} 🌱 Hanya {bunches_to_go} ikat sayur MEOD lagi untuk ' + x.next.label + (x.next.voucherCents ? ' — dan baucar ' + money(x.next.voucherCents) : '') + '.'; }
+    },
+    surplus: {
+      en: function (x) { return 'Hi {first_name} 🌱 We harvested more ' + x.product.title + ' than expected — it\'s ' + money(x.listing.clearancePriceCents) + ' on Buy to Clear until ' + dayShort(x.listing.availableUntil) + ', with 2× reward points. Help us waste nothing!'; },
+      zh: function (x) { return '{first_name} 您好 🌱 本季 ' + x.product.title + ' 丰收！即日起至 ' + dayShort(x.listing.availableUntil) + ' 特价 ' + money(x.listing.clearancePriceCents) + '，并享双倍积分。一起减少浪费！'; },
+      ms: function (x) { return 'Hai {first_name} 🌱 Tuaian ' + x.product.title + ' kami melebihi jangkaan — kini ' + money(x.listing.clearancePriceCents) + ' di Buy to Clear sehingga ' + dayShort(x.listing.availableUntil) + ', dengan 2× mata ganjaran.'; }
+    },
+    preorder: {
+      en: function (x) { return 'Hi {first_name} 🌱 Our ' + x.product.title + ' will be picked on ' + dayShort(M.clearance.parseDayKey(x.batch.harvestDate)) + '. Pre-order by ' + dayShort(M.harvest.cutoff(x.batch)) + ' for 2× points — it helps us grow only what gets eaten.'; },
+      zh: function (x) { return '{first_name} 您好 🌱 我们的 ' + x.product.title + ' 将于 ' + dayShort(M.clearance.parseDayKey(x.batch.harvestDate)) + ' 采收。' + dayShort(M.harvest.cutoff(x.batch)) + ' 前预订可享双倍积分，帮助我们按需种植。'; },
+      ms: function (x) { return 'Hai {first_name} 🌱 ' + x.product.title + ' kami akan dituai pada ' + dayShort(M.clearance.parseDayKey(x.batch.harvestDate)) + '. Pra-pesan sebelum ' + dayShort(M.harvest.cutoff(x.batch)) + ' untuk 2× mata.'; }
+    },
+    points: {
+      en: function () { return 'Hi {first_name} 🌱 You have {points} reward points waiting — swap them for a voucher in your MEOD account and use it on this week\'s harvest.'; },
+      zh: function () { return '{first_name} 您好 🌱 您有 {points} 积分未使用 — 在 MEOD 账户中兑换优惠券，用于本周新鲜蔬菜。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Anda ada {points} mata ganjaran — tukar kepada baucar dalam akaun MEOD anda untuk tuaian minggu ini.'; }
+    },
+    winback: {
+      en: function () { return 'Hi {first_name} 🌱 It\'s been a while! This week\'s MEOD harvest is in, and your {points} points are still here for you.'; },
+      zh: function () { return '{first_name} 您好 🌱 好久不见！本周 MEOD 新鲜蔬菜已上架，您的 {points} 积分仍可使用。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Lama tidak berjumpa! Tuaian MEOD minggu ini sudah tiba, dan {points} mata anda masih menanti.'; }
+    },
+    general: {
+      en: function () { return 'Hi {first_name} 🌱 Fresh, pesticide-free MEOD greens are in this week — and you have {points} points to use.'; },
+      zh: function () { return '{first_name} 您好 🌱 本周 MEOD 无农药新鲜蔬菜已上架 — 您还有 {points} 积分可用。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Sayur MEOD segar tanpa racun perosak sudah tiba minggu ini — dan anda ada {points} mata.'; }
+    }
+  };
+  var NUDGE_KIND_LABEL = { tier: 'Tier nudge', surplus: 'Surplus offer', preorder: 'Pre-order nudge', points: 'Points reminder', winback: 'Win-back', general: 'Member message' };
+  function nudgeLang(c) { return NUDGE_LANGS[c.language] ? c.language : 'en'; }
+  function optedIn(list) { return list.filter(function (m) { return m.customer.consentMarketing; }); }
+  function buyersOf(members, category) { return optedIn(members).filter(function (m) { return (m.categories[category] || 0) > 0; }); }
+  function closeToTier(m) {
+    if (!m.s.next) return false;
+    var span = m.s.next.minBunches - m.s.tier.minBunches;
+    return m.s.toNext > 0 && m.s.toNext <= Math.ceil(span * 0.3);
+  }
+
+  // Ranked, explainable suggestions. Farm-ops ones (surplus, harvest) come first.
+  function rewardsInsights(members) {
+    var out = [];
+    var listing = M.clearance.listActive().map(function (l) { return { l: l, left: M.clearance.remaining(l), p: M.byId('products', l.productId) }; })
+      .filter(function (x) { return x.p && x.p.meodGrown; }).sort(function (a, b) { return b.left - a.left; })[0];
+    if (listing) {
+      var aud = buyersOf(members, listing.p.category);
+      if (aud.length) out.push({ kind: 'surplus', area: 'Farm ops', icon: ICONS.tag, audience: aud, ctx: { product: listing.p, listing: listing.l },
+        title: 'Clear ' + listing.left + ' ' + listing.p.title + ' with 2× points',
+        why: listing.left + ' left on Buy to Clear until ' + shortDate(listing.l.availableUntil) + '. ' + aud.length + ' opted-in member(s) buy ' + M.CATEGORIES[listing.p.category].label.toLowerCase() + '.',
+        estimate: 'If 1 in 4 buy two: about ' + Math.min(listing.left, Math.ceil(aud.length / 4) * 2) + ' bunches saved from waste' });
+    }
+    var batch = M.harvest.open().map(function (b) { return { b: b, sg: M.harvest.signal(b), p: M.byId('products', b.productId) }; })
+      .filter(function (x) { return x.sg.key === 'slow' || x.sg.key === 'steady'; })
+      .sort(function (a, b) { return (a.sg.key === 'slow' ? 0 : 1) - (b.sg.key === 'slow' ? 0 : 1) || M.harvest.preordered(a.b) / (a.b.preorderCap || 1) - M.harvest.preordered(b.b) / (b.b.preorderCap || 1); })[0];
+    if (batch) {
+      var audB = buyersOf(members, batch.p.category);
+      var pct = Math.round(M.harvest.preordered(batch.b) / (batch.b.preorderCap || 1) * 100);
+      if (audB.length) out.push({ kind: 'preorder', area: 'Farm ops', icon: ICONS.clock, audience: audB, ctx: { product: batch.p, batch: batch.b },
+        title: 'Fill the ' + batch.p.title + ' harvest on ' + dayShort(M.clearance.parseDayKey(batch.b.harvestDate)),
+        why: 'Only ' + pct + '% of pre-order spots taken; pre-orders close ' + dayShort(M.harvest.cutoff(batch.b)) + '. ' + audB.length + ' opted-in member(s) buy ' + M.CATEGORIES[batch.p.category].label.toLowerCase() + '.',
+        estimate: 'About ' + Math.ceil(audB.length / 4) * 2 + ' more pre-orders, so the farm harvests to real demand' });
+    }
+    var close = optedIn(members).filter(closeToTier).sort(function (a, b) { return a.s.toNext - b.s.toNext; });
+    if (close.length) {
+      var nextT = close[0].s.next;
+      out.push({ kind: 'tier', area: 'Sales', icon: TIER_ICONS[nextT.key], audience: close.filter(function (m) { return m.s.next === nextT; }), ctx: { next: nextT },
+        title: close.filter(function (m) { return m.s.next === nextT; }).length + ' member(s) almost at ' + nextT.label,
+        why: 'Within ' + close[0].s.toNext + '–' + close[close.length - 1].s.toNext + ' bunches of their next tier' + (nextT.voucherCents ? ', which unlocks a ' + money(nextT.voucherCents) + ' voucher' : '') + '.',
+        estimate: 'About ' + Math.max(1, Math.ceil(close.length / 3)) + ' order(s) brought forward' });
+    }
+    var idle = optedIn(members).filter(function (m) { return m.s.redeemable && (m.daysSinceOrder === null || m.daysSinceOrder >= 14); });
+    if (idle.length) {
+      var pts = idle.reduce(function (s, m) { return s + m.s.points; }, 0);
+      out.push({ kind: 'points', area: 'Sales', icon: ICON_GIFT, audience: idle, ctx: {},
+        title: idle.length + ' member(s) sitting on unused points',
+        why: pts + ' points (about ' + money(Math.floor(pts / M.RULES.rewards.redeemPoints) * M.RULES.rewards.redeemValueCents) + ' in vouchers) and no order in 14+ days.',
+        estimate: 'Points reminders usually bring back the most engaged members first' });
+    }
+    var lapsed = optedIn(members).filter(function (m) { return m.daysSinceOrder !== null && m.daysSinceOrder >= 30; });
+    if (lapsed.length) out.push({ kind: 'winback', area: 'Sales', icon: ICONS.leaf, audience: lapsed, ctx: {},
+      title: lapsed.length + ' member(s) haven\'t ordered in 30+ days', why: 'They bought before and opted in to messages.', estimate: 'Win-backs work best paired with what\'s fresh this week' });
+    return out;
+  }
+
+  // Nudge composer: audience + per-language editable drafts → Campaign Studio (pending approval).
+  function openNudgeComposer(opts) {
+    document.querySelectorAll('.nudge-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var kind = opts.kind, ctx = opts.ctx || {};
+    var audience = optedIn(opts.audience);
+    var skipped = opts.audience.length - audience.length;
+    var byLang = {};
+    audience.forEach(function (m) { (byLang[nudgeLang(m.customer)] = byLang[nudgeLang(m.customer)] || []).push(m); });
+    var langs = Object.keys(byLang);
+    var local = true, current = langs[0], drafts = {}, edited = {};
+    // Chinese runs sentences together; English and Malay separate them with a space.
+    function sep(lang) { return lang === 'zh' ? '' : ' '; }
+    function compose(lang) { return NUDGE_BODY[kind][lang](ctx) + (local ? sep(lang) + NUDGE_LOCAL[lang] : '') + sep(lang) + NUDGE_STOP[lang]; }
+    langs.forEach(function (l) { drafts[l] = compose(l); });
+
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog nudge-dialog', 'aria-labelledby': 'nd-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var tabs = h('div', { class: 'filters', role: 'tablist', 'aria-label': 'Message language' });
+    var ta = h('textarea', { rows: 7, 'aria-label': 'Message' });
+    var preview = h('p', { class: 'nd-preview' });
+    var counter = h('small', { class: 'pf-hint' });
+    var localToggle = h('input', { type: 'checkbox', checked: true });
+    function personalise(text, m) {
+      var first = M.auth.can(session, 'customers.pii') ? m.customer.name.split(' ')[0] : M.maskName(m.customer.name).split(' ')[0];
+      return text.replace('{first_name}', first).replace('{bunches_to_go}', String(m.s.toNext)).replace('{points}', String(m.s.points));
+    }
+    function draw() {
+      tabs.textContent = '';
+      langs.forEach(function (l) {
+        append(tabs, h('button', { type: 'button', role: 'tab', class: 'chip' + (l === current ? ' active' : ''), 'aria-selected': String(l === current),
+          onclick: function () { drafts[current] = ta.value; current = l; draw(); } }, NUDGE_LANGS[l] + ' ', h('span', { class: 'chip-count', text: String(byLang[l].length) })));
+      });
+      ta.value = drafts[current];
+      drawPreview();
+    }
+    function drawPreview() {
+      preview.textContent = personalise(ta.value, byLang[current][0]);
+      counter.textContent = ta.value.length + ' characters · example for ' + customerLabel(byLang[current][0].customer.id);
+    }
+    ta.addEventListener('input', function () { drafts[current] = ta.value; edited[current] = true; drawPreview(); });
+    localToggle.addEventListener('change', function () {
+      local = localToggle.checked;
+      drafts[current] = ta.value;
+      langs.forEach(function (l) {
+        if (!edited[l]) { drafts[l] = compose(l); return; }
+        // Keep the user's edits: just add or remove the local-farming line.
+        drafts[l] = local ? (drafts[l].indexOf(NUDGE_LOCAL[l]) > -1 ? drafts[l] : drafts[l].replace(NUDGE_STOP[l], NUDGE_LOCAL[l] + sep(l) + NUDGE_STOP[l])) : drafts[l].replace(sep(l) + NUDGE_LOCAL[l], '').replace(NUDGE_LOCAL[l], '');
+      });
+      draw();
+    });
+    function send() {
+      drafts[current] = ta.value;
+      var ids = [];
+      langs.forEach(function (l) {
+        var id = M.nextId('CP');
+        ids.push(id);
+        S().campaigns.unshift({
+          id: id, kind: 'rewards-' + kind, productId: ctx.product ? ctx.product.id : null, language: l,
+          title: (opts.title || NUDGE_KIND_LABEL[kind]) + (langs.length > 1 ? ' (' + NUDGE_LANGS[l] + ')' : ''),
+          message: drafts[l], audience: byLang[l].map(function (m) { return m.customer.id; }), status: 'pending_approval',
+          createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+        });
+      });
+      closeDialog();
+      commit('campaign.submitted', ids.join(','), langs.length + ' draft(s) sent to Campaign Studio for approval — ' + audience.length + ' opted-in member(s).');
+    }
+
+    var names = audience.slice(0, 6).map(function (m) { return customerLabel(m.customer.id); });
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'nd-title', text: opts.title || NUDGE_KIND_LABEL[kind] }), h('span', { class: 'badge b-blue', text: 'AI draft · you review' })),
+        h('div', { class: 'rd-layout' },
+          h('aside', { class: 'rd-notes' },
+            h('h3', { text: 'Audience' }),
+            h('p', { class: 'nd-big' }, h('strong', { text: String(audience.length) }), ' opted-in member' + (audience.length === 1 ? '' : 's')),
+            h('ul', { class: 'rd-facts' }, names.map(function (n) { return h('li', { text: n }); }), audience.length > names.length ? h('li', { text: '+ ' + (audience.length - names.length) + ' more' }) : null),
+            skipped ? h('small', { text: skipped + ' left out: no marketing consent.' }) : null,
+            opts.why ? [h('h3', { text: 'Why now' }), h('p', { text: opts.why })] : null,
+            opts.estimate ? [h('h3', { text: 'Rough estimate' }), h('p', { text: opts.estimate })] : null,
+            h('small', { class: 'rd-disclaimer', text: 'Consent is checked again when each campaign is sent. Prototype: drafted by rules; estimates are simple assumptions, not forecasts.' })),
+          h('div', { class: 'rd-form' },
+            tabs,
+            h('label', null, 'Message', ta),
+            counter,
+            h('label', { class: 'toggle nd-local' }, localToggle, h('span', { text: 'Add a line about growing Singapore\'s own food by 2035' })),
+            h('div', null, h('small', { class: 'nd-preview-label', text: 'What they\'ll see' }), preview)))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send to Campaign Studio', disabled: !audience.length, onclick: send })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    if (langs.length) draw(); else append(preview, 'Nobody in this group has opted in to messages.');
+    dlg.showModal();
+  }
+
+  // "Ask AI" member search: turns a plain-English request into filters, and says how it read it.
+  var AI_EXAMPLES = ['Seedlings close to Sprout', 'Opted in with 100+ points', 'No order in 30 days', 'Chinese speakers who buy fungi'];
+  function parseMemberQuery(q) {
+    var f = {}, chips = [];
+    var t = String(q || '').toLowerCase();
+    M.RULES.rewards.tiers.forEach(function (tier) {
+      var name = tier.label.toLowerCase();
+      if (new RegExp('\\b' + name.replace(' ', '\\s') + 's?\\b').test(t) && !new RegExp('(to|reach|next)\\s+' + name).test(t)) { f.tier = tier.key; chips.push('Tier: ' + tier.label); }
+    });
+    if (/close|near|almost|about to|reach|to (sprout|harvester|farm friend)/.test(t)) { f.close = true; chips.push('Close to next tier'); }
+    var pm = /(\d+)\s*\+?\s*(points|pts)|points?\s*(over|above|>=?|at least)\s*(\d+)/.exec(t);
+    if (pm) { f.minPoints = Number(pm[1] || pm[4]); chips.push(f.minPoints + '+ points'); }
+    else if (/unused points|redeem|swap/.test(t)) { f.redeemable = true; chips.push('Can swap points'); }
+    var im = /(no order|not ordered|haven'?t ordered|inactive|lapsed|since)\D*(\d+)\s*days?/.exec(t);
+    if (im) { f.inactiveDays = Number(im[2]); chips.push('No order in ' + f.inactiveDays + '+ days'); }
+    else if (/inactive|lapsed|haven'?t ordered|no order/.test(t)) { f.inactiveDays = 30; chips.push('No order in 30+ days'); }
+    if (/opted|consent|can message|marketing/.test(t)) { f.optedIn = true; chips.push('Opted in'); }
+    var langMap = [['zh', /chinese|mandarin|中文|zh\b/], ['ms', /malay|melayu|\bms\b/], ['ta', /tamil/], ['en', /english/]];
+    langMap.forEach(function (l) { if (l[1].test(t)) { f.lang = l[0]; chips.push('Language: ' + l[0].toUpperCase()); } });
+    Object.keys(M.CATEGORIES).forEach(function (k) {
+      var words = { 'asian-greens': /asian greens?|bok choy|choy|kangkong|kai lan/, lettuces: /lettuce|salad/, fungi: /fungi|mushroom/, herbs: /herb|basil|mint/, 'farm-more': /gelato|pesto|cracker/ }[k];
+      if (words && words.test(t)) { f.category = k; chips.push('Buys ' + M.CATEGORIES[k].label.toLowerCase()); }
+    });
+    if (/voucher/.test(t)) { f.hasVoucher = true; chips.push('Has an open voucher'); }
+    return { filters: f, chips: chips, understood: chips.length > 0 };
+  }
+  function matchMember(m, f) {
+    if (f.tier && m.s.tier.key !== f.tier) return false;
+    if (f.close && !closeToTier(m)) return false;
+    if (f.minPoints && m.s.points < f.minPoints) return false;
+    if (f.redeemable && !m.s.redeemable) return false;
+    if (f.inactiveDays && (m.daysSinceOrder === null || m.daysSinceOrder < f.inactiveDays)) return false;
+    if (f.optedIn && !m.customer.consentMarketing) return false;
+    if (f.lang && (m.customer.language || 'en') !== f.lang) return false;
+    if (f.category && !(m.categories[f.category] > 0)) return false;
+    if (f.hasVoucher && !M.rewards.vouchers(m.customer.id).some(M.rewards.usable)) return false;
+    return true;
+  }
+
   function rewardsAdminView(root) {
     var R = M.RULES.rewards;
     var members = M.rewards.members();
-    var byTier = {};
-    R.tiers.forEach(function (t) { byTier[t.key] = 0; });
-    members.forEach(function (m) { byTier[m.s.tier.key]++; });
     var unclaimed = members.reduce(function (s, m) { return s + m.s.points; }, 0);
     var vouchers = S().rewardsStore.vouchers;
     var openV = vouchers.filter(M.rewards.usable), usedV = vouchers.filter(function (v) { return v.status === 'used'; });
     var liability = Math.floor(unclaimed / R.redeemPoints) * R.redeemValueCents + openV.reduce(function (s, v) { return s + v.valueCents; }, 0);
+    var antiWasteOrders = S().orders.filter(function (o) { return o.status !== 'cancelled' && o.items.some(function (i) { return i.clearanceListingId || i.preorderBatchId; }); }).length;
 
     append(root, h('div', { class: 'kpis' },
-      kpi('Members', String(members.length), members.filter(function (m) { return m.s.tier.minBunches > 0; }).length + ' above Seedling'),
+      kpi('Members', String(members.length), optedIn(members).length + ' opted in to messages'),
       kpi('Unclaimed points', String(unclaimed), 'Up to ' + money(liability) + ' in vouchers'),
       kpi('Vouchers', String(openV.length) + ' open', usedV.length + ' used · ' + money(usedV.reduce(function (s, v) { return s + v.valueCents; }, 0)) + ' redeemed'),
-      kpi('Anti-waste bonus', R.antiWasteMultiplier + '×', 'on Buy to Clear and pre-orders')));
+      kpi('Anti-waste orders', String(antiWasteOrders), 'Buy to Clear or pre-order · ' + R.antiWasteMultiplier + '× points')));
 
-    var max = Math.max.apply(null, R.tiers.map(function (t) { return byTier[t.key]; }).concat([1]));
-    append(root, panel('Members by tier', 'Tiers count bunches of MEOD-grown produce over 12 months. Thresholds and perks are illustrative — MEOD to confirm.',
-      h('div', { class: 'visit-funnel' }, R.tiers.map(function (t) {
-        var bar = h('span', { class: 'vf-bar' }, h('span', { class: 'vf-fill' }));
-        bar.firstChild.style.width = (byTier[t.key] / max * 100) + '%';
-        return h('div', { class: 'vf-row' }, h('span', { class: 'vf-label', text: t.emoji + ' ' + t.label + (t.minBunches ? ' · ' + t.minBunches + '+' : '') }), bar,
-          h('span', { class: 'vf-num' }, h('strong', { text: String(byTier[t.key]) })));
-      }))));
+    /* ---- 1. AI ops brief ---- */
+    var insights = rewardsInsights(members);
+    append(root, h('section', { class: 'panel' },
+      h('div', { class: 'rw-head' }, h('h2', { text: 'AI ops brief' }), h('span', { class: 'badge b-blue', text: 'AI-assisted' })),
+      h('p', { class: 'hint', text: 'What to do with rewards this week, linking what members buy with what the farm needs to sell. Each one opens a draft for you to check.' }),
+      insights.length ? h('div', { class: 'ops-brief' }, insights.map(function (x, i) {
+        return h('article', { class: 'ops-card' + (x.area === 'Farm ops' ? ' farm' : '') },
+          h('div', { class: 'ops-card-head' }, iconCircle(x.icon, 'soft'), h('span', { class: 'badge ' + (x.area === 'Farm ops' ? 'b-green' : 'b-amber'), text: (i + 1) + ' · ' + x.area })),
+          h('strong', { class: 'ops-title', text: x.title }),
+          h('p', { text: x.why }),
+          h('small', { class: 'ops-est', text: x.estimate }),
+          h('div', { class: 'ops-foot' },
+            h('small', { text: x.audience.length + ' member' + (x.audience.length === 1 ? '' : 's') }),
+            h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Review draft', onclick: function () { openNudgeComposer(x); } })));
+      })) : h('p', { class: 'empty', text: 'Nothing needs a nudge right now.' })));
 
-    // AI insight: opted-in customers within 30% of the next tier, grouped by language.
-    var close = members.filter(function (m) {
-      if (!m.s.next || !m.customer.consentMarketing) return false;
-      var span = m.s.next.minBunches - m.s.tier.minBunches;
-      return m.s.toNext > 0 && m.s.toNext <= Math.ceil(span * 0.3);
-    }).sort(function (a, b) { return a.s.toNext - b.s.toNext; });
-    function draftNudges() {
-      var groups = {};
-      close.forEach(function (m) {
-        var lang = TIER_NUDGE[m.customer.language] ? m.customer.language : 'en';
-        var key = m.s.next.key + '|' + lang;
-        (groups[key] = groups[key] || { next: m.s.next, lang: lang, ids: [] }).ids.push(m.customer.id);
-      });
-      var keys = Object.keys(groups);
-      keys.forEach(function (k) {
-        var g = groups[k];
-        S().campaigns.unshift({
-          id: M.nextId('CP'), kind: 'tier-nudge', productId: null, language: g.lang,
-          title: 'Almost ' + g.next.label + ' (' + ({ en: 'English', zh: '中文', ms: 'Melayu' })[g.lang] + ')',
-          message: TIER_NUDGE[g.lang](g.next), audience: g.ids, status: 'pending_approval',
-          createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
-        });
-      });
-      commit('campaign.submitted', 'tier-nudge', keys.length + ' tier nudge draft(s) added to Campaign Studio — waiting for admin approval.');
+    /* ---- 2. Members: AI search, tier chips, sort, pages ---- */
+    var st = rewardsAdminView.state || (rewardsAdminView.state = { q: '', parsed: null, tier: 'all', sort: 'bunches', page: 0 });
+    var PAGE = 20;
+    var counts = { all: members.length };
+    R.tiers.forEach(function (t) { counts[t.key] = members.filter(function (m) { return m.s.tier === t; }).length; });
+
+    var ask = h('input', { type: 'search', class: 'user-search ai-ask', placeholder: 'Ask AI — e.g. "Seedlings close to Sprout"', 'aria-label': 'Ask AI to find members', value: st.q });
+    var askForm = h('form', { class: 'ai-ask-form' }, iconCircle(ICONS.search, 'bare'), ask, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Ask' }));
+    askForm.addEventListener('submit', function (e) { e.preventDefault(); st.q = ask.value.trim(); st.parsed = st.q ? parseMemberQuery(st.q) : null; st.page = 0; drawMembers(); });
+    var examples = h('div', { class: 'ai-examples' }, h('small', { text: 'Try:' }), AI_EXAMPLES.map(function (ex) {
+      return h('button', { type: 'button', class: 'chip', text: ex, onclick: function () { ask.value = ex; st.q = ex; st.parsed = parseMemberQuery(ex); st.page = 0; drawMembers(); } });
+    }));
+    var tierChips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter by tier' });
+    var sortSel = h('select', { 'aria-label': 'Sort members', onchange: function (e) { st.sort = e.target.value; st.page = 0; drawMembers(); } },
+      [['bunches', 'Most bunches'], ['points', 'Most points'], ['close', 'Closest to next tier'], ['recent', 'Ordered most recently'], ['idle', 'Longest since last order']]
+        .map(function (o) { return h('option', { value: o[0], text: o[1], selected: st.sort === o[0] }); }));
+    var understood = h('div', { class: 'ai-read', 'aria-live': 'polite' });
+    var list = h('div');
+    var pager = h('div', { class: 'pager' });
+
+    function filtered() {
+      var f = st.parsed && st.parsed.understood ? st.parsed.filters : {};
+      var rows = members.filter(function (m) { return (st.tier === 'all' || m.s.tier.key === st.tier) && matchMember(m, f); });
+      var by = {
+        bunches: function (a, b) { return b.s.bunches - a.s.bunches; },
+        points: function (a, b) { return b.s.points - a.s.points; },
+        close: function (a, b) { return (a.s.next ? a.s.toNext : 1e9) - (b.s.next ? b.s.toNext : 1e9); },
+        recent: function (a, b) { return (a.daysSinceOrder === null ? 1e9 : a.daysSinceOrder) - (b.daysSinceOrder === null ? 1e9 : b.daysSinceOrder); },
+        idle: function (a, b) { return (b.daysSinceOrder === null ? -1 : b.daysSinceOrder) - (a.daysSinceOrder === null ? -1 : a.daysSinceOrder); }
+      }[st.sort];
+      return rows.sort(by);
     }
-    append(root, h('section', { class: 'panel rw-insight' },
-      h('div', { class: 'rw-tips-head' }, h('h2', { text: 'Close to the next tier' }), h('span', { class: 'badge b-blue', text: 'AI insight' })),
-      h('p', { class: 'hint', text: close.length
-        ? close.length + ' opted-in customer(s) are within reach of their next tier. A friendly nudge tends to bring the next order forward — the draft goes to Campaign Studio for approval, one message per language.'
-        : 'Nobody who opted in to messages is close to their next tier right now.' }),
-      close.length ? table([
-        { label: 'Customer', render: function (m) { return customerLabel(m.customer.id); } },
-        { label: 'Now', render: function (m) { return m.s.tier.emoji + ' ' + m.s.tier.label; } },
-        { label: 'To go', num: true, render: function (m) { return m.s.toNext + ' to ' + m.s.next.label; } },
-        { label: 'Language', render: function (m) { return (m.customer.language || 'en').toUpperCase(); } }
-      ], close) : null,
-      close.length ? h('div', { class: 'panel-foot' }, h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: '✨ Draft tier nudges', onclick: draftNudges })) : null));
-
-    append(root, panel('Members', null, table([
-      { label: 'Customer', render: function (m) { return customerLabel(m.customer.id); } },
-      { label: 'Tier', render: function (m) { return m.s.tier.emoji + ' ' + m.s.tier.label; } },
-      { label: 'Bunches · 12 mo', num: true, render: function (m) { return String(m.s.bunches); } },
-      { label: 'Next tier', render: function (m) { return m.s.next ? m.s.toNext + ' to ' + m.s.next.label : '—'; } },
-      { label: 'Points', num: true, render: function (m) { return String(m.s.points) + (m.s.pending ? ' (+' + m.s.pending + ' pending)' : ''); } },
-      { label: 'Open vouchers', num: true, render: function (m) { var n = M.rewards.vouchers(m.customer.id).filter(M.rewards.usable); return n.length ? n.length + ' · ' + money(n.reduce(function (s, v) { return s + v.valueCents; }, 0)) : '—'; } }
-    ], members.slice().sort(function (a, b) { return b.s.bunches - a.s.bunches; }))));
+    function drawMembers() {
+      tierChips.textContent = '';
+      [['all', 'All tiers']].concat(R.tiers.map(function (t) { return [t.key, t.label]; })).forEach(function (t) {
+        append(tierChips, h('button', { type: 'button', class: 'chip' + (st.tier === t[0] ? ' active' : ''), 'aria-pressed': String(st.tier === t[0]),
+          onclick: function () { st.tier = t[0]; st.page = 0; drawMembers(); } }, t[1] + ' ', h('span', { class: 'chip-count', text: String(counts[t[0]]) })));
+      });
+      var rows = filtered();
+      var reach = optedIn(rows);
+      understood.textContent = '';
+      if (st.parsed) {
+        append(understood, st.parsed.understood
+          ? [h('small', { text: 'AI read this as:' }), st.parsed.chips.map(function (c) { return h('span', { class: 'mini-chip', text: c }); })]
+          : h('small', { text: 'Couldn\'t match that to member filters — try one of the examples.' }),
+          h('button', { type: 'button', class: 'mini', text: 'Clear', onclick: function () { st.q = ''; st.parsed = null; ask.value = ''; st.page = 0; drawMembers(); } }));
+      }
+      var pages = Math.max(1, Math.ceil(rows.length / PAGE));
+      if (st.page >= pages) st.page = pages - 1;
+      var slice = rows.slice(st.page * PAGE, st.page * PAGE + PAGE);
+      list.textContent = '';
+      append(list, table([
+        { label: 'Customer', render: function (m) { return h('span', null, customerLabel(m.customer.id), h('br'), h('small', { text: (m.customer.language || 'en').toUpperCase() + (m.customer.consentMarketing ? ' · opted in' : ' · no consent') })); } },
+        { label: 'Tier', render: function (m) { return h('span', { class: 'rw-tier-cell' }, iconCircle(TIER_ICONS[m.s.tier.key], 'soft'), m.s.tier.label); } },
+        { label: 'Bunches · 12 mo', num: true, render: function (m) { return String(m.s.bunches); } },
+        { label: 'Next tier', render: function (m) { return m.s.next ? m.s.toNext + ' to ' + m.s.next.label : '—'; } },
+        { label: 'Points', num: true, render: function (m) { return String(m.s.points) + (m.s.pending ? ' (+' + m.s.pending + ')' : ''); } },
+        { label: 'Last order', render: function (m) { return m.daysSinceOrder === null ? '—' : m.daysSinceOrder === 0 ? 'Today' : m.daysSinceOrder + ' d ago'; } }
+      ], slice, 'No members match — clear the search or pick another tier.'));
+      pager.textContent = '';
+      append(pager,
+        h('small', { text: rows.length ? (st.page * PAGE + 1) + '–' + (st.page * PAGE + slice.length) + ' of ' + rows.length + ' member' + (rows.length === 1 ? '' : 's') : '0 members' }),
+        h('div', { class: 'actions' },
+          mini('← Prev', function () { st.page--; drawMembers(); }, { disabled: st.page === 0 }),
+          mini('Next →', function () { st.page++; drawMembers(); }, { disabled: st.page >= pages - 1 }),
+          h('button', { class: 'btn btn-sm btn-forest', type: 'button', disabled: !reach.length, text: '✨ Nudge these ' + reach.length,
+            onclick: function () {
+              var f = st.parsed && st.parsed.understood ? st.parsed.filters : {};
+              var kind = f.close ? 'tier' : f.inactiveDays ? 'winback' : (f.minPoints || f.redeemable) ? 'points' : 'general';
+              var next = kind === 'tier' ? (reach.filter(function (m) { return m.s.next; })[0] || {}).s : null;
+              if (kind === 'tier' && !next) kind = 'general';
+              openNudgeComposer({ kind: kind, ctx: kind === 'tier' ? { next: next.next } : {}, audience: rows, title: NUDGE_KIND_LABEL[kind] + (st.q ? ': ' + st.q : ''),
+                why: 'Members matching your search' + (st.tier !== 'all' ? ' in ' + st.tier : '') + '.', estimate: null });
+            } })));
+    }
+    drawMembers();
+    append(root, h('section', { class: 'panel' },
+      h('div', { class: 'rw-head' }, h('h2', { text: 'Members' }), h('span', { class: 'badge b-blue', text: 'AI search' })),
+      h('p', { class: 'hint', text: 'Ask in plain English, or filter by tier. Shows 20 at a time — in production the search runs on the server across every member.' }),
+      askForm, examples, understood,
+      h('div', { class: 'user-toolbar members-toolbar' }, tierChips, sortSel),
+      list, pager));
   }
 
   function groupBuyAdminView(root) {

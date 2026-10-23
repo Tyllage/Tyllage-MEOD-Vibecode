@@ -1243,8 +1243,25 @@
     return tips.sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
   }
   // Staff view: every customer's tier, bunches, points and how close they are to the next tier.
+  // One row per customer with what farm ops segments on: tier/points, when they last ordered,
+  // and which categories they buy (from their own orders — used for opted-in campaigns only).
   function rewardsMembers() {
-    return state.customers.map(function (c) { return { customer: c, s: rewardsSummary(c.id) }; });
+    var now = Date.now();
+    return state.customers.map(function (c) {
+      var last = 0, cats = {};
+      state.orders.forEach(function (o) {
+        if (o.customerId !== c.id || o.status === 'cancelled') return;
+        var t = new Date(o.createdAt).getTime();
+        if (t > last) last = t;
+        o.items.forEach(function (i) { var p = byId('products', i.productId); if (p) cats[p.category] = (cats[p.category] || 0) + i.qty; });
+      });
+      return {
+        customer: c, s: rewardsSummary(c.id),
+        lastOrderAt: last ? new Date(last).toISOString() : null,
+        daysSinceOrder: last ? Math.floor((now - last) / 864e5) : null,
+        categories: cats
+      };
+    });
   }
 
   // Commission ledger derived from orders so every figure is reproducible.

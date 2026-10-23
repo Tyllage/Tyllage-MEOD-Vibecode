@@ -1,6 +1,6 @@
 # Prototype Audit — Tyllage × MEOD Farm
 
-**Date:** 21 Oct 2026  **Scope:** static HTML/CSS/JS prototype (this repo)  **Status:** Stage 1 — discovery, mock inventory and prototype
+**Date:** 21 Oct 2026, updated 24 Oct 2026  **Scope:** static HTML/CSS/JS prototype (this repo)  **Status:** Stage 1 — discovery, mock inventory and prototype
 
 This audit checks the prototype against the MEOD proposal pack:
 
@@ -40,6 +40,19 @@ It also lists what must change before any real data is used.
 | Synthetic fixtures; no real phone numbers | `js/data.js` uses the +65 8000 00xx range and `.test` emails | ✅ |
 | Public site stays the storefront (no second checkout) | "Place order" creates a *pending payment* order; copy says payment is on MEOD Fresh | ✅ |
 | **Buy to Clear** (proposal §4.1): clearance listings, candidates, minimum-price guardrail, Surprise Harvest Bag pre-order, staff tools | `clearance.html`; Portal → Shop "Buy to Clear" section; Portal → **Buy to Clear** (staff/admin); `M.clearance` in `js/data.js` | ✅ Mock. Clearance price can't go below the minimum (admin-only field; staff see it read-only). Stale stock blocks ordering. Bag "Approve contents" reserves real stock or fails closed |
+| **Harvest-linked selling**: pre-order by harvest date, sell before sell-by | Harvest Planner (batches, pre-orders, Record harvest with photo grading), Harvest Rescue, Harvest allocation; customer Shop pre-order row and product dialog | ✅ Mock. Pre-orders don't take stock; a harvest serves them first. Grading is a leaf-colour check that staff confirm |
+| **Demand insight**: what to grow and harvest | Demand Radar (3-week supply vs demand per crop), harvest & pack list, Lost demand, Decision twin | ✅ Rule-based. Weekly sales history is mock MEOD Fresh data |
+| **Pricing with guardrails** | Price Advisor with Margin Guard and Promotion simulator | ✅ Floor = max(cost + 15% margin, minimum price); proposals need a different admin's approval; no surge pricing |
+| **B2B / trade growth** | B2B buyers (accounts, standing orders, leads) and Quotations (Quotation Copilot; accepted quotes become recurring demand) | ✅ Mock; trade price 80% of retail is illustrative |
+| **Outreach content** | Campaign Studio recommendations and restock reminders; Content studio; recipe ideas | ✅ Drafts only; a different person approves; consent re-checked at send |
+| **Loyalty**: Grow with MEOD | Customer Rewards page, cart voucher, Home card; staff Rewards ops brief, member search and nudge composer | ✅ Points come from orders; refunds reverse them. Rates mirror MEOD Fresh Store Rewards and need confirming (§6 Q11) |
+| **Farm visits → sales** | Experiences learning journeys, `visit.html` visitor shop, Visits page (funnel, capacity, AI reply drafts, re-invites) | ✅ Visit code built on GroupBuy; 5% of orders to the group's fund (illustrative) |
+| **Feedback intelligence** | Feedback page; product ratings and reviews with AI summaries | ✅ Grouped by theme and traced to a harvest batch or delivery round |
+| **Explainable AI** | AI-assisted pill on every AI feature; "Why?" panels; AI decision ledger; Ask Tyllage shows its working | ✅ All rule-based; no AI service is called |
+| **Staff Q&A** | Ask Tyllage (EN / 中文, typed or voice) | ⚠️ Pattern-matched questions only; says so when it can't answer |
+| **Weekly priorities** | Weekly briefing; SalesDesk teaser | ✅ |
+| **Pilot measurement** | Pilot metrics vs a recorded baseline, CSV export; Data import from Excel / CSV | ✅ Mock baseline. Import parses in the browser (see 3.12) |
+| Editable assumptions | Settings: AI assumptions and per-product unit costs with "used by" and a preview | ✅ Admin only |
 
 ## 2. Public site vs meod.com.sg
 
@@ -73,6 +86,11 @@ It also lists what must change before any real data is used.
 | 3.7 | Ticket summaries only redact numbers of 4+ digits | Low | Proper PII redaction before storing or sending to an LLM |
 | 3.8 | Profile photo upload is checked only on the client (type, 5 MB limit, re-encoded to a 192 px JPEG) | Medium (once real) | Server-side type sniffing, size limits, re-encoding and malware scanning |
 | 3.9 | Delivery tracking is simulated; the driver "Message" button opens MEOD's public WhatsApp | Info | Real provider via signed webhooks; never expose driver personal numbers |
+| 3.10 | Data import and visit QR codes load SheetJS (`xlsx` 0.18.5) and `qrcodejs` 1.0.0 from cdnjs without Subresource Integrity. SheetJS 0.18.5 has known issues when reading crafted files (CVE-2023-30533 prototype pollution; CVE-2024-22363 ReDoS) | Medium | Self-host a patched SheetJS (0.20.2+) or parse on the server; add `integrity` hashes; until then, only import files from trusted sources |
+| 3.11 | Ask Tyllage's voice input uses the browser's speech recognition; Chrome and Edge send the audio to Google's or Microsoft's servers | Medium (once real) | Tell staff; never dictate customer details; choose a speech service under MEOD's own data agreement |
+| 3.12 | Imported spreadsheets are parsed and stored in the browser | Medium (once real) | Server-side upload with type and size checks, row validation and an audit entry |
+| 3.13 | Four-eyes approvals (prices, campaigns, posts) and the AI decision ledger run and are stored client-side | Medium | Enforce approvals on the server; append-only ledger |
+| 3.14 | Ask Tyllage reads all demo records in the browser, not just what the user's role may see | Low (demo data only) | Scope answers to the user's role on the server; masked PII for staff |
 | ✅ | All user and data content is rendered with `textContent` (the `h()` helper). `innerHTML` only receives **static** icon and illustration markup defined in the code. | — | Keep this rule (see CONTRIBUTING) |
 | ✅ | Booking and profile forms validate input on the client | — | Validate again on the server |
 
@@ -91,6 +109,8 @@ It also lists what must change before any real data is used.
 - ✅ Portal tables turn into labelled cards under 640 px
 - ⚠️ Colour contrast not formally measured; gold on white is only used for buttons with dark text
 - ⚠️ The route map is decorative; the timeline next to it carries the same information as text
+- ✅ Ask Tyllage: `aria-live` chat log, labelled message box, mic and send buttons; typing works where voice isn't supported
+- ⚠️ The 21 Oct responsive sweep above predates the farm-ops, sales and AI screens added on 22–23 Oct. They were checked by hand at desktop and narrow widths while being built, but the full 320–1920 px sweep needs re-running
 
 ## 5. Verification performed (21 Oct 2026)
 
@@ -136,7 +156,13 @@ All checks were run manually in the browser against a local static server.
 - Public chat: "My veg arrived wilted" creates a ticket that appears in the staff inbox.
 - Booking form: an empty submit shows all four errors; a valid submit stores the booking and shows a reference.
 
-There's no automated test suite yet; that's a follow-up.
+**Ask Tyllage (23 Oct 2026)**
+
+- Suggestion chips return tables with "How I worked this out" and page links (e.g. *Which vegetables are selling slower this week?*, *How is Kai Lan doing?*).
+- Greetings ("yo") get a friendly prompt; unknown questions say they can't be answered from the records.
+- No console errors at desktop width or with the side panels stacked.
+
+The features added on 22–23 Oct (§7) were checked by hand while being built; they haven't had the full role-by-role pass above. There's no automated test suite yet; that's a follow-up.
 
 ## 6. Open questions for MEOD (from proposal §9)
 
@@ -150,8 +176,30 @@ There's no automated test suite yet; that's a follow-up.
 8. Who delivers: in-house drivers, a courier (e.g. Ninja Van, Lalamove) or Shopify fulfilment? This decides the real source behind the mock delivery tracking (`trackingFor()` in `js/data.js`).
 9. Real Farm & More product names, prices and the current delivery schedule
 10. A S$12 bag plus S$8 delivery is S$20, which weakens the "worth at least S$18" message. Should bags get free delivery, be add-ons to a normal order, or use pickup points?
+11. Real MEOD Fresh Store Rewards rates (points per S$1, redemption value) and whether growth-stage tiers can sit on top of them
+12. Unit costs (growing, packaging, handling), the minimum margin, the trade price and the shelf life per category used by Margin Guard and Harvest Rescue
+13. Typical sow-to-harvest days per crop, and how much of a batch to open to pre-orders
+14. Learning-journey pricing, guides per group, session capacity and the share of visit orders paid to a group's fund
+15. Whether staff may use browser voice input, given where the audio is sent (3.11)
 
 ## 7. Changelog
+
+- **23 Oct 2026, explainable AI and planning.**
+  - "Why?" panels on Demand Radar, Price Advisor, Campaign Advisor and Harvest allocation, and an **AI decision ledger** page.
+  - **Quotations** (Quotation Copilot) with recurring commitments that feed Demand Radar and Harvest allocation.
+  - **Decision twin**: harvest and demand sliders, a lost buyer, a failed batch and stress tests comparing five responses.
+  - **Ask Tyllage**: EN / 中文 questions, typed or spoken, answered from the records. Restyled as a chat like the customer's Ask MEOD, with side panels and a friendly reply to greetings.
+  - **Lost demand**, **Harvest allocation**, **Promotion simulator**, **Data import** (Excel / CSV) and **Pilot metrics**; substitute suggestions, learning-journey packages and visit re-invites.
+  - Layout fixes: equal-size action pills (Lost demand, Price Advisor, Campaign Advisor), aligned card rows, stat cards and customer Home cards; the Decision twin panel no longer repeats the page title.
+- **22–23 Oct 2026, farm ops, sales and customer growth.**
+  - **Harvest Planner** with pre-orders by harvest date, **photo grading** on Record harvest, and **Harvest Rescue** with sell-by dates.
+  - **Demand Radar** with a daily harvest & pack list; **Weekly briefing**.
+  - **B2B buyers**, **Price Advisor with Margin Guard**, **Content studio**, **Feedback intelligence**, and Campaign Studio recommendations and restock reminders.
+  - **Grow with MEOD rewards** for customers, and an AI ops brief, member search and nudge composer for staff.
+  - **Group learning journeys**, the `visit.html` visitor shop, the Visits page, AI-drafted enquiry replies and visit capacity.
+  - Ratings, reviews and AI review summaries; recipe ideas; editable AI settings and unit costs; a leader finder for group buys.
+  - Staff sidebar grouped into Today, Farm ops, Sales, Customers and Admin. One **AI-assisted** pill on every AI feature.
+  - Tables wider than their panel switch to labelled cards at any width; fixes for 320 px phones.
 
 - **22 Oct 2026, Buy to Clear.**
   - Added clearance listings, candidates (high stock vs. low 14-day sales, plain-English reason) and a minimum-price guardrail to `js/data.js`, seeded additively via `migrate()`.

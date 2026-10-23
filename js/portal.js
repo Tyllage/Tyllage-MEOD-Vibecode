@@ -1177,6 +1177,116 @@
     ], done, 'No harvests recorded yet.')));
   }
 
+  /* ---------------- Price Advisor + Margin Guard (staff + admin) ----------------
+   * Suggestions come from Demand Radar and Harvest Rescue; every one shows its Margin Guard
+   * result. Staff send a suggestion for approval; an admin who didn't propose it approves,
+   * which turns a discount into a Buy to Clear listing. A checker lets anyone try a price. */
+  var PRICE_KIND = { discount: ['Discount', 'amber'], bundle: ['Bundle', 'green'], hold: ['Hold price', 'blue'] };
+  function guardBox(g, label) {
+    return h('div', { class: 'guard ' + (g.ok ? 'pass' : 'block') },
+      h('strong', { text: (g.ok ? '✓ Passes Margin Guard' : '✗ Blocked by Margin Guard') + (label ? ' · ' + label : '') }),
+      h('small', { text: g.ok
+        ? money(g.marginCents) + ' margin per unit (' + g.marginPct + '%) after ' + money(g.cost.totalCents) + ' cost · floor ' + money(g.floorCents)
+        : g.reasons.join('; ') + '. Lowest allowed: ' + money(g.floorCents) + (g.maxDiscountPct != null ? ' (' + g.maxDiscountPct + '% off)' : '') + '.' }));
+  }
+  function pricingView(root) {
+    var sugs = M.pricing.suggestions();
+    var proposals = S().priceProposals || [];
+    var pending = proposals.filter(function (p) { return p.status === 'pending'; });
+    var canApprove = M.auth.can(session, 'pricing.approve');
+    var blocked = sugs.filter(function (s) { return s.kind !== 'hold' && !s.guard.ok; }).length;
+    var fresh = S().products.filter(function (p) { return p.meodGrown && p.category !== 'farm-more' && !p.bagOffer; });
+    var avgMargin = Math.round(fresh.reduce(function (s, p) { return s + M.pricing.guard(p.id, p.priceCents).marginPct; }, 0) / (fresh.length || 1));
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Suggestions', String(sugs.length), sugs.filter(function (s) { return s.kind !== 'hold'; }).length + ' price changes · ' + sugs.filter(function (s) { return s.kind === 'hold'; }).length + ' holds'),
+      kpi('Blocked by Margin Guard', String(blocked), 'would go below cost or the minimum price'),
+      kpi('Waiting for approval', String(pending.length), canApprove ? 'you can approve others\' proposals' : 'an admin approves'),
+      kpi('Average margin', avgMargin + '%', 'fresh produce at normal prices (illustrative costs)')));
+
+    /* ---- Suggestions ---- */
+    function sendForApproval(s) {
+      var r = M.pricing.propose(s, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('pricing.proposed', r.id, s.product.title + (s.kind === 'bundle' ? ' + ' + s.partner.title + ' bundle' : '') + ' at ' + money(s.priceCents) + ' sent for approval.');
+    }
+    append(root, panel(aiTitle('Price suggestions'), 'From Demand Radar and Harvest Rescue. Every price is checked by Margin Guard first; nothing changes until an admin who didn\'t propose it approves.',
+      sugs.length ? h('div', { class: 'ops-brief' }, sugs.map(function (s) {
+        var k = PRICE_KIND[s.kind];
+        var pendingFor = pending.filter(function (pp) { return pp.productId === s.product.id && pp.kind === s.kind; })[0];
+        var priceLine = s.kind === 'hold'
+          ? h('div', { class: 'price-line' }, h('strong', { text: money(s.priceCents) }), h('small', { text: 'keep normal price' }))
+          : h('div', { class: 'price-line' },
+              h('span', { class: 'price-was', text: money(s.fullCents || s.product.priceCents) }), h('strong', { text: money(s.priceCents) }), h('span', { class: 'discount-badge', text: '−' + s.pct + '%' }));
+        var act = s.kind === 'hold' ? h('small', { class: 'hint', text: 'No action needed' })
+          : pendingFor ? h('small', { class: 'pending-note', text: 'Waiting for approval' })
+          : !s.guard.ok ? h('a', { class: 'mini', href: '#rescue', text: 'See rescue options' })
+          : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send for approval', onclick: function () { sendForApproval(s); } });
+        return h('article', { class: 'ops-card' + (s.kind === 'hold' ? '' : s.guard.ok ? ' farm' : ' blocked') },
+          h('div', { class: 'ops-card-head' }, h('span', { class: 'rw-tier-cell' }, thumbMini(s.product), s.partner ? thumbMini(s.partner) : null), badge(k[0], k[1])),
+          h('strong', { class: 'ops-title', text: s.kind === 'bundle' ? s.product.title + ' + ' + s.partner.title + ' bundle' : s.product.title }),
+          priceLine,
+          h('p', { text: s.reason }),
+          s.kind !== 'hold' ? guardBox(s.guard) : null,
+          h('small', { class: 'ops-est', text: s.effect }),
+          h('div', { class: 'ops-foot' }, h('small', { text: s.qty && s.kind !== 'hold' ? 'for ' + s.qty + ' unit(s)' : '' }), act));
+      })) : h('p', { class: 'empty', text: 'No price changes suggested right now.' })));
+
+    /* ---- Proposals ---- */
+    function decide(pp, approve) {
+      var r = M.pricing.decide(pp.id, approve, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      var p = M.byId('products', pp.productId);
+      commit('pricing.' + (approve ? 'approved' : 'rejected'), pp.id, approve
+        ? (pp.kind === 'discount' ? p.title + ' listed on Buy to Clear at ' + money(pp.toCents) + '.' : 'Bundle approved — publish it in MEOD Fresh.')
+        : 'Proposal for ' + p.title + ' rejected.');
+    }
+    append(root, panel('Price proposals', 'Approved discounts become Buy to Clear listings (checked again by Margin Guard at that moment). Approved bundles are recorded for MEOD Fresh to publish.', table([
+      { label: 'Proposal', render: function (pp) {
+        var p = M.byId('products', pp.productId), q = pp.partnerId ? M.byId('products', pp.partnerId) : null;
+        return h('span', null, h('strong', { text: p.title + (q ? ' + ' + q.title : '') }), h('br'), h('small', { text: pp.reason }));
+      } },
+      { label: 'Type', render: function (pp) { var k = PRICE_KIND[pp.kind] || [pp.kind, 'grey']; return badge(k[0], k[1]); } },
+      { label: 'Price', render: function (pp) { return h('span', null, h('span', { class: 'price-was', text: money(pp.fromCents) }), ' → ', h('strong', { text: money(pp.toCents) })); } },
+      { label: 'Qty', num: true, render: function (pp) { return String(pp.qty); } },
+      { label: 'By', render: function (pp) { return h('span', null, pp.createdBy, pp.decidedBy ? [h('br'), h('small', { text: pp.status + ' by ' + pp.decidedBy })] : null); } },
+      { label: 'Status', render: function (pp) { return statusBadge(pp.status); } },
+      { label: 'Actions', render: function (pp) {
+        if (pp.status !== 'pending') return pp.listingId ? h('a', { class: 'mini', href: '#clearance', text: 'View listing' }) : '—';
+        if (!canApprove) return h('small', { text: 'Waiting for admin' });
+        var own = pp.createdBy === session.email;
+        return h('div', { class: 'actions' },
+          mini('Approve', function () { decide(pp, true); }, { disabled: own, title: own ? 'You can\'t approve your own proposal' : null }),
+          mini('Reject', function () { decide(pp, false); }, { danger: true }));
+      } }
+    ], proposals, 'No proposals yet — send a suggestion above for approval.')));
+
+    /* ---- Margin Guard checker ---- */
+    var sel = h('select', { 'aria-label': 'Product' }, S().products.filter(function (p) { return !p.bagOffer; }).map(function (p) { return h('option', { value: p.id, text: p.title + ' (' + money(p.priceCents) + ')' }); }));
+    var priceIn = h('input', { type: 'number', min: 0, step: '0.05', 'aria-label': 'Price to check (S$)' });
+    var out = h('div', { class: 'guard-out', 'aria-live': 'polite' });
+    function check() {
+      var p = M.byId('products', sel.value);
+      var c = Math.round((parseFloat(priceIn.value) || 0) * 100);
+      var g = M.pricing.guard(p.id, c);
+      out.textContent = '';
+      append(out,
+        guardBox(g, money(c) + (p.priceCents ? ' (' + Math.round((1 - c / p.priceCents) * 100) + '% off)' : '')),
+        h('ul', { class: 'guard-costs' },
+          h('li', null, h('span', { text: 'Growing' }), h('span', { text: money(g.cost.growCents) })),
+          h('li', null, h('span', { text: 'Packaging' }), h('span', { text: money(g.cost.packCents) })),
+          h('li', null, h('span', { text: 'Handling' }), h('span', { text: money(g.cost.handleCents) })),
+          h('li', { class: 'tot' }, h('span', { text: 'Unit cost' }), h('span', { text: money(g.cost.totalCents) })),
+          h('li', null, h('span', { text: 'Floor (' + (g.floorBy === 'cost' ? 'cost + ' + Math.round(M.RULES.minMarginRate * 100) + '% margin' : '60% minimum price') + ')' }), h('span', { text: money(g.floorCents) }))));
+    }
+    sel.addEventListener('change', function () { priceIn.value = (M.byId('products', sel.value).priceCents * 0.8 / 100).toFixed(2); check(); });
+    priceIn.addEventListener('input', check);
+    priceIn.value = (M.byId('products', sel.value).priceCents * 0.8 / 100).toFixed(2);
+    check();
+    append(root, panel('Margin Guard checker', 'Try any price before proposing it. Costs are illustrative — MEOD would enter real growing, packaging and handling costs.',
+      h('div', { class: 'form-grid guard-form' }, h('label', null, 'Product', sel), h('label', null, 'Price (S$)', priceIn)), out));
+  }
+
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
@@ -1508,6 +1618,8 @@
       push(75 + Math.min(10, enquiries.length * 2), 'Sales', ICONS.users, enquiries.length + ' farm-visit enquiry(s) waiting for a reply (' + pax + ' guests)',
         'Oldest: ' + (oldest.org || oldest.name) + ', ' + ago(oldest.createdAt) + '. AI reply drafts are ready to check.', { label: 'Visits', href: '#visits' });
     }
+    var priceWaiting = (S().priceProposals || []).filter(function (pp) { return pp.status === 'pending'; });
+    if (priceWaiting.length) push(67, 'Sales', ICONS.tag, priceWaiting.length + ' price change(s) waiting for approval', 'Checked by Margin Guard. Approving a discount lists it on Buy to Clear.', { label: 'Price Advisor', href: '#pricing' });
     var toApprove = S().campaigns.filter(function (c) { return c.status === 'pending_approval'; });
     if (toApprove.length) push(65, 'Sales', ICONS.chat, toApprove.length + ' campaign(s) waiting for approval', 'Drafts from restock reminders, rewards nudges and Demand Radar. Nothing sends until an admin approves.', { label: 'Campaigns', href: '#campaigns' });
     var tickets = S().tickets.filter(function (t) { return t.status === 'open'; });
@@ -2579,6 +2691,7 @@
     rewards: { label: 'Rewards', tone: 'amber' },
     b2b: { label: 'B2B', tone: 'blue' },
     rescue: { label: 'Harvest Rescue', tone: 'amber' },
+    pricing: { label: 'Pricing', tone: 'amber' },
     briefing: { label: 'Briefing', tone: 'green' }
   };
   var AUDIT_LABELS = {
@@ -2595,7 +2708,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -4238,6 +4351,7 @@
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
+      { id: 'pricing', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },
       { id: 'rewards', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },

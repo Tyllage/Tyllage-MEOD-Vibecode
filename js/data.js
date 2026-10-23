@@ -26,6 +26,7 @@
     clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
     clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
+    minMarginRate: 0.15,            // Margin Guard: keep at least 15% margin after unit cost (illustrative)
     // Grow with MEOD rewards. Points per dollar and redeem-for-discount mirror MEOD Fresh's
     // existing Store Rewards (Smile.io) — real rates to be confirmed. Tiers, anti-waste
     // bonuses and tier perks are Tyllage additions. All values illustrative.
@@ -683,6 +684,22 @@
         });
       });
       s.migrations.rescueV1 = true;
+    }
+    if (!s.migrations.pricingV1) {
+      // Illustrative unit costs for Margin Guard (MEOD to enter real figures): growing cost as a
+      // share of price, plus packaging and handling per unit. Plus one pending price proposal
+      // from sales staff so the admin approval step can be shown.
+      s.costs = {};
+      s.products.forEach(function (p) {
+        var growShare = p.category === 'farm-more' ? 0.45 : p.category === 'fungi' ? 0.4 : 0.34;
+        s.costs[p.id] = { growCents: Math.round(p.priceCents * growShare), packCents: p.category === 'farm-more' ? 45 : 22, handleCents: 30 };
+      });
+      var basil = s.products.filter(function (x) { return x.title === 'Sweet Basil'; })[0];
+      s.seq += 1;
+      s.priceProposals = basil ? [{ id: 'PP-' + s.seq, kind: 'discount', productId: basil.id, fromCents: basil.priceCents, toCents: Math.round(basil.priceCents * 0.8),
+        qty: 12, untilKey: bagDayKey(new Date(Date.now() + 4 * 864e5)), reason: 'Sweet Basil supply is well above demand (demand down 21%).', status: 'pending',
+        createdBy: 'sales@meod.test', createdAt: new Date(Date.now() - 3 * 36e5).toISOString(), decidedBy: null }] : [];
+      s.migrations.pricingV1 = true;
     }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
@@ -1392,6 +1409,120 @@
     });
   }
 
+  /* ---------- Tyllage Price Advisor + Margin Guard ----------
+   * Margin Guard: every suggested price is checked against a floor — the higher of MEOD's
+   * minimum price rule (60% of normal) and unit cost plus the minimum margin. Price Advisor:
+   * rule-based suggestions from Demand Radar and Harvest Rescue (discount surplus, bundle a
+   * surplus crop with a rising one, hold the price on short crops). Nothing changes a price
+   * by itself: staff propose, an admin who didn't propose approves. Costs are illustrative.
+   */
+  function unitCost(productId) {
+    var c = (state.costs || {})[productId];
+    if (!c) {
+      var p = byId('products', productId), grow = p ? Math.round(p.priceCents * 0.35) : 0;
+      return { growCents: grow, packCents: 22, handleCents: 30, totalCents: grow + 52 };
+    }
+    return { growCents: c.growCents, packCents: c.packCents, handleCents: c.handleCents, totalCents: c.growCents + c.packCents + c.handleCents };
+  }
+  function marginGuard(productId, priceCents, qty) {
+    qty = qty || 1;
+    var p = byId('products', productId);
+    var cost = unitCost(productId);
+    var costFloor = Math.ceil(cost.totalCents / (1 - RULES.minMarginRate));
+    var ruleFloor = p ? Math.round(p.priceCents * RULES.clearanceDefaultMinRate) : 0;
+    var floor = Math.max(costFloor, ruleFloor);
+    var margin = priceCents - cost.totalCents;
+    var reasons = [];
+    if (priceCents < ruleFloor) reasons.push('below MEOD\'s minimum price (' + money(ruleFloor) + ', 60% of normal)');
+    if (priceCents < costFloor) reasons.push('margin under ' + Math.round(RULES.minMarginRate * 100) + '% after the ' + money(cost.totalCents) + ' unit cost');
+    return {
+      ok: reasons.length === 0, priceCents: priceCents, cost: cost, marginCents: margin, marginPct: priceCents ? Math.round(margin / priceCents * 100) : 0,
+      floorCents: floor, floorBy: costFloor >= ruleFloor ? 'cost' : 'rule', maxDiscountPct: p ? Math.max(0, Math.floor((1 - floor / p.priceCents) * 100)) : 0,
+      reasons: reasons, totalMarginCents: margin * qty
+    };
+  }
+  function shortDayLabel(key) { return parseDayKey(key).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function priceSuggestions() {
+    var out = [];
+    var crops = radarCrops();
+    var rescue = rescueBatches();
+    var weeks = RADAR_WEEKS;
+    // 1. Surplus crops: a discount sized to the gap, checked by Margin Guard.
+    crops.filter(function (c) { return c.status === 'surplus'; }).forEach(function (c) {
+      var p = c.product, share = c.supply ? c.gap / c.supply : 0;
+      var pct = share > 0.4 ? 30 : share > 0.25 ? 20 : 10;
+      var price = Math.round(p.priceCents * (1 - pct / 100));
+      var extra = Math.round(c.weekly * weeks * (pct / 100) * 2);
+      out.push({ kind: 'discount', product: p, pct: pct, priceCents: price, qty: Math.min(c.gap, Math.max(5, extra * 2)), guard: marginGuard(p.id, price, c.gap), score: 60 + pct,
+        reason: 'About ' + c.gap + ' more ' + p.title + ' than expected demand over ' + weeks + ' weeks' + (c.trendPct < -5 ? ', and demand is down ' + Math.abs(c.trendPct) + '%' : '') + '.',
+        effect: 'Rough estimate: ' + pct + '% off could sell about ' + extra + ' extra units (assumes each 10% off lifts sales ~20%).' });
+    });
+    // 2. At-risk harvests (Harvest Rescue): a deeper discount, which often hits the floor.
+    rescue.filter(function (x) { return x.level === 'urgent' || x.level === 'soon'; }).forEach(function (x) {
+      var p = x.product, pct = x.level === 'urgent' ? 45 : 30;
+      if (out.some(function (o) { return o.product.id === p.id && o.kind === 'discount'; })) return;
+      var price = Math.round(p.priceCents * (1 - pct / 100));
+      var g = marginGuard(p.id, price, x.unsold);
+      out.push({ kind: 'discount', product: p, pct: pct, priceCents: price, qty: x.unlisted || x.unsold, guard: g, score: 85, untilKey: x.batch.sellBy,
+        reason: x.unsold + ' unsold from the ' + shortDayLabel(x.batch.harvestDate) + ' harvest; sell by ' + shortDayLabel(x.batch.sellBy) + '.',
+        effect: g.ok ? 'Clears stock before it loses value.' : 'Margin Guard blocks ' + pct + '% off — the most it allows is ' + g.maxDiscountPct + '% (' + money(g.floorCents) + '). Offer it to trade buyers instead, or list at the floor.' });
+    });
+    // 3. Bundle: biggest surplus crop + fastest-rising crop in stock, 10% off the pair.
+    var sur = crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; })[0];
+    var rise = crops.filter(function (c) { return c.trendPct > 10 && c.stockKnown && c.stock > 0 && (!sur || c.product.id !== sur.product.id); })
+      .sort(function (a, b) { return b.trendPct - a.trendPct; })[0];
+    if (sur && rise) {
+      var full = sur.product.priceCents + rise.product.priceCents, bundle = Math.round(full * 0.9);
+      var cost = unitCost(sur.product.id).totalCents + unitCost(rise.product.id).totalCents;
+      var floorB = Math.max(Math.ceil(cost / (1 - RULES.minMarginRate)), Math.round(full * RULES.clearanceDefaultMinRate));
+      var gB = { ok: bundle >= floorB, priceCents: bundle, cost: { totalCents: cost }, marginCents: bundle - cost, marginPct: Math.round((bundle - cost) / bundle * 100),
+        floorCents: floorB, maxDiscountPct: Math.max(0, Math.floor((1 - floorB / full) * 100)), reasons: bundle >= floorB ? [] : ['below the bundle floor'] };
+      out.push({ kind: 'bundle', product: sur.product, partner: rise.product, pct: 10, priceCents: bundle, fullCents: full, qty: 20, guard: gB, score: 72,
+        reason: 'Pairs surplus ' + sur.product.title + ' with ' + rise.product.title + ', whose demand is up ' + rise.trendPct + '% — the popular item carries the slow one.',
+        effect: 'Moves ' + sur.product.title + ' without discounting it on its own.' });
+    }
+    // 4. Short crops: hold the price and pause promotions — no surge pricing.
+    crops.filter(function (c) { return c.status === 'short'; }).slice(0, 3).forEach(function (c) {
+      out.push({ kind: 'hold', product: c.product, pct: 0, priceCents: c.product.priceCents, guard: marginGuard(c.product.id, c.product.priceCents, 1), score: 40,
+        reason: 'Demand is about ' + Math.abs(c.gap) + ' units above supply' + (c.trendPct > 5 ? ' (up ' + c.trendPct + '%)' : '') + '.',
+        effect: 'Keep the normal price and pause discounts. Tyllage never raises prices on short supply.' });
+    });
+    return out.sort(function (a, b) { return b.score - a.score; });
+  }
+  function proposePrice(sug, actor) {
+    if (sug.kind === 'hold') return { ok: false, error: 'Nothing to approve — this keeps the normal price.' };
+    if (!sug.guard.ok) return { ok: false, error: 'Margin Guard blocks this price: ' + sug.guard.reasons.join('; ') + '.' };
+    state.priceProposals = state.priceProposals || [];
+    var dupe = state.priceProposals.some(function (pp) { return pp.status === 'pending' && pp.productId === sug.product.id && pp.kind === sug.kind; });
+    if (dupe) return { ok: false, error: 'There\'s already a pending proposal for ' + sug.product.title + '.' };
+    var id = nextId('PP');
+    state.priceProposals.unshift({ id: id, kind: sug.kind, productId: sug.product.id, partnerId: sug.partner ? sug.partner.id : null, fromCents: sug.fullCents || sug.product.priceCents,
+      toCents: sug.priceCents, qty: sug.qty || 10, untilKey: sug.untilKey || bagDayKey(new Date(Date.now() + 5 * 864e5)), reason: sug.reason, status: 'pending',
+      createdBy: actor, createdAt: new Date().toISOString(), decidedBy: null });
+    return { ok: true, id: id };
+  }
+  // Approve or reject. An approved single-item discount becomes a Buy to Clear listing (re-checked
+  // by Margin Guard at that moment); bundles are recorded as approved for MEOD Fresh to publish.
+  function decidePrice(id, approve, actor) {
+    var pp = (state.priceProposals || []).filter(function (x) { return x.id === id; })[0];
+    if (!pp || pp.status !== 'pending') return { ok: false, error: 'That proposal is no longer pending.' };
+    if (pp.createdBy === actor) return { ok: false, error: 'Someone other than the proposer must approve it.' };
+    if (!approve) { pp.status = 'rejected'; pp.decidedBy = actor; pp.decidedAt = new Date().toISOString(); return { ok: true, proposal: pp }; }
+    if (pp.kind === 'discount') {
+      var g = marginGuard(pp.productId, pp.toCents, pp.qty);
+      if (!g.ok) return { ok: false, error: 'Margin Guard now blocks this price: ' + g.reasons.join('; ') + '.' };
+      var p = byId('products', pp.productId);
+      var qty = Math.min(pp.qty, p ? p.stock.qty : 0);
+      if (!(qty > 0)) return { ok: false, error: 'No stock left to list.' };
+      var r = clearanceCreate({ productId: pp.productId, qty: qty, clearancePriceCents: pp.toCents, minPriceCents: g.floorCents, reason: 'surplus', availableUntil: pp.untilKey }, actor);
+      if (!r.ok) return r;
+      pp.listingId = r.id;
+      pp.qty = qty;
+    }
+    pp.status = 'approved'; pp.decidedBy = actor; pp.decidedAt = new Date().toISOString();
+    return { ok: true, proposal: pp };
+  }
+
   /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
    * Each recorded harvest gets a sell-by date (harvest day + the category's shelf days). Unsold
    * units are estimated first-in-first-out: what went into stock, minus regular sales of that
@@ -1921,6 +2052,7 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },
     b2b: {
       TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,

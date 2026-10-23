@@ -49,7 +49,7 @@
   var STATUS_TONE = {
     pending_payment: 'amber', paid: 'blue', fulfilled: 'green', refunded: 'red', cancelled: 'grey',
     open: 'amber', resolved: 'green', new: 'amber', confirmed: 'green', declined: 'grey', closed: 'grey',
-    draft: 'grey', pending_approval: 'amber', approved: 'blue', sent: 'green', rejected: 'red',
+    draft: 'grey', pending_approval: 'amber', approved: 'blue', sent: 'green', rejected: 'red', posted: 'green',
     accrued: 'green', pending: 'amber', reversed: 'red', void: 'grey', active: 'green', ended: 'grey',
     planned: 'grey', growing: 'blue', due: 'amber', harvested: 'green'
   };
@@ -1456,6 +1456,157 @@
     ], all.slice(0, 40), 'No feedback yet.')));
   }
 
+  /* ---------------- Content studio (staff + admin) ----------------
+   * Weekly post ideas for Instagram, Facebook and the WhatsApp channel, built from Demand
+   * Radar, Harvest Planner, recipes, Feedback praise and a "support local / 2035" library.
+   * Staff edit a caption and plan it for a day; someone else approves it; staff copy it into
+   * the app and mark it posted. Nothing is posted automatically. */
+  function csDay(key) { return M.clearance.parseDayKey(key).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function csTypeBadge(type) { var t = M.content.TYPES[type]; return badge(t.label, t.tone); }
+  function csChecks(list) {
+    return h('ul', { class: 'cs-checks' }, list.map(function (k) {
+      return h('li', { class: k.warn ? 'warn' : k.ok ? 'ok' : 'bad', text: (k.warn ? '! ' : k.ok ? '✓ ' : '✗ ') + k.label });
+    }));
+  }
+  function csCopy(caption, tags) {
+    var text = caption + (tags && tags.length ? '\n\n' + tags.join(' ') : '');
+    var done = function () { toast('Caption copied — paste it into the app.'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { toast('Couldn\'t copy — select the text instead.'); });
+    else toast('Couldn\'t copy — select the text instead.');
+  }
+  // Editor for a new idea (x) or an existing planned post (post).
+  function openPostEditor(x, post) {
+    document.querySelectorAll('.cs-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var src = post || x;
+    var body = h('textarea', { rows: 11, maxlength: 2200, 'aria-label': 'Caption' }); body.value = src.caption;
+    var tags = h('input', { 'aria-label': 'Hashtags' }); tags.value = (src.tags || []).join(' ');
+    var day = h('select', { 'aria-label': 'Day' });
+    for (var i = 0; i < 7; i++) {
+      var k = M.clearance.dayKey(new Date(Date.now() + i * 864e5));
+      day.appendChild(h('option', { value: k, text: csDay(k) + (i === 0 ? ' (today)' : '') }));
+    }
+    day.value = post ? post.dayKey : x.dayKey;
+    var checks = h('div', { 'aria-live': 'polite' });
+    function recheck() { checks.textContent = ''; append(checks, csChecks(M.content.check(body.value, src))); }
+    body.addEventListener('input', recheck); recheck();
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog cs-dialog', 'aria-labelledby': 'cs-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    function save() {
+      var tagList = tags.value.split(/\s+/).filter(Boolean).map(function (t) { return t.charAt(0) === '#' ? t : '#' + t; });
+      if (!body.value.trim()) { toast('Write a caption first.'); return; }
+      if (post) {
+        var r = M.content.update(post.id, body.value, day.value);
+        if (!r.ok) { toast(r.error); return; }
+        post.tags = tagList;
+        closeDialog();
+        commit('content.edited', post.id, 'Post updated' + (r.post.status === 'pending' ? ' — it needs approval again.' : '.'));
+      } else {
+        var r2 = M.content.plan(Object.assign({}, x, { tags: tagList }), body.value, day.value, session.email);
+        closeDialog();
+        commit('content.planned', r2.id, '"' + x.title + '" planned for ' + csDay(day.value) + ' — waiting for approval.');
+      }
+    }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'cs-title', text: post ? 'Edit post' : src.title }), aiPill(), h('small', { class: 'ai-note', text: 'You edit, someone else approves' })),
+        h('div', { class: 'cs-editor' },
+          src.image ? h('img', { class: 'cs-editor-img', src: src.image, alt: '' }) : null,
+          h('div', { class: 'rd-form' },
+            h('div', { class: 'rd-controls' }, h('label', null, 'Post on', day), h('label', null, 'Where', h('input', { value: M.content.CHANNELS[src.channel], readonly: true }))),
+            h('label', null, 'Caption', body),
+            src.channel === 'whatsapp' ? null : h('label', null, 'Hashtags', tags),
+            checks,
+            x && x.photoTip ? h('small', { class: 'pf-hint', text: '📷 ' + x.photoTip }) : null))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: post ? 'Save changes' : 'Send for approval', onclick: save })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+
+  function contentView(root) {
+    var ideas = M.content.ideas();
+    var plan = S().contentPlan || [];
+    var week = M.content.upcoming(7);
+    var pending = plan.filter(function (c) { return c.status === 'pending'; });
+    var monthAgo = Date.now() - 30 * 864e5;
+    var posted = plan.filter(function (c) { return c.status === 'posted' && new Date(c.postedAt).getTime() > monthAgo; });
+    var canApprove = M.auth.can(session, 'campaigns.approve');
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Post ideas', String(ideas.length), ideas.filter(function (x) { return !x.planned; }).length + ' not planned yet'),
+      kpi('Planned · 7 days', String(week.filter(function (c) { return c.status !== 'posted'; }).length), week.length ? 'next: ' + csDay(week.filter(function (c) { return c.status !== 'posted'; }).concat(week)[0].dayKey) : 'nothing planned yet'),
+      kpi('Waiting for approval', String(pending.length), canApprove ? 'you can approve others\' posts' : 'an admin approves'),
+      kpi('Posted · 30 days', String(posted.length), 'Instagram, Facebook and WhatsApp')));
+
+    /* ---- Ideas ---- */
+    append(root, panel(aiTitle('Post ideas for this week'), 'Built from what the farm has right now: crops to push from Demand Radar, batches growing in the Harvest Planner, recipes, customer praise and the support-local library. Edit any caption before planning it.',
+      h('div', { class: 'cs-ideas' }, ideas.map(function (x) {
+        var preview = x.caption.length > 210 ? x.caption.slice(0, 200).replace(/\s+\S*$/, '') + '…' : x.caption;
+        return h('article', { class: 'cs-card' },
+          h('div', { class: 'cs-img' }, h('img', { src: x.image, alt: '', loading: 'lazy' }), h('span', { class: 'cs-when', text: csDay(x.dayKey) + ' · ' + x.time })),
+          h('div', { class: 'cs-body' },
+            h('div', { class: 'cs-tags' }, csTypeBadge(x.type), h('small', { text: M.content.CHANNELS[x.channel] })),
+            h('strong', { class: 'ops-title', text: x.title }),
+            h('p', { class: 'cs-caption', text: preview }),
+            x.tags.length ? h('small', { class: 'cs-hashtags', text: x.tags.join(' ') }) : null,
+            h('small', { class: 'cs-why', text: x.why }),
+            csChecks(x.checks),
+            h('div', { class: 'ops-foot cs-foot' },
+              x.planned ? h('small', { class: 'pending-note', text: (x.planned.status === 'posted' ? 'Posted ' : 'Planned for ') + csDay(x.planned.dayKey) })
+                : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Edit & plan', onclick: function () { openPostEditor(x); } }),
+              mini('Copy', function () { csCopy(x.caption, x.tags); }))));
+      }))));
+
+    /* ---- Week plan ---- */
+    function approve(c) { var r = M.content.approve(c.id, session.email); if (!r.ok) { toast(r.error); return; } commit('content.approved', c.id, '"' + c.title + '" approved — post it on ' + csDay(c.dayKey) + '.'); }
+    function posted1(c) { var r = M.content.markPosted(c.id, session.email); if (!r.ok) { toast(r.error); return; } commit('content.posted', c.id, '"' + c.title + '" marked as posted.'); }
+    function remove1(c) { if (!confirm('Remove "' + c.title + '" from the plan?')) return; M.content.remove(c.id); commit('content.removed', c.id, 'Post removed from the plan.'); }
+    var days = [];
+    for (var i = 0; i < 7; i++) days.push(M.clearance.dayKey(new Date(Date.now() + i * 864e5)));
+    append(root, panel('This week\'s plan', 'Approved posts are copied into Instagram, Facebook or the WhatsApp channel by staff, then marked as posted. Editing an approved post sends it back for approval.',
+      h('div', { class: 'cs-week' }, days.map(function (k, di) {
+        var items = week.filter(function (c) { return c.dayKey === k; });
+        return h('section', { class: 'cs-day' + (items.length ? '' : ' empty') },
+          h('h3', { text: di === 0 ? 'Today' : csDay(k) }),
+          items.length ? items.map(function (c) {
+            var own = c.createdBy === session.email;
+            return h('article', { class: 'cs-post st-' + c.status },
+              h('div', { class: 'cs-post-head' }, csTypeBadge(c.type), statusBadge(c.status === 'pending' ? 'pending_approval' : c.status)),
+              h('strong', { text: c.title }),
+              h('small', { text: c.time + ' · ' + M.content.CHANNELS[c.channel] + (c.needsPermission ? ' · ask the customer first' : '') }),
+              h('div', { class: 'actions' },
+                c.status === 'pending' && canApprove ? mini('Approve', function () { approve(c); }, { disabled: own, title: own ? 'You can\'t approve your own post' : null }) : null,
+                c.status === 'pending' && !canApprove ? h('small', { class: 'hint', text: 'Waiting for admin' }) : null,
+                c.status === 'approved' ? mini('Mark posted', function () { posted1(c); }) : null,
+                mini('Copy', function () { csCopy(c.caption, c.tags); }),
+                c.status !== 'posted' ? mini('Edit', function () { openPostEditor(null, c); }) : null,
+                c.status !== 'posted' ? mini('Remove', function () { remove1(c); }, { danger: true }) : null));
+          }) : h('small', { class: 'hint', text: 'Nothing planned' }));
+      }))));
+
+    /* ---- Support-local library ---- */
+    append(root, panel(aiTitle('Support local library'), 'Ready-made education posts about why local farms matter and Singapore\'s goal to grow more of its own food by 2035. They only use facts MEOD already states on its website.',
+      h('ul', { class: 'cs-library' }, M.content.LEARN.map(function (l) {
+        var x = M.content.learnIdea(l);
+        x.dayKey = M.content.nextDay(M.content.TYPES.learn.day); x.time = M.content.TYPES.learn.time;
+        return h('li', null,
+          h('img', { src: l.image, alt: '', loading: 'lazy' }),
+          h('span', { class: 'cs-lib-text' }, h('strong', { text: l.title }), h('small', { text: l.caption.split('\n')[0] })),
+          mini('Use this', function () { openPostEditor(x); }));
+      }))));
+
+    /* ---- Posted ---- */
+    append(root, panel('Posted', 'The last 30 days.', table([
+      { label: 'Posted', render: function (c) { return h('span', null, shortDate(c.postedAt), h('br'), h('small', { text: c.postedBy || '' })); } },
+      { label: 'Post', render: function (c) { return h('span', null, h('strong', { text: c.title }), h('br'), csTypeBadge(c.type)); } },
+      { label: 'Where', render: function (c) { return M.content.CHANNELS[c.channel]; } },
+      { label: 'Approved by', render: function (c) { return c.approvedBy || '—'; } }
+    ], posted, 'Nothing posted in the last 30 days.')));
+  }
+
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
@@ -1790,6 +1941,9 @@
     M.feedback.clusters(14).filter(function (g) { return g.pattern && !g.resolved; }).slice(0, 2).forEach(function (g, i) {
       push(89 - i, 'Customers', g.theme === 'late' ? ICONS.truck : ICONS.chat, g.title, g.cause.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.'), { label: 'Open Feedback', href: '#feedback' });
     });
+    var postsWaiting = (S().contentPlan || []).filter(function (c) { return c.status === 'pending'; });
+    if (postsWaiting.length) push(64, 'Sales', ICONS.chat, postsWaiting.length + ' social post(s) waiting for approval', 'Planned in the Content studio. Approve them so staff can post on the day.', { label: 'Content studio', href: '#content' });
+    else if (!M.content.upcoming(7).filter(function (c) { return c.status !== 'posted'; }).length) push(62, 'Sales', ICONS.chat, 'No social posts planned this week', 'The Content studio has ' + M.content.ideas().length + ' ready-made ideas from this week\'s harvest, recipes and support-local posts.', { label: 'Content studio', href: '#content' });
     var priceWaiting = (S().priceProposals || []).filter(function (pp) { return pp.status === 'pending'; });
     if (priceWaiting.length) push(67, 'Sales', ICONS.tag, priceWaiting.length + ' price change(s) waiting for approval', 'Checked by Margin Guard. Approving a discount lists it on Buy to Clear.', { label: 'Price Advisor', href: '#pricing' });
     var toApprove = S().campaigns.filter(function (c) { return c.status === 'pending_approval'; });
@@ -2865,6 +3019,7 @@
     rescue: { label: 'Harvest Rescue', tone: 'amber' },
     pricing: { label: 'Pricing', tone: 'amber' },
     feedback: { label: 'Feedback', tone: 'blue' },
+    content: { label: 'Content', tone: 'green' },
     briefing: { label: 'Briefing', tone: 'green' }
   };
   var AUDIT_LABELS = {
@@ -2881,7 +3036,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -4519,6 +4674,7 @@
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
       { id: 'orders', group: 'Sales', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
+      { id: 'content', group: 'Sales', label: 'Content studio', perm: 'content', title: 'Content studio', sub: 'Weekly social and WhatsApp posts from what the farm has right now — staff edit, someone else approves.', render: contentView, count: function () { return (S().contentPlan || []).filter(function (c) { return c.status === 'pending'; }).length; } },
       { id: 'b2b', group: 'Sales', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
       { id: 'campaigns', group: 'Sales', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
       { id: 'pricing', group: 'Sales', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },

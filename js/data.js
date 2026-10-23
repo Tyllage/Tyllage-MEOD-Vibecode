@@ -752,6 +752,24 @@
       s.feedbackResolved = {};
       s.migrations.feedbackV1 = true;
     }
+    if (!s.migrations.contentV1) {
+      // Content studio: one post already out this week, and one from sales staff waiting for
+      // approval, so the plan and the approval step can be shown.
+      var c0 = new Date(); c0.setHours(0, 0, 0, 0);
+      var shi = s.products.filter(function (x) { return x.title === 'Shiitake Mushroom'; })[0];
+      s.seq += 2;
+      s.contentPlan = [
+        { id: 'PO-' + (s.seq - 1), ideaKey: 'learn|sgfresh', type: 'learn', channel: 'social', title: 'Look for the SG Fresh mark',
+          caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on MEOD Fresh 🌱',
+          tags: ['#MEODFarm', '#SGFreshProduce', '#SupportLocal'], image: 'assets/img/fresh-produce.webp', productId: null, dayKey: bagDayKey(new Date(c0.getTime() - 3 * 864e5)), time: '10:00am',
+          status: 'posted', createdBy: 'sales@meod.test', createdAt: new Date(c0.getTime() - 5 * 864e5).toISOString(), approvedBy: 'admin@meod.test', postedAt: new Date(c0.getTime() - 3 * 864e5 + 10 * 36e5).toISOString(), postedBy: 'sales@meod.test' },
+        shi ? { id: 'PO-' + s.seq, ideaKey: 'fresh|' + shi.id, type: 'fresh', channel: 'social', title: 'Fresh Shiitake Mushroom this week',
+          caption: 'Fresh from Kranji 🍄 Our shiitake are meaty, earthy and harvested this week.\n\nSlice and pan-fry with butter and garlic, or drop them into your next soup.\n\nOrder on MEOD Fresh — delivered Tue, Thu & Sat 🚚',
+          tags: ['#MEODFarm', '#SGFresh', '#Shiitake'], image: shi.image, productId: shi.id, dayKey: bagDayKey(new Date(c0.getTime() + 2 * 864e5)), time: '7:30pm',
+          status: 'pending', createdBy: 'sales@meod.test', createdAt: new Date(Date.now() - 2 * 36e5).toISOString(), approvedBy: null, postedAt: null } : null
+      ].filter(Boolean);
+      s.migrations.contentV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -1652,7 +1670,7 @@
             : 'Check the pack list for that day.');
       } else {
         g.title = n + ' ' + th.label.toLowerCase() + ' report' + (n > 1 ? 's' : '') + (g.product ? ' · ' + g.product.title : '');
-        g.cause = g.theme === 'price' ? 'Customers comparing with supermarket prices. Explain what local, pesticide-free and same-day harvest means — and Singapore\'s 30 by 30 goal — rather than discounting.'
+        g.cause = g.theme === 'price' ? 'Customers comparing with supermarket prices. Explain what local, pesticide-free and same-day harvest means — and how buying local helps Singapore grow more of its own food by 2035 — rather than discounting.'
           : g.theme === 'packaging' ? 'Customers care about waste. Consider a plastic-free option or a "bring back your box" note.'
           : n > 1 ? 'Repeated for the same product — check how it is picked and packed.' : 'One report so far — watch for more.';
       }

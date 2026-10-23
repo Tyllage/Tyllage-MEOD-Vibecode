@@ -1698,3 +1698,20 @@ a.pill-btn { text-decoration: none; }
   .pd-reviews { padding: 16px 18px 18px; }
   .rv-top { grid-template-columns: 1fr; }
 }
+
+/* ---------- Price suggestions: aligned rows + same-size action pills ---------- */
+/* Each card spans 7 shared rows (head, title, price, reason, Margin Guard, estimate, foot),
+   so the boxes line up across a row of cards. */
+.ops-brief:has(> .pa-card) { grid-auto-rows: auto; row-gap: 0; }
+.pa-card { display: grid; grid-row: span 7; grid-template-rows: subgrid; row-gap: 10px; margin-bottom: 18px; }
+.pa-card > .ops-foot { margin-top: 0; align-self: start; }
+.pa-card .ops-foot > small { min-width: 0; white-space: nowrap; }
+.guard.hold { background: #eef1f5; }
+.guard.hold strong { color: #2f5e8a; }
+.pa-act { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 180px; min-height: 40px; padding: 8px 14px; border-radius: 999px; font-size: .88rem; font-weight: 700; text-align: center; white-space: nowrap; text-decoration: none; box-sizing: border-box; }
+.pa-status { background: #f3f1ec; color: var(--muted); }
+.pa-status.pending { background: #fff1d6; color: #8a5a00; }
+@media (max-width: 420px) {
+  .pa-card .ops-foot { flex-wrap: wrap; }
+  .pa-act { width: 100%; }
+}

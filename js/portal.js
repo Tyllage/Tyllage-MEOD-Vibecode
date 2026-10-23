@@ -1315,16 +1315,17 @@
           ? h('div', { class: 'price-line' }, h('strong', { text: money(s.priceCents) }), h('small', { text: 'keep normal price' }))
           : h('div', { class: 'price-line' },
               h('span', { class: 'price-was', text: money(s.fullCents || s.product.priceCents) }), h('strong', { text: money(s.priceCents) }), h('span', { class: 'discount-badge', text: '−' + s.pct + '%' }));
-        var act = s.kind === 'hold' ? h('small', { class: 'hint', text: 'No action needed' })
-          : pendingFor ? h('small', { class: 'pending-note', text: 'Waiting for approval' })
-          : !s.guard.ok ? h('a', { class: 'mini', href: '#rescue', text: 'See rescue options' })
-          : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send for approval', onclick: function () { sendForApproval(s); } });
-        return h('article', { class: 'ops-card' + (s.kind === 'hold' ? '' : s.guard.ok ? ' farm' : ' blocked') },
+        // Every card ends in one same-size pill: an action, a link, or a status.
+        var act = s.kind === 'hold' ? h('span', { class: 'pa-act pa-status', text: 'No action needed' })
+          : pendingFor ? h('span', { class: 'pa-act pa-status pending', text: 'Waiting for approval' })
+          : !s.guard.ok ? h('a', { class: 'pa-act btn btn-sm btn-outline', href: '#rescue', text: 'See rescue options' })
+          : h('button', { class: 'pa-act btn btn-sm btn-forest', type: 'button', text: 'Send for approval', onclick: function () { sendForApproval(s); } });
+        return h('article', { class: 'ops-card pa-card' + (s.kind === 'hold' ? '' : s.guard.ok ? ' farm' : ' blocked') },
           h('div', { class: 'ops-card-head' }, h('span', { class: 'rw-tier-cell' }, thumbMini(s.product), s.partner ? thumbMini(s.partner) : null), badge(k[0], k[1])),
           h('strong', { class: 'ops-title', text: s.kind === 'bundle' ? s.product.title + ' + ' + s.partner.title + ' bundle' : s.product.title }),
           priceLine,
           h('p', { text: s.reason }),
-          s.kind !== 'hold' ? guardBox(s.guard) : null,
+          s.kind !== 'hold' ? guardBox(s.guard) : h('div', { class: 'guard hold' }, h('strong', { text: 'Price stays the same' }), h('small', { text: 'Nothing for Margin Guard to check.' })),
           h('small', { class: 'ops-est', text: s.effect }),
           h('div', { class: 'ops-foot' }, h('small', { text: s.qty && s.kind !== 'hold' ? 'for ' + s.qty + ' unit(s)' : '' }), act));
       })) : h('p', { class: 'empty', text: 'No price changes suggested right now.' })));
@@ -1344,7 +1345,7 @@
         return h('span', null, h('strong', { text: p.title + (q ? ' + ' + q.title : '') }), h('br'), h('small', { text: pp.reason }));
       } },
       { label: 'Type', render: function (pp) { var k = PRICE_KIND[pp.kind] || [pp.kind, 'grey']; return badge(k[0], k[1]); } },
-      { label: 'Price', render: function (pp) { return h('span', null, h('span', { class: 'price-was', text: money(pp.fromCents) }), ' → ', h('strong', { text: money(pp.toCents) })); } },
+      { label: 'Price', render: function (pp) { return h('span', { class: 'pp-price' }, h('span', { class: 'price-was', text: money(pp.fromCents) }), h('strong', { text: money(pp.toCents) })); } },
       { label: 'Qty', num: true, render: function (pp) { return String(pp.qty); } },
       { label: 'By', render: function (pp) { return h('span', null, pp.createdBy, pp.decidedBy ? [h('br'), h('small', { text: pp.status + ' by ' + pp.decidedBy })] : null); } },
       { label: 'Status', render: function (pp) { return statusBadge(pp.status); } },

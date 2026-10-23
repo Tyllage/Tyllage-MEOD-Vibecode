@@ -1176,6 +1176,7 @@ a.pill-btn { text-decoration: none; }
 
 /* Smart tips + vouchers */
 .rw-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rw-head + .hint { margin-top: 8px; }
 .rw-head h2 { margin: 0; }
 .rw-head .badge { text-transform: none; }
 .rw-tips { list-style: none; margin: 12px 0 0; padding: 0; display: grid; }
@@ -1222,17 +1223,18 @@ a.pill-btn { text-decoration: none; }
 }
 
 /* ---- Rewards admin: AI ops brief, nudge composer, member search ---- */
-.ops-brief { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px; margin-top: 14px; }
-.ops-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; border: 1.5px solid #eee8de; background: var(--white); }
+/* auto-fit: however many suggestions there are, the cards stretch to fill the row. */
+.ops-brief { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; margin-top: 20px; }
+.ops-card { display: flex; flex-direction: column; gap: 10px; padding: 20px 22px; border-radius: 14px; border: 1.5px solid #eee8de; background: var(--white); }
 .ops-card.farm { border-color: #cfe6c4; background: #f6faf3; }
 .ops-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ops-card-head .badge { text-transform: none; }
 .ops-card-head .icon-circle.soft { width: 38px; height: 38px; }
 .ops-card-head .icon-circle.soft svg { width: 18px; height: 18px; }
-.ops-title { color: var(--forest); font-size: 1rem; line-height: 1.3; }
+.ops-title { color: var(--forest); font-size: 1rem; line-height: 1.35; margin-top: 4px; }
 .ops-card p { margin: 0; font-size: .88rem; color: var(--ink); }
-.ops-est { color: #6b4a00; background: #fff6e2; border-radius: 8px; padding: 6px 8px; font-size: .8rem; font-weight: 600; }
-.ops-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
+.ops-est { color: #6b4a00; background: #fff6e2; border-radius: 8px; padding: 8px 10px; font-size: .8rem; font-weight: 600; margin-top: 2px; }
+.ops-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; }
 .ops-foot small { color: var(--muted); }
 
 .ai-ask-form { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 6px 6px 6px 14px; border: 1.5px solid #cfd8cf; border-radius: 999px; background: var(--white); }

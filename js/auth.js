@@ -40,8 +40,8 @@
 
   function can(session, permission) {
     var matrix = {
-      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'harvest', 'visits'],
-      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits'],
+      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'harvest', 'visits', 'rewards'],
+      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits', 'rewards'],
       leader: ['leader'],
       customer: ['customer']
     };

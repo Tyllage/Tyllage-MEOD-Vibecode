@@ -26,6 +26,23 @@
     clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
     clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
+    // Grow with MEOD rewards. Points per dollar and redeem-for-discount mirror MEOD Fresh's
+    // existing Store Rewards (Smile.io) — real rates to be confirmed. Tiers, anti-waste
+    // bonuses and tier perks are Tyllage additions. All values illustrative.
+    rewards: {
+      pointsPerDollar: 1,
+      redeemPoints: 100, redeemValueCents: 500,  // 100 points → S$5 voucher
+      antiWasteMultiplier: 2,                    // Buy to Clear and harvest pre-order lines
+      voucherDays: 90,
+      voucherMinSpendCents: 2000,                // vouchers apply once full-price items reach S$20
+      tierWindowDays: 365,
+      tiers: [
+        { key: 'seedling', label: 'Seedling', emoji: '🌱', minBunches: 0, multiplier: 1, freeFromCents: null, voucherCents: 0 },
+        { key: 'sprout', label: 'Sprout', emoji: '🌿', minBunches: 25, multiplier: 1.1, freeFromCents: null, voucherCents: 300 },
+        { key: 'harvester', label: 'Harvester', emoji: '🥬', minBunches: 60, multiplier: 1.25, freeFromCents: 4500, voucherCents: 500 },
+        { key: 'friend', label: 'Farm Friend', emoji: '🌳', minBunches: 150, multiplier: 1.5, freeFromCents: 3000, voucherCents: 1000 }
+      ]
+    },
     visitSessionMax: 40,            // guests per farm-visit session; bigger groups split into sessions
     visitMaxPax: 200,               // largest group the booking form accepts
     visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
@@ -106,12 +123,19 @@
   function minutesAgo(m) { return new Date(Date.now() - m * 60000).toISOString(); }
   function daysFromNow(d) { return new Date(Date.now() + d * 864e5).toISOString(); }
 
-  function priceOrder(items, groupDiscount) {
+  // opts (optional): voucherCents — a rewards voucher taken off after the group discount;
+  // freeFromCents — the customer's free-delivery threshold (higher reward tiers get a lower one).
+  // The threshold is checked before the voucher, so using a voucher never adds a delivery fee.
+  function priceOrder(items, groupDiscount, opts) {
+    opts = opts || {};
     var subtotal = items.reduce(function (s, i) { return s + i.priceCents * i.qty; }, 0);
     var discount = groupDiscount ? Math.round(subtotal * RULES.groupDiscountRate) : 0;
-    var net = subtotal - discount;
-    var delivery = net === 0 || net >= RULES.freeDeliveryThresholdCents ? 0 : RULES.deliveryFeeCents;
-    return { subtotalCents: subtotal, discountCents: discount, netCents: net, deliveryCents: delivery, totalCents: net + delivery };
+    var beforeVoucher = subtotal - discount;
+    var voucher = Math.max(0, Math.min(opts.voucherCents || 0, beforeVoucher));
+    var net = beforeVoucher - voucher;
+    var freeFrom = opts.freeFromCents != null ? opts.freeFromCents : RULES.freeDeliveryThresholdCents;
+    var delivery = beforeVoucher === 0 || beforeVoucher >= freeFrom ? 0 : RULES.deliveryFeeCents;
+    return { subtotalCents: subtotal, discountCents: discount, voucherCents: voucher, netCents: net, deliveryCents: delivery, totalCents: net + delivery, freeFromCents: freeFrom };
   }
 
   function buildSeed() {
@@ -534,6 +558,29 @@
         experience: 'Farm Tour', pax: 85, date: bagDayKey(new Date(Date.now() + 9 * 864e5)), message: 'Residents and seniors — morning slots, please.' });
       createVisitGroup(s, rc);
       s.migrations.visitsV1 = true;
+    }
+    if (!s.migrations.rewardsV1) {
+      // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
+      s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
+      // Older order history so the demo has customers in several tiers: Bee Ling is a regular
+      // (Harvester), Ethan is mid-way (Sprout); Aster stays a Seedling close to Sprout.
+      var prodT = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      [
+        ['C-1002', [['Xiao Bai Cai', 6], ['HK Cai Xin', 5], ['Kangkong', 4]], 40],
+        ['C-1002', [['Kai Lan', 5], ['Bayam', 4], ['Xiao Bai Cai', 5]], 85],
+        ['C-1002', [['HK Cai Xin', 6], ['Kangkong', 5], ['Red Pak Choy', 3]], 150],
+        ['C-1002', [['Xiao Bai Cai', 4], ['Kai Lan', 4], ['Sweet Basil', 2]], 230],
+        ['C-1005', [['Cos Lettuce', 4], ['Mesclun Mix', 3], ['Tuscan Kale', 2]], 60],
+        ['C-1005', [['Cos Lettuce', 3], ['Mizuna', 3], ['Sweet Basil', 2]], 130]
+      ].forEach(function (r) {
+        var items = r[1].map(function (l) { var p = prodT(l[0]); return p ? { productId: p.id, title: p.title, qty: l[1], priceCents: p.priceCents } : null; }).filter(Boolean);
+        s.seq += 1;
+        s.orders.push(Object.assign({
+          id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: r[0], groupEventId: null, status: 'fulfilled',
+          items: items, refundedCents: 0, createdAt: new Date(Date.now() - r[2] * 864e5).toISOString(), source: 'shopify-mock'
+        }, priceOrder(items, false)));
+      });
+      s.migrations.rewardsV1 = true;
     }
     return s;
   }
@@ -1011,6 +1058,195 @@
     return f;
   }
 
+  /* ---------- Grow with MEOD: rewards tiers, points and vouchers ----------
+   * Keeps MEOD Fresh's Store Rewards model (points per dollar, redeem for a discount) and
+   * adds what it doesn't have: growth-stage tiers counted in bunches of MEOD-grown produce
+   * (like a bubble-tea "cups" card, but for local veg), 2× points on anti-waste buys
+   * (Buy to Clear, harvest pre-orders), a voucher on reaching each tier, and a lower
+   * free-delivery threshold for the top tiers. Points are derived from orders every time
+   * (paid/fulfilled earn, refunds reverse), so the balance always matches the order history.
+   * In production the balance would sync with Smile.io; Tyllage would add the bonuses.
+   */
+  var RW = RULES.rewards;
+  var EARNING = ['paid', 'fulfilled', 'refunded'];
+  function isBunch(item) {
+    var p = byId('products', item.productId);
+    return Boolean(p && p.meodGrown && p.category !== 'farm-more' && !p.bagOffer && !item.bag);
+  }
+  function isAntiWaste(item) { return Boolean(item.clearanceListingId || item.preorderBatchId || item.bag); }
+  function tierForBunches(n) {
+    var t = RW.tiers[0];
+    RW.tiers.forEach(function (x) { if (n >= x.minBunches) t = x; });
+    return t;
+  }
+  function nextTier(t) { var i = RW.tiers.indexOf(t); return RW.tiers[i + 1] || null; }
+  function customerOrders(customerId) {
+    return state.orders.filter(function (o) { return o.customerId === customerId; })
+      .sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
+  }
+  // Bunches counted towards a tier: MEOD-grown items in paid/fulfilled orders within the window.
+  function bunchesAt(customerId, atMs, excludeOrderId) {
+    var from = atMs - RW.tierWindowDays * 864e5, n = 0;
+    state.orders.forEach(function (o) {
+      if (o.customerId !== customerId || o.id === excludeOrderId) return;
+      if (o.status !== 'paid' && o.status !== 'fulfilled') return;
+      var t = new Date(o.createdAt).getTime();
+      if (t <= from || t > atMs) return;
+      o.items.forEach(function (i) { if (isBunch(i)) n += i.qty; });
+    });
+    return n;
+  }
+  // Points for one order: 1 per S$1 actually paid on each line (group discount and voucher
+  // shared out across lines), doubled on anti-waste lines, times the tier multiplier the
+  // customer had when they ordered.
+  function pointsForOrder(order, tier) {
+    var sub = order.subtotalCents || 0;
+    var ratio = sub ? order.netCents / sub : 0;
+    var base = 0, bonus = 0;
+    order.items.forEach(function (i) {
+      var pts = Math.floor(i.priceCents * i.qty * ratio / 100 * RW.pointsPerDollar);
+      base += pts;
+      if (isAntiWaste(i)) bonus += pts * (RW.antiWasteMultiplier - 1);
+    });
+    var tierBonus = Math.floor((base + bonus) * (tier.multiplier - 1));
+    return { base: base, antiWaste: bonus, tierBonus: tierBonus, total: base + bonus + tierBonus };
+  }
+  function rewardsLedger(customerId) {
+    var rows = [];
+    customerOrders(customerId).forEach(function (o) {
+      if (o.status === 'cancelled') return;
+      var at = new Date(o.createdAt).getTime();
+      var tier = tierForBunches(bunchesAt(customerId, at - 1, o.id));
+      var p = pointsForOrder(o, tier);
+      var detail = [p.base + ' base'];
+      if (p.antiWaste) detail.push('+' + p.antiWaste + ' anti-waste (' + RW.antiWasteMultiplier + '×)');
+      if (p.tierBonus) detail.push('+' + p.tierBonus + ' ' + tier.label + ' bonus');
+      if (o.status === 'pending_payment') {
+        rows.push({ at: o.createdAt, kind: 'pending', points: p.total, ref: o.ref, detail: 'Pending until paid · ' + detail.join(', ') });
+        return;
+      }
+      if (EARNING.indexOf(o.status) === -1) return;
+      rows.push({ at: o.createdAt, kind: 'earn', points: p.total, ref: o.ref, detail: detail.join(', ') });
+      if (o.status === 'refunded') rows.push({ at: o.createdAt, kind: 'reversed', points: -p.total, ref: o.ref, detail: 'Order refunded' });
+    });
+    state.rewardsStore.redemptions.forEach(function (r) {
+      if (r.customerId === customerId) rows.push({ at: r.at, kind: 'redeemed', points: -r.points, ref: r.voucherCode, detail: 'Swapped for a ' + money(r.valueCents) + ' voucher' });
+    });
+    return rows.sort(function (a, b) { return new Date(b.at) - new Date(a.at); });
+  }
+  function rewardsSummary(customerId) {
+    var now = Date.now();
+    var bunches = bunchesAt(customerId, now);
+    var tier = tierForBunches(bunches), next = nextTier(tier);
+    var rows = rewardsLedger(customerId);
+    var points = 0, pending = 0, lifetime = 0;
+    rows.forEach(function (r) {
+      if (r.kind === 'pending') pending += r.points;
+      else points += r.points;
+      if (r.kind === 'earn') lifetime += r.points;
+    });
+    var span = next ? next.minBunches - tier.minBunches : 1;
+    return {
+      tier: tier, next: next, bunches: bunches, toNext: next ? Math.max(0, next.minBunches - bunches) : 0,
+      progressPct: next ? Math.min(100, Math.round((bunches - tier.minBunches) / span * 100)) : 100,
+      points: Math.max(0, points), pending: pending, lifetime: lifetime,
+      redeemable: Math.floor(Math.max(0, points) / RW.redeemPoints),
+      freeFromCents: tier.freeFromCents != null ? tier.freeFromCents : RULES.freeDeliveryThresholdCents,
+      ledger: rows
+    };
+  }
+  function voucherCode() {
+    var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', s = 'GROW-';
+    for (var i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  }
+  function issueVoucher(customerId, valueCents, source, label) {
+    var v = {
+      id: nextId('V'), customerId: customerId, code: voucherCode(), valueCents: valueCents, source: source, label: label,
+      status: 'active', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + RW.voucherDays * 864e5).toISOString(), orderId: null
+    };
+    state.rewardsStore.vouchers.push(v);
+    return v;
+  }
+  // One voucher per tier reached (Sprout and up), issued the first time the tier is seen.
+  function syncTierVouchers(customerId) {
+    var s = rewardsSummary(customerId), issued = [];
+    RW.tiers.forEach(function (t) {
+      if (!t.voucherCents || t.minBunches > s.bunches) return;
+      var src = 'tier:' + t.key;
+      if (state.rewardsStore.vouchers.some(function (v) { return v.customerId === customerId && v.source === src; })) return;
+      issued.push(issueVoucher(customerId, t.voucherCents, src, 'Welcome to ' + t.label));
+    });
+    return issued;
+  }
+  function redeemPoints(customerId, units) {
+    units = Math.floor(units);
+    var s = rewardsSummary(customerId);
+    if (!(units >= 1)) return { ok: false, error: 'Choose how many vouchers to swap for.' };
+    if (units > s.redeemable) return { ok: false, error: 'You need ' + units * RW.redeemPoints + ' points — you have ' + s.points + '.' };
+    var value = units * RW.redeemValueCents;
+    var v = issueVoucher(customerId, value, 'points', money(value) + ' from points');
+    state.rewardsStore.redemptions.push({ id: nextId('RD'), customerId: customerId, points: units * RW.redeemPoints, valueCents: value, voucherCode: v.code, at: new Date().toISOString() });
+    return { ok: true, voucher: v };
+  }
+  function voucherUsable(v) { return v.status === 'active' && new Date(v.expiresAt).getTime() > Date.now(); }
+  function customerVouchers(customerId) {
+    return state.rewardsStore.vouchers.filter(function (v) { return v.customerId === customerId; })
+      .sort(function (a, b) { return (voucherUsable(b) - voucherUsable(a)) || new Date(a.expiresAt) - new Date(b.expiresAt); });
+  }
+  // Vouchers only come off full-price lines, so they never undercut a clearance minimum
+  // price or a pre-order / bag price.
+  function voucherCapCents(items, groupDiscount) {
+    var full = items.filter(function (i) { return !isAntiWaste(i); }).reduce(function (s, i) { return s + i.priceCents * i.qty; }, 0);
+    return groupDiscount ? Math.round(full * (1 - RULES.groupDiscountRate)) : full;
+  }
+  function previewPoints(customerId, items, totals) {
+    var tier = tierForBunches(bunchesAt(customerId, Date.now()));
+    return pointsForOrder({ items: items, subtotalCents: totals.subtotalCents, netCents: totals.netCents }, tier);
+  }
+  function useVoucher(voucherId, orderId) {
+    var v = state.rewardsStore.vouchers.filter(function (x) { return x.id === voucherId; })[0];
+    if (v) { v.status = 'used'; v.orderId = orderId; v.usedAt = new Date().toISOString(); }
+  }
+
+  /* Smart tips: short, personalised nudges built from the customer's own orders, taste
+   * profile, open pre-orders, clearance stock, points and vouchers. PROTOTYPE: ranked rules;
+   * the live version could have a language model phrase them. Never changes a price. */
+  function rewardsTips(customer) {
+    var s = rewardsSummary(customer.id), tips = [];
+    var tasteCats = {};
+    (customer.consentPersonalisation ? tasteProfile(customer) : []).forEach(function (t) { tasteCats[t.category] = t.pct; });
+    var usual = {};
+    customerOrders(customer.id).forEach(function (o) { if (o.status !== 'cancelled') o.items.forEach(function (i) { if (isBunch(i)) usual[i.productId] = (usual[i.productId] || 0) + i.qty; }); });
+    var fav = Object.keys(usual).map(function (id) { return byId('products', id); })
+      .filter(function (p) { var st = p && stockStatus(p); return st && st.known && st.qty > 0; })
+      .sort(function (a, b) { return usual[b.id] - usual[a.id]; })[0];
+    if (s.next && s.toNext <= 10) {
+      tips.push({ score: 90 - s.toNext, kind: 'tier', text: 'You\'re ' + s.toNext + ' bunch' + (s.toNext === 1 ? '' : 'es') + ' from ' + s.next.label +
+        (s.next.voucherCents ? ' and a ' + money(s.next.voucherCents) + ' voucher' : '') + '.' + (fav ? ' Your usual ' + fav.title + ' counts.' : ''), action: fav ? { label: 'Add ' + fav.title, productId: fav.id } : null });
+    }
+    var po = batchesOpen().filter(function (b) { var p = byId('products', b.productId); return p && (!Object.keys(tasteCats).length || tasteCats[p.category]); })[0] || batchesOpen()[0];
+    if (po) {
+      var pp = byId('products', po.productId);
+      tips.push({ score: 70, kind: 'preorder', text: 'Pre-order ' + pp.title + ' from the ' + parseDayKey(po.harvestDate).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }) + ' harvest for ' + RW.antiWasteMultiplier + '× points — it helps the farm grow only what gets eaten.', action: { label: 'See pre-orders', href: '#shop' } });
+    }
+    var cl = clearanceListActive().filter(function (l) { var p = byId('products', l.productId); return p && (!Object.keys(tasteCats).length || tasteCats[p.category]); })[0];
+    if (cl) {
+      var cp = byId('products', cl.productId);
+      tips.push({ score: 60, kind: 'clearance', text: cp.title + ' is on Buy to Clear at ' + money(cl.clearancePriceCents) + ' — ' + RW.antiWasteMultiplier + '× points and less food waste.', action: { label: 'Buy to Clear', href: '#shop' } });
+    }
+    if (s.redeemable) {
+      tips.push({ score: 80, kind: 'redeem', text: 'You have ' + s.points + ' points — enough for ' + money(s.redeemable * RW.redeemValueCents) + ' in vouchers.', action: { label: 'Swap points', redeem: true } });
+    }
+    var soon = customerVouchers(customer.id).filter(function (v) { return voucherUsable(v) && new Date(v.expiresAt).getTime() - Date.now() < 14 * 864e5; })[0];
+    if (soon) tips.push({ score: 95, kind: 'expiry', text: 'Your ' + money(soon.valueCents) + ' voucher expires on ' + new Date(soon.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) + ' — use it on your next order.', action: { label: 'Shop now', href: '#shop' } });
+    return tips.sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
+  }
+  // Staff view: every customer's tier, bunches, points and how close they are to the next tier.
+  function rewardsMembers() {
+    return state.customers.map(function (c) { return { customer: c, s: rewardsSummary(c.id) }; });
+  }
+
   // Commission ledger derived from orders so every figure is reproducible.
   // Basis: net merchandise (subtotal − discount), delivery excluded; accrues
   // once paid/fulfilled; refunds post a matching negative adjustment.
@@ -1234,6 +1470,11 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    rewards: {
+      summary: rewardsSummary, ledger: rewardsLedger, tiers: RW.tiers, tierFor: tierForBunches, nextTier: nextTier,
+      syncTierVouchers: syncTierVouchers, redeem: redeemPoints, vouchers: customerVouchers, usable: voucherUsable,
+      capCents: voucherCapCents, preview: previewPoints, useVoucher: useVoucher, tips: rewardsTips, members: rewardsMembers
+    },
     visits: {
       sessions: visitSessions, confirm: visitConfirm, byCode: visitEventByCode, order: visitOrder, totals: visitTotals,
       stats: visitStats, funnel: visitFunnel

@@ -514,7 +514,8 @@
       append(cList, table([
         { label: 'Campaign', render: function (c) {
           return h('span', null, h('strong', { text: c.title }), h('br'), h('small', { text: c.message.slice(0, 90) + (c.message.length > 90 ? '…' : '') }),
-            c.kind === 'restock' ? [h('br'), h('small', { class: 'restock-tag', text: 'Restock reminder · {first_name} and {days} are filled in per person' })] : null);
+            c.kind === 'restock' ? [h('br'), h('small', { class: 'restock-tag', text: 'Restock reminder · {first_name} and {days} are filled in per person' })] : null,
+            c.kind === 'tier-nudge' ? [h('br'), h('small', { class: 'restock-tag', text: 'Rewards nudge · {first_name} and {bunches_to_go} are filled in per person' })] : null);
         } },
         { label: 'Product', render: function (c) { var p = M.byId('products', c.productId); return p ? p.title : '—'; } },
         { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
@@ -1273,6 +1274,86 @@
       ], pending, 'No enquiries waiting.')));
   }
 
+  /* ---------------- Rewards (staff + admin) ---------------- */
+  var TIER_NUDGE = {
+    en: function (n) { return 'Hi {first_name} 🌱 You\'re just {bunches_to_go} bunches of MEOD greens away from ' + n.emoji + ' ' + n.label + (n.voucherCents ? ' — and a ' + money(n.voucherCents) + ' voucher' : '') + '. Every bunch supports Singapore farming. Reply STOP to opt out.'; },
+    zh: function (n) { return '{first_name} 您好 🌱 再买 {bunches_to_go} 份 MEOD 蔬菜即可升级为 ' + n.emoji + ' ' + n.label + (n.voucherCents ? '，并获得 ' + money(n.voucherCents) + ' 优惠券' : '') + '。每一份都在支持本地农业。回复 STOP 取消订阅。'; },
+    ms: function (n) { return 'Hai {first_name} 🌱 Hanya {bunches_to_go} ikat sayur MEOD lagi untuk ' + n.emoji + ' ' + n.label + (n.voucherCents ? ' — dan baucar ' + money(n.voucherCents) : '') + '. Setiap ikat menyokong pertanian Singapura. Balas STOP untuk berhenti.'; }
+  };
+  function rewardsAdminView(root) {
+    var R = M.RULES.rewards;
+    var members = M.rewards.members();
+    var byTier = {};
+    R.tiers.forEach(function (t) { byTier[t.key] = 0; });
+    members.forEach(function (m) { byTier[m.s.tier.key]++; });
+    var unclaimed = members.reduce(function (s, m) { return s + m.s.points; }, 0);
+    var vouchers = S().rewardsStore.vouchers;
+    var openV = vouchers.filter(M.rewards.usable), usedV = vouchers.filter(function (v) { return v.status === 'used'; });
+    var liability = Math.floor(unclaimed / R.redeemPoints) * R.redeemValueCents + openV.reduce(function (s, v) { return s + v.valueCents; }, 0);
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Members', String(members.length), members.filter(function (m) { return m.s.tier.minBunches > 0; }).length + ' above Seedling'),
+      kpi('Unclaimed points', String(unclaimed), 'Up to ' + money(liability) + ' in vouchers'),
+      kpi('Vouchers', String(openV.length) + ' open', usedV.length + ' used · ' + money(usedV.reduce(function (s, v) { return s + v.valueCents; }, 0)) + ' redeemed'),
+      kpi('Anti-waste bonus', R.antiWasteMultiplier + '×', 'on Buy to Clear and pre-orders')));
+
+    var max = Math.max.apply(null, R.tiers.map(function (t) { return byTier[t.key]; }).concat([1]));
+    append(root, panel('Members by tier', 'Tiers count bunches of MEOD-grown produce over 12 months. Thresholds and perks are illustrative — MEOD to confirm.',
+      h('div', { class: 'visit-funnel' }, R.tiers.map(function (t) {
+        var bar = h('span', { class: 'vf-bar' }, h('span', { class: 'vf-fill' }));
+        bar.firstChild.style.width = (byTier[t.key] / max * 100) + '%';
+        return h('div', { class: 'vf-row' }, h('span', { class: 'vf-label', text: t.emoji + ' ' + t.label + (t.minBunches ? ' · ' + t.minBunches + '+' : '') }), bar,
+          h('span', { class: 'vf-num' }, h('strong', { text: String(byTier[t.key]) })));
+      }))));
+
+    // AI insight: opted-in customers within 30% of the next tier, grouped by language.
+    var close = members.filter(function (m) {
+      if (!m.s.next || !m.customer.consentMarketing) return false;
+      var span = m.s.next.minBunches - m.s.tier.minBunches;
+      return m.s.toNext > 0 && m.s.toNext <= Math.ceil(span * 0.3);
+    }).sort(function (a, b) { return a.s.toNext - b.s.toNext; });
+    function draftNudges() {
+      var groups = {};
+      close.forEach(function (m) {
+        var lang = TIER_NUDGE[m.customer.language] ? m.customer.language : 'en';
+        var key = m.s.next.key + '|' + lang;
+        (groups[key] = groups[key] || { next: m.s.next, lang: lang, ids: [] }).ids.push(m.customer.id);
+      });
+      var keys = Object.keys(groups);
+      keys.forEach(function (k) {
+        var g = groups[k];
+        S().campaigns.unshift({
+          id: M.nextId('CP'), kind: 'tier-nudge', productId: null, language: g.lang,
+          title: 'Almost ' + g.next.label + ' (' + ({ en: 'English', zh: '中文', ms: 'Melayu' })[g.lang] + ')',
+          message: TIER_NUDGE[g.lang](g.next), audience: g.ids, status: 'pending_approval',
+          createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+        });
+      });
+      commit('campaign.submitted', 'tier-nudge', keys.length + ' tier nudge draft(s) added to Campaign Studio — waiting for admin approval.');
+    }
+    append(root, h('section', { class: 'panel rw-insight' },
+      h('div', { class: 'rw-tips-head' }, h('h2', { text: 'Close to the next tier' }), h('span', { class: 'badge b-blue', text: 'AI insight' })),
+      h('p', { class: 'hint', text: close.length
+        ? close.length + ' opted-in customer(s) are within reach of their next tier. A friendly nudge tends to bring the next order forward — the draft goes to Campaign Studio for approval, one message per language.'
+        : 'Nobody who opted in to messages is close to their next tier right now.' }),
+      close.length ? table([
+        { label: 'Customer', render: function (m) { return customerLabel(m.customer.id); } },
+        { label: 'Now', render: function (m) { return m.s.tier.emoji + ' ' + m.s.tier.label; } },
+        { label: 'To go', num: true, render: function (m) { return m.s.toNext + ' to ' + m.s.next.label; } },
+        { label: 'Language', render: function (m) { return (m.customer.language || 'en').toUpperCase(); } }
+      ], close) : null,
+      close.length ? h('div', { class: 'panel-foot' }, h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: '✨ Draft tier nudges', onclick: draftNudges })) : null));
+
+    append(root, panel('Members', null, table([
+      { label: 'Customer', render: function (m) { return customerLabel(m.customer.id); } },
+      { label: 'Tier', render: function (m) { return m.s.tier.emoji + ' ' + m.s.tier.label; } },
+      { label: 'Bunches · 12 mo', num: true, render: function (m) { return String(m.s.bunches); } },
+      { label: 'Next tier', render: function (m) { return m.s.next ? m.s.toNext + ' to ' + m.s.next.label : '—'; } },
+      { label: 'Points', num: true, render: function (m) { return String(m.s.points) + (m.s.pending ? ' (+' + m.s.pending + ' pending)' : ''); } },
+      { label: 'Open vouchers', num: true, render: function (m) { var n = M.rewards.vouchers(m.customer.id).filter(M.rewards.usable); return n.length ? n.length + ' · ' + money(n.reduce(function (s, v) { return s + v.valueCents; }, 0)) : '—'; } }
+    ], members.slice().sort(function (a, b) { return b.s.bunches - a.s.bunches; }))));
+  }
+
   function groupBuyAdminView(root) {
     var entries = M.ledger();
     function eventStats(ev) {
@@ -1551,7 +1632,8 @@
     consent: { label: 'Privacy', tone: 'grey' },
     profile: { label: 'Privacy', tone: 'grey' },
     clearance: { label: 'Buy to Clear', tone: 'amber' },
-    harvest: { label: 'Harvest', tone: 'green' }
+    harvest: { label: 'Harvest', tone: 'green' },
+    rewards: { label: 'Rewards', tone: 'amber' }
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
@@ -1567,7 +1649,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -1855,7 +1937,164 @@
       kpi('Latest order', last ? last.ref : '—', last ? last.status.replace('_', ' ') : null),
       kpi('Group buy', c.groupCode || 'Not joined', c.groupCode ? '5% off applied at checkout' : 'Join with a leader code'),
       kpi('Messages', c.consentMarketing ? 'On' : 'Off', 'Change in Preferences')));
+    append(root, rewardsStrip(c));
     append(root, picksPanel(c));
+  }
+
+  /* ---------------- Grow with MEOD (customer rewards) ----------------
+   * Built from the portal's own pieces so it matches Home and Group buy: a forest-green
+   * membership card (same gradient as Smart picks), a stamp card in a white panel, line icons
+   * in soft circles, numbered steps, and the standard table for tiers and history. */
+  var TIER_ICONS = {
+    seedling: '<path d="M12 21v-8"/><path d="M12 13c0-3.5-2.5-6-6-6 0 3.5 2.5 6 6 6z"/><path d="M12 13c0-3.5 2.5-6 6-6 0 3.5-2.5 6-6 6z"/><path d="M8 21h8"/>',
+    sprout: '<path d="M12 21V9"/><path d="M12 14C12 9 8.5 6 4 6c0 5 3.5 8 8 8z"/><path d="M12 9c0-4 3-6 7.5-6 0 4-3 6-7.5 6z"/><path d="M8 21h8"/>',
+    harvester: '<path d="M12 21c-4 0-7-3-7-7 0-3 2-6 5-7 0 3 1 5 2 6 1-1 2-3 2-6 3 1 5 4 5 7 0 4-3 7-7 7z"/><path d="M12 21v-8"/>',
+    friend: '<path d="M12 22v-6"/><path d="M12 16a5 5 0 0 1-5-5 5 5 0 0 1 2-4 5 5 0 0 1 6-3 5 5 0 0 1 4 5 4 4 0 0 1-2 7z"/><path d="M9 22h6"/>'
+  };
+  var ICON_GIFT = '<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13"/><path d="M3 12h18"/><path d="M12 8c-2 0-4-1-4-3s2-2 4 1c2-3 4-3 4-1s-2 3-4 3z"/>';
+  var ICON_STAMP = '<path d="M11 20A7 7 0 0 1 4 13c0-5 4-9 16-9 0 12-4 16-9 16z"/><path d="M4 20c4-4 7-7 11-10"/>';
+  function memberId(c) { return 'GROW-' + String(c.id).replace(/\D/g, ''); }
+
+  // Issues any tier-up vouchers the customer has earned but not yet received.
+  function syncRewards(c) {
+    var issued = M.rewards.syncTierVouchers(c.id);
+    if (issued.length) { M.save(); toast(issued.map(function (v) { return v.label + ': ' + money(v.valueCents) + ' voucher'; }).join(', ') + ' added to your vouchers.'); }
+  }
+  function progressBar(pct, label) {
+    var bar = h('span', { class: 'rw-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': label }, h('span', { class: 'rw-fill' }));
+    bar.firstChild.style.width = pct + '%';
+    return bar;
+  }
+  // Home: a compact strip in the same card style as the KPIs above it.
+  function rewardsStrip(c) {
+    syncRewards(c);
+    var s = M.rewards.summary(c.id);
+    return h('a', { class: 'panel rw-strip', href: '#rewards' },
+      iconCircle(TIER_ICONS[s.tier.key], 'soft'),
+      h('span', { class: 'rw-strip-text' },
+        h('strong', { text: s.tier.label + ' member · ' + s.points + ' points' }),
+        h('small', { text: s.next ? s.toNext + ' more bunch' + (s.toNext === 1 ? '' : 'es') + ' of MEOD greens to ' + s.next.label : 'Top tier — thank you for growing with us' }),
+        progressBar(s.progressPct, 'Progress to next tier')),
+      h('span', { class: 'pill-btn', text: 'Rewards →' }));
+  }
+
+  // Stamp card: one stamp per bunch, or one per few bunches when a tier is far away, so the
+  // card never has more than 25 stamps. The last stamp is the next tier's reward.
+  function stampCard(s) {
+    if (!s.next) {
+      return h('p', { class: 'rw-top', text: 'You\'ve reached Farm Friend, our top tier. Every bunch still earns ' + s.tier.multiplier + '× points.' });
+    }
+    var span = s.next.minBunches - s.tier.minBunches;
+    var per = Math.ceil(span / 25);
+    var total = Math.ceil(span / per);
+    var filled = Math.min(total, Math.floor((s.bunches - s.tier.minBunches) / per));
+    var cells = [];
+    for (var i = 0; i < total; i++) {
+      var last = i === total - 1;
+      var on = i < filled;
+      cells.push(h('li', { class: 'rw-stamp' + (on ? ' on' : '') + (last ? ' reward' : ''), 'aria-hidden': 'true' },
+        last ? iconCircle(ICON_GIFT, 'bare') : on ? iconCircle(ICON_STAMP, 'bare') : null));
+    }
+    // Even rows like a printed card: up to 13 across, so 25 stamps sit in two rows of 13 + 12.
+    var grid = h('ol', { class: 'rw-stamps', 'aria-label': filled + ' of ' + total + ' stamps collected' }, cells);
+    grid.style.setProperty('--cols', String(total <= 13 ? total : Math.ceil(total / 2)));
+    return h('div', { class: 'rw-stampcard' },
+      grid,
+      h('div', { class: 'rw-stamp-foot' },
+        h('span', null, h('strong', { text: s.toNext + ' more bunch' + (s.toNext === 1 ? '' : 'es') }), ' to ' + s.next.label +
+          (s.next.voucherCents ? ' — your ' + money(s.next.voucherCents) + ' voucher is on the last stamp' : '')),
+        h('small', { text: per > 1 ? '1 stamp = ' + per + ' bunches' : '1 stamp = 1 bunch' })));
+  }
+
+  function rewardsView(root) {
+    var c = me();
+    syncRewards(c);
+    var R = M.RULES.rewards;
+    var s = M.rewards.summary(c.id);
+    var vouchers = M.rewards.vouchers(c.id);
+    var openVouchers = vouchers.filter(M.rewards.usable);
+    var units = Math.min(s.redeemable, 4);
+
+    function redeem(n) {
+      var r = M.rewards.redeem(c.id, n);
+      if (!r.ok) { toast(r.error); return; }
+      commit('rewards.redeemed', r.voucher.code, money(r.voucher.valueCents) + ' voucher ' + r.voucher.code + ' added — choose it in your cart.');
+    }
+
+    /* ---- Membership card (Smart picks gradient) ---- */
+    var tierIdx = R.tiers.indexOf(s.tier);
+    append(root, h('section', { class: 'rw-card' },
+      h('div', { class: 'rw-card-main' },
+        h('span', { class: 'picks-eyebrow' }, svgIcon(TIER_ICONS[s.tier.key]), 'Grow with MEOD'),
+        h('h2', { text: c.name }),
+        h('p', { class: 'rw-card-tier', text: s.tier.label + ' member' }),
+        h('div', { class: 'rw-card-meta' },
+          h('span', null, h('small', { text: 'Member ID' }), h('strong', { text: memberId(c) })),
+          h('span', null, h('small', { text: 'Bunches · 12 months' }), h('strong', { text: String(s.bunches) })),
+          h('span', null, h('small', { text: 'Open vouchers' }), h('strong', { text: String(openVouchers.length) }))),
+        h('ol', { class: 'tracker rw-tiers', 'aria-label': 'Tiers' }, R.tiers.map(function (t, i) {
+          return h('li', { class: (i <= tierIdx ? 'done' : '') + (i === tierIdx ? ' current' : '') }, h('span', { class: 'dot', 'aria-hidden': 'true' }), h('span', { text: t.label }));
+        }))),
+      h('div', { class: 'rw-card-points' },
+        h('span', { text: 'Points' }),
+        h('strong', { text: String(s.points) }),
+        h('small', { text: (s.pending ? s.pending + ' pending · ' : '') + R.redeemPoints + ' points = ' + money(R.redeemValueCents) }),
+        h('button', { class: 'btn btn-sm btn-gold', type: 'button', disabled: !s.redeemable,
+          text: s.redeemable ? 'Swap ' + units * R.redeemPoints + ' → ' + money(units * R.redeemValueCents) : (R.redeemPoints - s.points % R.redeemPoints) + ' points to your next voucher',
+          onclick: function () { redeem(units); } }))));
+
+    /* ---- Stamp card ---- */
+    append(root, panel('Your stamp card', 'Every bunch of MEOD-grown produce earns a stamp. Fill the card to reach the next tier.', stampCard(s)));
+
+    /* ---- Smart tips + vouchers ---- */
+    var TIP_ICONS = { tier: TIER_ICONS.sprout, redeem: ICON_GIFT, preorder: ICONS.clock, clearance: ICONS.tag, expiry: ICONS.clock };
+    var tips = M.rewards.tips(c);
+    var tipsPanel = h('section', { class: 'panel' },
+      h('div', { class: 'rw-head' }, h('h2', { text: 'Smart tips' }), h('span', { class: 'badge b-blue', text: 'AI-assisted' })),
+      h('p', { class: 'hint', text: 'From your own orders, what\'s growing and what needs clearing.' }),
+      tips.length ? h('ul', { class: 'rw-tips' }, tips.map(function (t) {
+        var act = null;
+        if (t.action && t.action.productId) act = mini(t.action.label, function () { addToCart(t.action.productId); location.hash = 'shop'; });
+        else if (t.action && t.action.redeem) act = mini(t.action.label, function () { redeem(units); });
+        else if (t.action && t.action.href) act = h('a', { class: 'mini', href: t.action.href, text: t.action.label });
+        return h('li', { class: 'gb-detail rw-tip' }, iconCircle(TIP_ICONS[t.kind] || ICONS.leaf, 'soft'), h('span', { text: t.text }), act);
+      })) : h('p', { class: 'empty', text: 'No tips right now — check back after your next order.' }));
+
+    var voucherPanel = panel('Your vouchers', 'Use one in your cart, on orders with at least ' + money(R.voucherMinSpendCents) + ' of full-price items.',
+      vouchers.length ? h('div', { class: 'rw-vouchers' }, vouchers.map(function (v) {
+        var ok = M.rewards.usable(v);
+        return h('article', { class: 'rw-voucher' + (ok ? '' : ' spent') },
+          h('div', null, h('strong', { text: money(v.valueCents) }), h('small', { text: v.label })),
+          h('div', { class: 'rw-voucher-side' },
+            h('span', { class: 'code-box', text: v.code }),
+            h('small', { text: v.status === 'used' ? 'Used' + (v.usedAt ? ' ' + shortDate(v.usedAt) : '') : ok ? 'Use by ' + shortDate(v.expiresAt) : 'Expired' })));
+      })) : h('p', { class: 'empty', text: 'No vouchers yet. Swap points for one, or fill your stamp card.' }));
+    append(root, h('div', { class: 'two-col' }, tipsPanel, voucherPanel));
+
+    /* ---- How it works (numbered steps, like Group buy) ---- */
+    append(root, panel('How it works', null, h('ol', { class: 'gb-steps rw-steps' },
+      [['Earn points', R.pointsPerDollar + ' point per S$1 on every paid order — the same Store Rewards points as MEOD Fresh.'],
+       ['Waste less, earn more', R.antiWasteMultiplier + '× points on Buy to Clear items and harvest pre-orders.'],
+       ['Collect stamps', 'Each bunch of MEOD-grown produce is a stamp. More stamps, higher tier, better perks.'],
+       ['Swap for vouchers', R.redeemPoints + ' points = ' + money(R.redeemValueCents) + ' off. Refunds take back that order\'s points.']]
+        .map(function (st, i) { return h('li', null, h('b', { text: String(i + 1) }), h('span', null, h('strong', { text: st[0] }), h('small', { text: st[1] }))); }))));
+
+    /* ---- Tier perks + history (standard tables) ---- */
+    append(root, panel('Tier perks', 'Counted over the last 12 months. Examples for MEOD to confirm.', table([
+      { label: 'Tier', render: function (t) { return h('span', { class: 'rw-tier-cell' }, iconCircle(TIER_ICONS[t.key], 'soft'), h('strong', { text: t.label }), t === s.tier ? badge('You', 'green') : null); } },
+      { label: 'Bunches a year', num: true, render: function (t) { return t.minBunches ? t.minBunches + '+' : 'Start'; } },
+      { label: 'Points', render: function (t) { return t.multiplier > 1 ? t.multiplier + '× on everything' : '1 per S$1'; } },
+      { label: 'Voucher', render: function (t) { return t.voucherCents ? money(t.voucherCents) + ' on reaching it' : '—'; } },
+      { label: 'Free delivery', render: function (t) { return 'From ' + money(t.freeFromCents != null ? t.freeFromCents : M.RULES.freeDeliveryThresholdCents); } }
+    ], R.tiers)));
+
+    var KIND = { earn: ['Earned', 'green'], pending: ['Pending', 'amber'], reversed: ['Reversed', 'red'], redeemed: ['Redeemed', 'blue'] };
+    append(root, panel('Points history', null, table([
+      { label: 'Date', render: function (r) { return shortDate(r.at); } },
+      { label: 'For', render: function (r) { return h('span', null, h('strong', { text: r.ref || '—' }), h('br'), h('small', { text: r.detail })); } },
+      { label: 'Type', render: function (r) { return badge(KIND[r.kind][0], KIND[r.kind][1]); } },
+      { label: 'Points', num: true, render: function (r) { return h('strong', { class: r.points < 0 ? 'bag-value-low' : 'bag-value-ok', text: (r.points > 0 ? '+' : '') + r.points }); } }
+    ], s.ledger, 'No points yet — your first order starts your stamp card.')));
   }
 
   var cart = {};
@@ -2188,7 +2427,15 @@
       var items = cartItems();
       var ev = myEvent();
       var activeEv = ev && ev.status === 'open' ? ev : null;
-      var totals = M.priceOrder(items, Boolean(activeEv));
+      // Grow with MEOD: tier free-delivery threshold, an optional voucher (full-price lines only).
+      var rs = M.rewards.summary(c.id);
+      var usableVouchers = M.rewards.vouchers(c.id).filter(M.rewards.usable);
+      var voucherCap = M.rewards.capCents(items, Boolean(activeEv));
+      var voucherMin = M.RULES.rewards.voucherMinSpendCents;
+      var voucherOk = voucherCap >= voucherMin;
+      var chosenVoucher = voucherOk ? usableVouchers.filter(function (v) { return v.id === shopView.voucherId; })[0] || null : null;
+      var totals = M.priceOrder(items, Boolean(activeEv), { voucherCents: chosenVoucher ? Math.min(chosenVoucher.valueCents, voucherCap) : 0, freeFromCents: rs.freeFromCents });
+      var earn = items.length ? M.rewards.preview(c.id, items, totals) : null;
       var count = items.reduce(function (s, i) { return s + i.qty; }, 0);
       cartBox.textContent = '';
 
@@ -2212,9 +2459,10 @@
             h('button', { class: 'cart-remove', type: 'button', 'aria-label': 'Remove ' + i.title, onclick: function () { setQty(i.key, 0); } }, iconCircle(ICONS.x, 'bare')));
         })));
 
-        // Free-delivery progress
-        var need = M.RULES.freeDeliveryThresholdCents - totals.netCents;
-        var pct = Math.min(100, Math.round(totals.netCents / M.RULES.freeDeliveryThresholdCents * 100));
+        // Free-delivery progress (checked before any voucher, against the customer's tier threshold)
+        var beforeVoucher = totals.netCents + totals.voucherCents;
+        var need = totals.freeFromCents - beforeVoucher;
+        var pct = Math.min(100, Math.round(beforeVoucher / totals.freeFromCents * 100));
         var bar = h('span', { class: 'fd-bar' }, h('span', { class: 'fd-fill' }));
         bar.firstChild.style.width = pct + '%';
         append(cartBox, h('div', { class: 'free-delivery' + (need <= 0 ? ' done' : '') },
@@ -2234,10 +2482,27 @@
         append(cartBox, form);
       }
 
+      // Rewards: pick a voucher, and see the points this order will earn.
+      if (items.length) {
+        var vSel = null;
+        if (usableVouchers.length) {
+          vSel = h('select', { 'aria-label': 'Use a rewards voucher', disabled: !voucherOk, onchange: function (e) { shopView.voucherId = e.target.value || null; drawCart(); } },
+            h('option', { value: '', text: 'No voucher' }),
+            usableVouchers.map(function (v) { return h('option', { value: v.id, selected: chosenVoucher && v.id === chosenVoucher.id, text: money(v.valueCents) + ' · ' + v.label }); }));
+        }
+        append(cartBox, h('div', { class: 'cart-rewards' },
+          h('div', { class: 'cr-head' }, h('span', { class: 'cr-tier', text: rs.tier.label + ' member' }),
+            h('span', null, 'You\'ll earn ', h('strong', { text: earn.total + ' points' }), earn.antiWaste ? h('small', { text: ' incl. ' + earn.antiWaste + ' anti-waste bonus' }) : null)),
+          vSel ? h('label', { class: 'cr-voucher' }, 'Voucher', vSel) : h('small', { class: 'cr-none', text: rs.redeemable ? 'You have ' + rs.points + ' points — swap them for a voucher in Rewards.' : 'No vouchers yet — ' + rs.points + ' points saved.' }),
+          usableVouchers.length && !voucherOk ? h('small', { class: 'cr-note', text: 'Add ' + money(voucherMin - voucherCap) + ' more in full-price items to use a voucher (min. ' + money(voucherMin) + ').' }) : null,
+          chosenVoucher && totals.voucherCents < chosenVoucher.valueCents ? h('small', { class: 'cr-note', text: 'Vouchers apply to full-price items only, so ' + money(totals.voucherCents) + ' of it is used here.' }) : null));
+      }
+
       if (items.length) {
         append(cartBox, h('div', { class: 'cart-lines' },
           h('div', null, h('span', { text: 'Subtotal' }), h('span', { text: money(totals.subtotalCents) })),
           activeEv ? h('div', { class: 'saving' }, h('span', { text: 'Group discount' }), h('span', { text: '−' + money(totals.discountCents) })) : null,
+          totals.voucherCents ? h('div', { class: 'saving' }, h('span', { text: 'Voucher' }), h('span', { text: '−' + money(totals.voucherCents) })) : null,
           h('div', null, h('span', { text: 'Delivery' }), h('span', { text: totals.deliveryCents ? money(totals.deliveryCents) : 'Free' })),
           h('div', { class: 'cart-total' }, h('span', { text: 'Total' }), h('span', { text: money(totals.totalCents) }))));
       }
@@ -2267,12 +2532,15 @@
             order.bagContentsApproved = false;
             order.bagProposed = M.clearance.proposeBagContents(order);
           }
+          if (chosenVoucher && totals.voucherCents) { order.voucherId = chosenVoucher.id; order.voucherCode = chosenVoucher.code; M.rewards.useVoucher(chosenVoucher.id, id); }
+          shopView.voucherId = null;
           S().orders.push(order);
           cart = {}; saveCart();
           commit('order.created', ref, 'Order ' + ref + ' placed. You\'ll pay securely on MEOD Fresh.');
           location.hash = 'orders';
         } }),
-        h('p', { class: 'cart-note' }, iconCircle(ICONS.clock, 'bare'), 'Delivery on Tue, Thu & Sat · free from ' + money(M.RULES.freeDeliveryThresholdCents)));
+        h('p', { class: 'cart-note' }, iconCircle(ICONS.clock, 'bare'), 'Delivery on Tue, Thu & Sat · free from ' + money(rs.freeFromCents) +
+          (rs.freeFromCents < M.RULES.freeDeliveryThresholdCents ? ' (' + rs.tier.label + ' perk)' : '')));
       var addr = formatAddress(c.address);
       cartBox.insertBefore(h('div', { class: 'cart-address' + (addr ? '' : ' missing') }, iconCircle(ICONS.pin, 'bare'),
         h('span', null, h('small', { text: addr ? 'Deliver to' : 'No delivery address' }), h('strong', { text: addr || 'Add one before you order' })),
@@ -2481,6 +2749,7 @@
         h('div', { class: 'r-totals' },
           line('Subtotal', money(o.subtotalCents)),
           o.discountCents ? line('Group discount' + (ev ? ' (' + ev.code + ')' : ''), '−' + money(o.discountCents)) : null,
+          o.voucherCents ? line('Rewards voucher' + (o.voucherCode ? ' (' + o.voucherCode + ')' : ''), '−' + money(o.voucherCents)) : null,
           line('Delivery', o.deliveryCents ? money(o.deliveryCents) : 'Free'),
           line('Total', money(o.totalCents), 'r-total'),
           o.refundedCents ? line('Refunded', '−' + money(o.refundedCents), 'r-refund') : null),
@@ -3019,6 +3288,7 @@
       { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
+      { id: 'rewards', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },
       { id: 'users', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
@@ -3034,6 +3304,7 @@
       { id: 'overview', label: 'Home', title: 'Welcome back', sub: 'Your orders, picks and group buy.', render: customerOverview },
       { id: 'shop', label: 'Shop', title: 'Shop the harvest', sub: 'Fresh from Kranji, delivered Tue, Thu & Sat.', render: shopView },
       { id: 'orders', label: 'My orders', title: 'My orders', sub: 'Track, reorder and get receipts.', render: customerOrdersView },
+      { id: 'rewards', label: 'Rewards', title: 'Rewards', sub: 'Points, tiers and vouchers for supporting local farming.', render: rewardsView },
       { id: 'group', label: 'Group buy', title: 'Group buy', sub: 'Buy together and save.', render: customerGroupView },
       { id: 'preferences', label: 'Preferences', title: 'Preferences', sub: 'Messages, privacy and language.', render: preferencesView },
       { id: 'assistant', label: 'Ask MEOD', title: 'Ask MEOD', sub: 'Help in English, 中文 and Bahasa Melayu.', render: assistantView }

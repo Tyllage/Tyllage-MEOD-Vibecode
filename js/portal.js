@@ -3864,11 +3864,7 @@
     var st = M.reviews.stats(p.id), sum = M.reviews.summary(p.id), list = M.reviews.list(p.id);
     var can = session.customerId ? M.reviews.canWrite(session.customerId, p.id) : { ok: false };
     var box = h('section', { class: 'pd-reviews', 'aria-labelledby': 'pd-rev-title' });
-    var head = h('div', { class: 'rv-head' },
-      h('h3', { id: 'pd-rev-title', text: 'Ratings & reviews' }),
-      st.count ? h('div', { class: 'rv-score' },
-        h('strong', { text: st.avg.toFixed(1) }),
-        h('span', null, h('span', { class: 'rv-stars', 'aria-hidden': 'true', text: starsText(st.avg) }), h('small', { text: st.count + ' verified review' + (st.count === 1 ? '' : 's') }))) : null);
+    var head = h('div', { class: 'rv-head' }, h('h3', { id: 'pd-rev-title', text: 'Ratings & reviews' }));
     append(box, head);
     if (!st.count) append(box, h('p', { class: 'hint', text: 'No reviews yet — be the first once your order arrives.' }));
     else {
@@ -3878,7 +3874,13 @@
         bar.firstChild.style.width = Math.round(n / st.count * 100) + '%';
         bars.appendChild(h('li', null, h('small', { text: star + '★' }), bar, h('small', { text: String(n) })));
       }
-      append(box, h('div', { class: 'rv-top' }, bars,
+      // Left: the score with its breakdown underneath. Right: the AI summary.
+      var overview = h('div', { class: 'rv-overview' },
+        h('div', { class: 'rv-score' },
+          h('strong', { text: st.avg.toFixed(1) }),
+          h('span', null, h('span', { class: 'rv-stars', 'aria-label': st.avg.toFixed(1) + ' out of 5', text: starsText(st.avg) }), h('small', { text: st.count + ' verified review' + (st.count === 1 ? '' : 's') }))),
+        bars);
+      append(box, h('div', { class: 'rv-top' }, overview,
         sum ? h('div', { class: 'rv-summary' },
           h('div', { class: 'rv-summary-head' }, h('strong', { text: 'What customers say' }), aiPill()),
           h('p', { text: sum.text }),

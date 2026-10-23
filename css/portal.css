@@ -1674,7 +1674,10 @@ a.pill-btn { text-decoration: none; }
 .rv-score > span { display: grid; }
 .rv-score small { color: var(--muted); font-size: .78rem; }
 .rv-stars { color: #e0a526; letter-spacing: 1px; white-space: nowrap; }
-.rv-top { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.rv-top { display: grid; grid-template-columns: minmax(190px, 240px) minmax(0, 1fr); gap: 18px; align-items: stretch; }
+.rv-overview { display: grid; gap: 14px; align-content: start; padding: 16px; border-radius: 12px; background: #fffaf0; border: 1px solid #f1e3c4; }
+.rv-overview .rv-score { padding-bottom: 12px; border-bottom: 1px solid #f1e3c4; }
+.rv-overview .rv-score > strong { font-size: 2.2rem; }
 .rv-dist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .rv-dist li { display: grid; grid-template-columns: 28px 1fr 20px; align-items: center; gap: 8px; }
 .rv-dist small { color: var(--muted); font-size: .76rem; }

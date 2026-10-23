@@ -84,6 +84,11 @@ body.portal { background: #f3f1ec; min-height: 100vh; }
    label wraps onto two lines. */
 .kpis > .kpi { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 4px; align-content: start; }
 .kpis > .kpi-link { grid-row: span 4; }
+/* The customer Home row (with the rewards card and its progress bar): plain equal-height
+   cards instead of shared rows. Every row of cards is the same height, even after wrapping. */
+.kpis:has(> .kpi-link) { grid-auto-rows: 1fr; }
+.kpis:has(> .kpi-link) > .kpi { display: flex; flex-direction: column; gap: 4px; grid-row: auto; }
+.kpis:has(> .kpi-link) > .kpi-link > .rw-bar { margin-top: auto; }
 .kpi > span { display: block; align-self: start; font-size: .78rem; line-height: 1.35; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
 .kpi > strong { display: block; align-self: start; font-size: 1.8rem; line-height: 1.2; color: var(--forest); margin-top: 2px; }
 .kpi > small { color: var(--muted); font-size: .82rem; line-height: 1.45; }

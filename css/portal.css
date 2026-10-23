@@ -80,9 +80,13 @@ body.portal { background: #f3f1ec; min-height: 100vh; }
 /* ---------- Components ---------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 26px; }
 .kpi { background: var(--white); border-radius: 16px; padding: 18px 20px; box-shadow: 0 2px 10px rgba(0,0,0,.04); }
-.kpi span { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
-.kpi strong { display: block; font-size: 1.8rem; color: var(--forest); margin-top: 4px; }
-.kpi small { color: var(--muted); font-size: .82rem; }
+/* Cards in a row share rows (subgrid), so labels, numbers and notes line up even when one
+   label wraps onto two lines. */
+.kpis > .kpi { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 4px; align-content: start; }
+.kpis > .kpi-link { grid-row: span 4; }
+.kpi > span { display: block; align-self: start; font-size: .78rem; line-height: 1.35; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+.kpi > strong { display: block; align-self: start; font-size: 1.8rem; line-height: 1.2; color: var(--forest); margin-top: 2px; }
+.kpi > small { color: var(--muted); font-size: .82rem; line-height: 1.45; }
 
 .panel { background: var(--white); border-radius: 16px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,.04); margin-bottom: 22px; }
 .panel h2 { font-size: 1.15rem; color: var(--forest); margin: 0 0 4px; }

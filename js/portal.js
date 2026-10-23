@@ -1176,6 +1176,184 @@
     ], done, 'No harvests recorded yet.')));
   }
 
+  /* ---------------- B2B Buyer Growth (staff + admin) ----------------
+   * Trade accounts with standing orders, AI-assisted buyer insights (missing standing
+   * orders, accounts ordering less, lapsed accounts, surplus to offer, lead follow-ups), a
+   * lead pipeline with suggested pitches, and upcoming trade deliveries. Messages are drafted
+   * for staff to edit and send (simulated). PROTOTYPE: rule-based; trade prices illustrative. */
+  var B2B_KIND = { missing: ['Missing order', 'red'], lapsed: ['Lapsed', 'red'], declining: ['Ordering less', 'amber'], offer: ['Surplus offer', 'green'], lead: ['Lead follow-up', 'blue'] };
+  function b2bDay(key) { return M.clearance.parseDayKey(key).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function usualList(a) { return a.usual.map(function (u) { var p = M.byId('products', u.productId); return u.qty + ' ' + (p ? p.title : '?'); }).join(', '); }
+  // Greeting name from a contact like "Chef Marcus", "Sarah, owner" or "Ops manager": the
+  // person's name if there is one, otherwise "there" for role-only contacts.
+  function firstName(n) {
+    var s = String(n || '').replace(/\s*\(demo\)\s*/i, '').split(',')[0].trim().replace(/^(chef|mr|ms|mrs|dr)\.?\s+/i, '');
+    var w = s.split(/\s+/)[0] || '';
+    return !w || /^(ops|hr|team|manager|owner|staff|admin|the|orders|purchasing|kitchen)$/i.test(w) ? 'there' : w;
+  }
+  // A one-line suggested pitch for a lead, by business type, mentioning what's plentiful now.
+  function leadPitch(l) {
+    var plenty = M.radar.crops().filter(function (c) { return c.status === 'surplus' || c.status === 'balanced'; }).slice(0, 2).map(function (c) { return c.product.title; }).join(' and ');
+    var t = {
+      restaurant: 'Same-morning harvested, pesticide-free greens at trade price, delivered Tue/Thu/Sat — a reliable local supply for daily service.',
+      cafe: 'Salad greens and herbs in small, regular quantities — no big minimums, and a local-farm story for the menu.',
+      office: 'A weekly pantry box of fresh local greens for staff, plus team farm visits.',
+      caterer: 'Bulk Asian greens on a fixed schedule, with pre-orders so event quantities are guaranteed.',
+      school: 'Canteen greens grown 20 minutes away, linked to a learning journey for students.',
+      hotel: 'Local, pesticide-free produce for a sustainability story — helping Singapore grow more of its own food by 2035.'
+    }[l.type] || 'Fresh, pesticide-free MEOD produce at trade price.';
+    return t + (plenty ? ' In good supply now: ' + plenty + '.' : '');
+  }
+  function b2bDraft(kind, x) {
+    var a = x.account, l = x.lead, name = firstName(a ? a.contact : l ? l.name : '');
+    var sign = '\n\nThank you,\nMEOD Farm Trade Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
+    if (kind === 'missing') return { subject: 'Your usual order for ' + b2bDay(x.dayKey), body: 'Hi ' + name + ',\n\nJust checking in on your usual order for ' + b2bDay(x.dayKey) + '. Shall we prepare the same as usual (' + usualList(a) + ')?\n\nReply to confirm, or let us know any changes and we\'ll adjust.' + sign };
+    if (kind === 'declining') return { subject: 'How are the greens working for you?', body: 'Hi ' + name + ',\n\nWe noticed your recent orders have been a little lighter, and wanted to check everything is going well — with the produce, deliveries or your menu.\n\nWe\'re happy to adjust quantities, change your delivery days, or suggest what\'s in season.' + sign };
+    if (kind === 'lapsed') return { subject: 'We\'ve missed you at MEOD Farm', body: 'Hi ' + name + ',\n\nWe haven\'t seen your order for a few weeks and wanted to check in. Your usual (' + usualList(a) + ') is growing well this week.\n\nWould you like us to restart your standing order, or adjust it?' + sign };
+    if (kind === 'offer') {
+      var p = x.product, tp = Math.round(p.priceCents * M.RULES.b2bPriceRate), next = M.b2b.stats(a).upcoming[0];
+      return { subject: 'Plenty of ' + p.title + ' this week', body: 'Hi ' + name + ',\n\nWe have an excellent harvest of ' + p.title + ' this week — ' + money(tp) + ' per unit at trade price. Would you like us to add some to your next order' + (next ? ' on ' + b2bDay(next.dayKey) : '') + '?\n\nJust reply with the quantity.' + sign };
+    }
+    if (kind === 'lead') return { subject: 'Fresh local greens for ' + l.name.replace(/\s*\(demo\)\s*/i, ''), body: 'Hi there,\n\nFollowing up on our chat — ' + leadPitch(l) + '\n\nCould we send a free sample box, or arrange a quick farm visit to show you what we grow?' + sign };
+    return { subject: 'Hello from MEOD Farm', body: 'Hi ' + name + ',\n\n' + sign };
+  }
+  function openB2BMessage(kind, x) {
+    document.querySelectorAll('.b2b-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var target = x.account || x.lead;
+    var d0 = b2bDraft(kind, x);
+    var channel = h('select', { 'aria-label': 'Channel' }, h('option', { value: 'email', text: 'Email' }), h('option', { value: 'whatsapp', text: 'WhatsApp' }));
+    var subj = h('input', { 'aria-label': 'Subject', value: d0.subject }); subj.value = d0.subject;
+    var body = h('textarea', { rows: 12, 'aria-label': 'Message' }); body.value = d0.body;
+    var subjLabel = h('label', null, 'Subject', subj);
+    channel.addEventListener('change', function () { subjLabel.style.display = channel.value === 'email' ? '' : 'none'; });
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog b2b-dialog', 'aria-labelledby': 'b2-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var to = x.account ? x.account.contact + ' · ' + x.account.email : x.lead.name;
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'b2-title', text: 'Message ' + target.name }), aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
+        h('div', { class: 'rd-form' },
+          h('div', { class: 'rd-controls' }, h('label', null, 'Send by', channel), h('label', null, 'To', h('input', { value: to, readonly: true }))),
+          subjLabel, h('label', null, 'Message', body))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: function () {
+          M.b2b.logContact(target, channel.value, body.value, session.email);
+          closeDialog();
+          commit('b2b.contacted', target.id, 'Message to ' + target.name + ' sent by ' + (channel.value === 'email' ? 'email' : 'WhatsApp') + ' (simulated).');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+  function createUsual(accountId, dayKey) {
+    var r = M.b2b.createUsualOrder(accountId, dayKey);
+    if (!r.ok) { toast(r.error); return; }
+    commit('b2b.order', r.order.ref, r.order.ref + ' confirmed for ' + b2bDay(dayKey) + ' (' + money(r.order.totalCents) + ') — it\'s on the harvest & pack list.');
+  }
+  function advanceLead(l) {
+    var idx = M.b2b.STAGES.map(function (s) { return s[0]; }).indexOf(l.stage);
+    var next = M.b2b.STAGES[Math.min(idx + 1, M.b2b.STAGES.length - 1)];
+    M.b2b.moveLead(l.id, next[0], next[0] === 'won' ? 7 : 3);
+    commit('b2b.lead', l.id, l.name + ' moved to ' + next[1] + '.');
+  }
+
+  function b2bView(root) {
+    var st = M.b2b.store();
+    var accounts = st.accounts;
+    var stats = {};
+    accounts.forEach(function (a) { stats[a.id] = M.b2b.stats(a); });
+    var weekly = accounts.reduce(function (s, a) { return s + stats[a.id].weeklyCents; }, 0);
+    var nextWeek = st.orders.filter(function (o) { var t = M.clearance.parseDayKey(o.deliveryDay).getTime(); return o.status === 'confirmed' && t <= Date.now() + 7 * 864e5; });
+    var openLeads = st.leads.filter(function (l) { return l.stage !== 'won' && l.stage !== 'lost'; });
+    append(root, h('div', { class: 'kpis' },
+      kpi('Trade accounts', String(accounts.filter(function (a) { return a.status === 'active'; }).length), 'restaurants, cafés, offices, caterers'),
+      kpi('Trade sales / week', money(weekly), 'average of the last 4 weeks'),
+      kpi('Next 7 days', String(nextWeek.length) + ' order(s)', money(nextWeek.reduce(function (s, o) { return s + o.totalCents; }, 0)) + ' confirmed'),
+      kpi('Pipeline', String(openLeads.length) + ' lead(s)', 'about ' + money(openLeads.reduce(function (s, l) { return s + l.estWeeklyCents; }, 0)) + ' a week if won')));
+
+    /* ---- Buyer insights ---- */
+    var ins = M.b2b.insights();
+    append(root, panel(aiTitle('Buyer insights'), 'From each account\'s standing days and order history, plus what the farm has in surplus. You send every message.',
+      ins.length ? h('div', { class: 'ops-brief' }, ins.map(function (x) {
+        var k = B2B_KIND[x.kind];
+        var acts = x.actions.map(function (a) {
+          if (a === 'usual') return h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Confirm usual order', onclick: function () { createUsual(x.account.id, x.dayKey); } });
+          if (a === 'advance') return h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Next stage →', onclick: function () { advanceLead(x.lead); } });
+          return h('button', { class: 'btn btn-sm ' + (x.actions.length > 1 ? 'btn-outline' : 'btn-forest'), type: 'button', text: 'Draft message', onclick: function () { openB2BMessage(x.kind, x); } });
+        });
+        return h('article', { class: 'ops-card' + (x.kind === 'offer' ? ' farm' : '') },
+          h('div', { class: 'ops-card-head' }, iconCircle(x.kind === 'lead' ? ICONS.users : x.kind === 'offer' ? ICONS.leaf : ICONS.truck, 'soft'), badge(k[0], k[1])),
+          h('strong', { class: 'ops-title', text: x.title }),
+          h('p', { text: x.why }),
+          h('div', { class: 'ops-foot b2b-acts' }, acts));
+      })) : h('p', { class: 'empty', text: 'All trade accounts are on track.' })));
+
+    /* ---- Accounts ---- */
+    append(root, panel('Trade accounts', 'Standing order days, usual order at trade price (' + Math.round(M.RULES.b2bPriceRate * 100) + '% of retail, illustrative) and how ordering is trending.', table([
+      { label: 'Account', render: function (a) { return h('span', null, h('strong', { text: a.name }), h('br'), h('small', { text: (M.b2b.TYPES[a.type] || a.type) + ' · ' + a.area + ' · ' + a.contact })); } },
+      { label: 'Standing', render: function (a) { return a.standingDays.map(function (d) { return M.b2b.WEEKDAY[d]; }).join(' & '); } },
+      { label: 'Usual order', render: function (a) { var s = stats[a.id]; return h('span', null, s.usualUnits + ' units · ' + money(s.usualCents), h('br'), h('small', { text: usualList(a) })); } },
+      { label: 'Last 4 weeks', render: function (a) { var s = stats[a.id]; return h('span', null, money(s.weeklyCents) + '/wk', h('br'), h('small', { class: s.trendPct <= -25 ? 'bag-value-low' : '', text: s.trendPct ? (s.trendPct > 0 ? '↑ ' : '↓ ') + Math.abs(s.trendPct) + '% lately' : 'steady' })); } },
+      { label: 'Last delivery', render: function (a) { var s = stats[a.id]; return s.lastOrder ? h('span', null, b2bDay(s.lastOrder), h('br'), h('small', { text: s.daysSince + ' days ago' })) : '—'; } },
+      { label: 'Next orders', render: function (a) {
+        return h('div', { class: 'b2b-next' }, stats[a.id].upcoming.map(function (u) {
+          return h('span', { class: 'mini-chip ' + (u.order ? 'ok' : 'miss'), text: b2bDay(u.dayKey) + (u.order ? ' ✓' : ' · not placed') });
+        }));
+      } },
+      { label: 'Actions', render: function (a) {
+        var miss = stats[a.id].missing[0];
+        return h('div', { class: 'actions' },
+          miss ? mini('Usual order', function () { createUsual(a.id, miss.dayKey); }, { title: 'Confirm their usual order for ' + b2bDay(miss.dayKey) }) : null,
+          mini('Message', function () { openB2BMessage(miss ? 'missing' : 'general', { account: a, dayKey: miss ? miss.dayKey : null }); }));
+      } }
+    ], accounts)));
+
+    /* ---- Lead pipeline ---- */
+    var todayKey = M.clearance.dayKey(new Date());
+    var board = h('div', { class: 'b2b-board' }, M.b2b.STAGES.map(function (sg) {
+      var leads = st.leads.filter(function (l) { return l.stage === sg[0]; });
+      return h('section', { class: 'b2b-col', 'aria-label': sg[1] },
+        h('div', { class: 'b2b-col-head' }, h('strong', { text: sg[1] }), h('span', { class: 'chip-count', text: String(leads.length) })),
+        leads.length ? leads.map(function (l) {
+          var due = l.nextStepAt <= todayKey && sg[0] !== 'won';
+          return h('article', { class: 'b2b-lead' + (due ? ' due' : '') },
+            h('strong', { text: l.name }),
+            h('small', { text: (M.b2b.TYPES[l.type] || l.type) + (l.area ? ' · ' + l.area : '') + ' · ~' + money(l.estWeeklyCents) + '/wk' }),
+            h('small', { class: 'b2b-next-step', text: sg[0] === 'won' ? 'Won — set up as a trade account' : (due ? 'Follow up today' : 'Next step ' + b2bDay(l.nextStepAt)) }),
+            sg[0] !== 'won' ? h('p', { class: 'b2b-pitch' }, aiPill(), ' ', leadPitch(l)) : null,
+            h('div', { class: 'actions' },
+              sg[0] !== 'won' ? mini('Message', function () { openB2BMessage('lead', { lead: l }); }) : null,
+              sg[0] !== 'won' ? mini('Next →', function () { advanceLead(l); }) : null));
+        }) : h('p', { class: 'empty', text: 'None' }));
+    }));
+    var lf = h('form', { class: 'form-grid b2b-lead-form', novalidate: true },
+      h('label', null, 'Business name', h('input', { name: 'name', maxlength: 80, placeholder: 'e.g. Café Botanica' })),
+      h('label', null, 'Type', h('select', { name: 'type' }, Object.keys(M.b2b.TYPES).map(function (k) { return h('option', { value: k, text: M.b2b.TYPES[k] }); }))),
+      h('label', null, 'Area', h('input', { name: 'area', maxlength: 40, placeholder: 'e.g. Holland Village' })),
+      h('label', null, 'Est. per week (S$)', h('input', { name: 'est', type: 'number', min: 0, step: 10, value: '50' })),
+      h('div', { style: 'grid-column:1/-1' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Add lead' })));
+    lf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var r = M.b2b.addLead({ name: lf.name.value, type: lf.type.value, area: lf.area.value, estWeeklyCents: Math.round((parseFloat(lf.est.value) || 0) * 100) });
+      if (!r.ok) { toast(r.error); return; }
+      commit('b2b.lead', r.lead.id, r.lead.name + ' added to the pipeline.');
+    });
+    append(root, panel('Lead pipeline', 'New trade buyers from enquiries, farm visits and outreach. Each card has a suggested pitch based on the business type and what\'s plentiful now.', board,
+      h('details', { class: 'b2b-add' }, h('summary', { text: '+ Add a lead' }), lf)));
+
+    /* ---- Upcoming trade deliveries ---- */
+    var upcoming = st.orders.filter(function (o) { return o.status === 'confirmed'; }).sort(function (a, b) { return a.deliveryDay < b.deliveryDay ? -1 : 1; });
+    append(root, panel('Upcoming trade deliveries', 'Confirmed B2B orders. They\'re included in Demand Radar and the harvest & pack list.', table([
+      { label: 'Delivery', render: function (o) { return b2bDay(o.deliveryDay); } },
+      { label: 'Order', render: function (o) { return o.ref; } },
+      { label: 'Account', render: function (o) { var a = st.accounts.filter(function (x) { return x.id === o.accountId; })[0]; return a ? a.name : '—'; } },
+      { label: 'Items', render: function (o) { return o.items.map(function (i) { return i.qty + '× ' + i.title; }).join(', '); } },
+      { label: 'Total', num: true, render: function (o) { return money(o.totalCents); } }
+    ], upcoming, 'No confirmed trade orders yet.')));
+  }
+
   /* ---------------- Weekly AI briefing (staff + admin) ----------------
    * One page to open on Monday: ranked priorities across farm ops, sales and customers,
    * the next harvest & pack list, a sales pulse, the week's calendar, and a short digest the
@@ -1232,6 +1410,14 @@
     if (tickets.length) push(82, 'Customers', ICONS.shield, tickets.length + ' customer issue(s) need a person', tickets.map(function (t) { return t.intent; }).join(', ') + ' — the bot has stopped handling these.', { label: 'Inbox', href: '#inbox' });
     var bagDays = M.radar.deliveryKeys(2).map(function (k) { return M.radar.pickList(k).pendingBags; }).reduce(function (a, b) { return a + b; }, 0);
     if (bagDays) push(78, 'Farm ops', ICONS.bag, bagDays + ' Surprise Harvest Bag(s) need their contents approved', 'Approve before packing day so stock is reserved.', { label: 'Buy to Clear', href: '#clearance' });
+    // Trade buyers: standing orders not placed yet, lapsed accounts, lead follow-ups due.
+    var bi = M.b2b.insights();
+    var missing = bi.filter(function (x) { return x.kind === 'missing'; });
+    if (missing.length) push(87, 'Sales', ICONS.truck, missing.length + ' B2B standing order(s) not placed yet', missing.map(function (x) { return x.account.name.replace(/\s*\(demo\)/i, ''); }).join(', ') + ' usually order by now. Confirm their usual order or check in.', { label: 'B2B buyers', href: '#b2b' });
+    var lapsedB = bi.filter(function (x) { return x.kind === 'lapsed' || x.kind === 'declining'; });
+    if (lapsedB.length) push(72, 'Sales', ICONS.users, lapsedB.length + ' trade account(s) ordering less or lapsed', lapsedB[0].title + '. A quick call can catch a problem early.', { label: 'B2B buyers', href: '#b2b' });
+    var leadsDue = bi.filter(function (x) { return x.kind === 'lead'; });
+    if (leadsDue.length) push(66, 'Sales', ICONS.chat, leadsDue.length + ' trade lead follow-up(s) due', leadsDue.map(function (x) { return x.lead.name.replace(/\s*\(demo\)/i, ''); }).join(', ') + '. Suggested pitches are ready.', { label: 'Lead pipeline', href: '#b2b' });
     var soldOut = S().products.filter(function (p) { var st = M.stockStatus(p); return st.key === 'out' || st.key === 'stale'; });
     if (soldOut.length) push(55, 'Farm ops', ICONS.box, soldOut.length + ' product(s) sold out or not syncing', soldOut.map(function (p) { return p.title; }).slice(0, 3).join(', ') + '. Customers see "Sold out" or "Checking stock".', { label: 'Stock', href: '#inventory' });
     return out.sort(function (a, b) { return b.score - a.score; });
@@ -1455,7 +1641,7 @@
           h('div', { class: 'radar-numbers' },
             radarBars(c),
             h('small', null, h('b', { text: 'Supply ' + c.supply }), ' = ' + c.stock + ' in stock + ' + c.harvest + ' harvesting'),
-            h('small', null, h('b', { text: 'Demand ' + c.demand }), ' = ' + c.confirmed + ' pre-ordered + ~' + c.expected + ' expected (' + c.weekly + '/wk)'),
+            h('small', null, h('b', { text: 'Demand ' + c.demand }), ' = ' + c.preordered + ' pre-ordered' + (c.b2b ? ' + ' + c.b2b + ' B2B' : '') + ' + ~' + c.expected + ' expected (' + c.weekly + '/wk)'),
             h('small', { class: 'radar-gap ' + (c.gap < 0 ? 'neg' : 'pos'), text: (c.gap >= 0 ? '+' : '−') + Math.abs(c.gap) + ' gap' })),
           h('div', { class: 'radar-advice' },
             h('p', { text: adv.text }),
@@ -1483,6 +1669,7 @@
         { label: 'Orders', num: true, render: function (r) { return r.orders ? String(r.orders) : '—'; } },
         { label: 'Pre-orders', num: true, render: function (r) { return r.preorders ? String(r.preorders) : '—'; } },
         { label: 'Bags', num: true, render: function (r) { return r.bags ? String(r.bags) : '—'; } },
+        { label: 'B2B', num: true, render: function (r) { return r.b2b ? String(r.b2b) : '—'; } },
         { label: 'Buffer', num: true, render: function (r) { return '+' + r.buffer; } },
         { label: 'Harvest / pack', num: true, render: function (r) { return h('strong', { text: String(r.pick) }); } },
         { label: 'Awaiting payment', num: true, render: function (r) { return r.awaitingPayment ? String(r.awaitingPayment) : '—'; } }
@@ -2279,7 +2466,9 @@
     profile: { label: 'Privacy', tone: 'grey' },
     clearance: { label: 'Buy to Clear', tone: 'amber' },
     harvest: { label: 'Harvest', tone: 'green' },
-    rewards: { label: 'Rewards', tone: 'amber' }
+    rewards: { label: 'Rewards', tone: 'amber' },
+    b2b: { label: 'B2B', tone: 'blue' },
+    briefing: { label: 'Briefing', tone: 'green' }
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
@@ -2295,7 +2484,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -3932,6 +4121,7 @@
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'b2b', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
       { id: 'radar', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },

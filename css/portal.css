@@ -1411,3 +1411,29 @@ a.pill-btn { text-decoration: none; }
   .brief-teaser .pill-btn { margin-left: auto; }
   .brief-pulse { grid-template-columns: 1fr; }
 }
+
+/* ---- B2B Buyer Growth ---- */
+.b2b-acts { justify-content: flex-end; flex-wrap: wrap; }
+.b2b-next { display: flex; flex-wrap: wrap; gap: 6px; }
+.b2b-next .mini-chip { white-space: normal; }
+@media (max-width: 640px) { .b2b-next { justify-content: flex-end; } }
+.b2b-next .mini-chip.ok { background: #eaf4e5; color: var(--forest); }
+.b2b-next .mini-chip.miss { background: #fdf0ed; color: var(--danger); font-weight: 600; }
+.b2b-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.b2b-col { background: #f6f2e8; border-radius: 14px; padding: 12px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.b2b-col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px; }
+.b2b-col-head strong { color: var(--forest); }
+.b2b-col .empty { margin: 4px; font-size: .84rem; }
+.b2b-lead { background: var(--white); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; border: 1.5px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,.05); min-width: 0; }
+.b2b-lead.due { border-color: var(--gold-dark); }
+.b2b-lead strong { color: var(--forest); font-size: .92rem; }
+.b2b-lead small { color: var(--muted); font-size: .78rem; }
+.b2b-lead.due .b2b-next-step { color: #8a5a00; font-weight: 700; }
+.b2b-pitch { margin: 2px 0 0; font-size: .8rem; line-height: 1.45; color: var(--ink); }
+.b2b-pitch .ai-pill { font-size: .64rem; padding: 2px 7px; vertical-align: 1px; }
+.b2b-lead .actions { flex-wrap: wrap; margin-top: 2px; }
+.b2b-add { margin-top: 18px; }
+.b2b-add summary { cursor: pointer; font-weight: 600; color: var(--leaf); }
+.b2b-lead-form { margin-top: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
+@media (max-width: 1100px) { .b2b-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } .b2b-lead-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .b2b-board, .b2b-lead-form { grid-template-columns: 1fr; } }

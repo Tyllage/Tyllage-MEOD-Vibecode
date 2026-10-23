@@ -43,6 +43,7 @@
         { key: 'friend', label: 'Farm Friend', emoji: '🌳', minBunches: 150, multiplier: 1.5, freeFromCents: 3000, voucherCents: 1000 }
       ]
     },
+    b2bPriceRate: 0.8,              // trade (B2B) price = 80% of retail, illustrative
     visitSessionMax: 40,            // guests per farm-visit session; bigger groups split into sessions
     visitMaxPax: 200,               // largest group the booking form accepts
     visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
@@ -595,6 +596,63 @@
         });
       });
       s.migrations.radarHistoryV1 = true;
+    }
+    if (!s.migrations.b2bV1) {
+      // B2B demo: four trade accounts with standing orders and 6 weeks of history, each
+      // showing a different situation (steady, a missing order, ordering less, lapsed), and
+      // a small lead pipeline. All names are fictional and marked (demo).
+      var pT = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      var today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      var occurrences = function (weekday, fromDaysAgo, toDaysAhead) {
+        var out = [];
+        for (var d = -fromDaysAgo; d <= toDaysAhead; d++) { var day = new Date(today0.getTime() + d * 864e5); if (day.getDay() === weekday) out.push(day); }
+        return out;
+      };
+      s.b2b = { accounts: [], orders: [], leads: [] };
+      var accounts = [
+        // name, type, area, contact, standing days, usual [title, qty], pattern
+        ['Green Fork Bistro (demo)', 'restaurant', 'Tanjong Pagar', 'Chef Marcus (demo)', [2, 6], [['Xiao Bai Cai', 10], ['Kai Lan', 8], ['Cos Lettuce', 6]], 'missing'],
+        ['Kopi & Kale Café (demo)', 'cafe', 'Tiong Bahru', 'Sarah, owner (demo)', [4], [['Mesclun Mix', 8], ['Tuscan Kale', 5], ['Sweet Basil', 3]], 'declining'],
+        ['Acme Logistics pantry (demo)', 'office', 'Jurong East', 'HR team (demo)', [2], [['Cos Lettuce', 6], ['Mesclun Mix', 4], ['Xiao Bai Cai', 4]], 'steady'],
+        ['Harbour Catering (demo)', 'caterer', 'Bukit Merah', 'Ops manager (demo)', [6], [['Kangkong', 15], ['HK Cai Xin', 12], ['Shiitake Mushroom', 6]], 'lapsed']
+      ];
+      accounts.forEach(function (a, ai) {
+        s.seq += 1;
+        var acc = { id: 'BA-' + s.seq, name: a[0], type: a[1], area: a[2], contact: a[3], email: 'orders@' + a[0].normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/-demo-?$/, '') + '.test',
+          phone: '+65 8000 03' + (10 + ai), standingDays: a[4], usual: a[5].map(function (u) { var p = pT(u[0]); return p ? { productId: p.id, qty: u[1] } : null; }).filter(Boolean),
+          paymentTerms: 'Net 14', status: 'active', since: new Date(today0.getTime() - (200 + ai * 40) * 864e5).toISOString(), contacts: [] };
+        s.b2b.accounts.push(acc);
+        a[4].forEach(function (wd) {
+          occurrences(wd, 42, 7).forEach(function (day, idx, all) {
+            var future = day.getTime() > today0.getTime();
+            var daysAgo = Math.round((today0.getTime() - day.getTime()) / 864e5);
+            if (a[6] === 'lapsed' && daysAgo < 24) return;                       // stopped ~3 weeks ago
+            if (a[6] === 'missing' && future && wd === 2) return;                 // next Tuesday not placed yet
+            if (future && a[6] !== 'steady' && a[6] !== 'missing') return;        // only steady + Bistro have future orders
+            var scale = a[6] === 'declining' && daysAgo < 15 ? 0.55 : 1;
+            var items = acc.usual.map(function (u, k) {
+              var p = s.products.filter(function (x) { return x.id === u.productId; })[0];
+              var q = Math.max(1, Math.round(u.qty * scale + ((idx + k) % 3) - 1));
+              return { productId: p.id, title: p.title, qty: q, priceCents: Math.round(p.priceCents * RULES.b2bPriceRate) };
+            });
+            s.seq += 1;
+            s.b2b.orders.push({ id: 'BO-' + s.seq, ref: 'B2B-' + s.seq, accountId: acc.id, deliveryDay: bagDayKey(day), items: items,
+              totalCents: items.reduce(function (t, i) { return t + i.qty * i.priceCents; }, 0), status: future ? 'confirmed' : 'delivered',
+              createdAt: new Date(day.getTime() - 3 * 864e5).toISOString(), source: 'b2b' });
+          });
+        });
+      });
+      [
+        ['Sunrise Primary canteen (demo)', 'school', 'Woodlands', 'contacted', 0, 9000, 'Met at their farm visit; canteen vendor interested in weekly greens.'],
+        ['Bloom Juice Bar (demo)', 'cafe', 'Novena', 'sampling', 2, 6000, 'Sample of kale and mint sent last week.'],
+        ['Fernvale Hawker Stall (demo)', 'restaurant', 'Sengkang', 'new', 3, 4500, 'Asked about bulk kangkong on WhatsApp.'],
+        ['Hotel Verde (demo)', 'hotel', 'Marina', 'new', 5, 25000, 'Sustainability team looking for local suppliers.']
+      ].forEach(function (l) {
+        s.seq += 1;
+        s.b2b.leads.push({ id: 'BL-' + s.seq, name: l[0], type: l[1], area: l[2], stage: l[3], nextStepAt: bagDayKey(new Date(today0.getTime() + l[4] * 864e5)),
+          estWeeklyCents: l[5], notes: l[6], createdAt: new Date(today0.getTime() - 10 * 864e5).toISOString(), contacts: [] });
+      });
+      s.migrations.b2bV1 = true;
     }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
@@ -1301,6 +1359,123 @@
     });
   }
 
+  /* ---------- Tyllage Buyer Growth: B2B accounts, standing orders, insights, leads ----------
+   * Trade buyers (restaurants, cafés, office pantries, caterers) order on standing days at a
+   * trade price. Insights are rule-based and explainable: a standing order that hasn't been
+   * placed, an account ordering less, a lapsed account, surplus crops worth offering to the
+   * buyers who use that category, and lead follow-ups that are due. Staff send every message.
+   * Confirmed B2B orders also feed Demand Radar and the harvest & pack list.
+   */
+  var B2B_TYPES = { restaurant: 'Restaurant', cafe: 'Café', office: 'Office pantry', caterer: 'Caterer', school: 'School canteen', hotel: 'Hotel' };
+  var LEAD_STAGES = [['new', 'New'], ['contacted', 'Contacted'], ['sampling', 'Sampling'], ['won', 'Won']];
+  var WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function b2bStore() { return state.b2b || (state.b2b = { accounts: [], orders: [], leads: [] }); }
+  function b2bOrdersOf(accountId) { return b2bStore().orders.filter(function (o) { return o.accountId === accountId && o.status !== 'cancelled'; }); }
+  function nextWeekdayKey(wd) {
+    var d = new Date(); d.setHours(0, 0, 0, 0);
+    for (var i = 1; i <= 7; i++) { var x = new Date(d.getTime() + i * 864e5); if (x.getDay() === wd) return bagDayKey(x); }
+    return bagDayKey(d);
+  }
+  function b2bAccountStats(a) {
+    var now = Date.now();
+    var orders = b2bOrdersOf(a.id);
+    var delivered = orders.filter(function (o) { return o.status === 'delivered'; });
+    var inRange = function (from, to) { return delivered.filter(function (o) { var t = parseDayKey(o.deliveryDay).getTime(); return t > now - to * 864e5 && t <= now - from * 864e5; }); };
+    var units = function (list) { return list.reduce(function (s, o) { return s + o.items.reduce(function (t, i) { return t + i.qty; }, 0); }, 0); };
+    var cents = function (list) { return list.reduce(function (s, o) { return s + o.totalCents; }, 0); };
+    var last4 = inRange(0, 28), prev4 = inRange(28, 56);
+    var last2 = inRange(0, 14), prior = inRange(14, 42);
+    var recentRate = units(last2) / 2, priorRate = units(prior) / 4;
+    var lastOrder = delivered.map(function (o) { return o.deliveryDay; }).sort().pop() || null;
+    var upcoming = a.standingDays.map(function (wd) {
+      var key = nextWeekdayKey(wd);
+      return { weekday: wd, dayKey: key, order: orders.filter(function (o) { return o.deliveryDay === key && o.status === 'confirmed'; })[0] || null };
+    }).sort(function (x, y) { return x.dayKey < y.dayKey ? -1 : 1; });
+    var usualUnits = a.usual.reduce(function (s, u) { return s + u.qty; }, 0);
+    var usualCents = a.usual.reduce(function (s, u) { var p = byId('products', u.productId); return s + (p ? Math.round(p.priceCents * RULES.b2bPriceRate) * u.qty : 0); }, 0);
+    return {
+      weeklyUnits: Math.round(units(last4) / 4), weeklyCents: Math.round(cents(last4) / 4), prevWeeklyCents: Math.round(cents(prev4) / 4),
+      trendPct: priorRate ? Math.round((recentRate - priorRate) / priorRate * 100) : 0,
+      lastOrder: lastOrder, daysSince: lastOrder ? Math.round((now - parseDayKey(lastOrder).getTime()) / 864e5) : null,
+      upcoming: upcoming, missing: upcoming.filter(function (u) { return !u.order; }), usualUnits: usualUnits, usualCents: usualCents, orders: orders.length
+    };
+  }
+  function b2bInsights() {
+    var out = [], st = b2bStore();
+    var crops = radarCrops();
+    var surplus = crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; });
+    st.accounts.filter(function (a) { return a.status === 'active'; }).forEach(function (a) {
+      var s = b2bAccountStats(a);
+      if (s.daysSince !== null && s.daysSince >= 21) {
+        out.push({ score: 90, kind: 'lapsed', account: a, title: a.name + ' hasn\'t ordered in ' + s.daysSince + ' days',
+          why: 'Used to order about ' + s.usualUnits + ' units each ' + a.standingDays.map(function (d) { return WEEKDAY[d]; }).join(' & ') + ' (' + money(s.usualCents) + '). Worth a friendly check-in before they switch supplier.', actions: ['message'] });
+        return;
+      }
+      s.missing.forEach(function (m) {
+        out.push({ score: 95 - Math.round((parseDayKey(m.dayKey).getTime() - Date.now()) / 864e5), kind: 'missing', account: a, dayKey: m.dayKey,
+          title: a.name + ' has no order for ' + parseDayKey(m.dayKey).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }),
+          why: 'They usually order on ' + WEEKDAY[m.weekday] + ' (about ' + s.usualUnits + ' units, ' + money(s.usualCents) + '). Confirm their usual order, or ask if anything has changed.', actions: ['usual', 'message'] });
+      });
+      if (s.trendPct <= -25) {
+        out.push({ score: 80, kind: 'declining', account: a, title: a.name + ' is ordering ' + Math.abs(s.trendPct) + '% less',
+          why: 'The last 2 weeks are well below their usual. A quick call can catch a quality issue, a menu change or a competitor early.', actions: ['message'] });
+      }
+      // Surplus crop in a category they already buy, but not in their usual basket.
+      var cats = {};
+      a.usual.forEach(function (u) { var p = byId('products', u.productId); if (p) cats[p.category] = true; });
+      var offer = surplus.filter(function (c) { return cats[c.product.category] && !a.usual.some(function (u) { return u.productId === c.product.id; }); })[0];
+      if (offer) {
+        out.push({ score: 70, kind: 'offer', account: a, product: offer.product, title: 'Offer ' + offer.product.title + ' to ' + a.name,
+          why: 'The farm expects about ' + offer.gap + ' more ' + offer.product.title + ' than demand. They already buy ' + CATEGORIES[offer.product.category].label.toLowerCase() + '.', actions: ['message'] });
+      }
+    });
+    var todayKey = bagDayKey(new Date());
+    st.leads.filter(function (l) { return l.stage !== 'won' && l.stage !== 'lost' && l.nextStepAt <= todayKey; }).forEach(function (l) {
+      out.push({ score: 75, kind: 'lead', lead: l, title: 'Follow up with ' + l.name + ' (' + (LEAD_STAGES.filter(function (x) { return x[0] === l.stage; })[0] || [0, l.stage])[1].toLowerCase() + ')',
+        why: l.notes + ' Could be worth about ' + money(l.estWeeklyCents) + ' a week.', actions: ['message', 'advance'] });
+    });
+    return out.sort(function (a, b) { return b.score - a.score; });
+  }
+  // Confirmed order built from the account's usual basket at trade price. Fails closed on stock
+  // that can't be confirmed; B2B produce is harvested to order, so stock isn't deducted here.
+  function b2bCreateUsualOrder(accountId, dayKey) {
+    var a = b2bStore().accounts.filter(function (x) { return x.id === accountId; })[0];
+    if (!a) return { ok: false, error: 'Account not found.' };
+    if (b2bOrdersOf(a.id).some(function (o) { return o.deliveryDay === dayKey && o.status === 'confirmed'; })) return { ok: false, error: 'There is already an order for that day.' };
+    var items = a.usual.map(function (u) { var p = byId('products', u.productId); return p ? { productId: p.id, title: p.title, qty: u.qty, priceCents: Math.round(p.priceCents * RULES.b2bPriceRate) } : null; }).filter(Boolean);
+    var id = nextId('BO');
+    var o = { id: id, ref: 'B2B-' + id.split('-')[1], accountId: a.id, deliveryDay: dayKey, items: items, totalCents: items.reduce(function (t, i) { return t + i.qty * i.priceCents; }, 0),
+      status: 'confirmed', createdAt: new Date().toISOString(), source: 'b2b' };
+    b2bStore().orders.push(o);
+    return { ok: true, order: o };
+  }
+  function b2bLogContact(target, channel, text, actor) {
+    target.contacts = target.contacts || [];
+    target.contacts.push({ at: new Date().toISOString(), by: actor, channel: channel, text: text });
+    target.lastContactAt = new Date().toISOString();
+  }
+  function b2bMoveLead(leadId, stage, nextInDays) {
+    var l = b2bStore().leads.filter(function (x) { return x.id === leadId; })[0];
+    if (!l) return null;
+    l.stage = stage;
+    l.nextStepAt = bagDayKey(new Date(Date.now() + (nextInDays || 3) * 864e5));
+    return l;
+  }
+  function b2bAddLead(data) {
+    if (!String(data.name || '').trim()) return { ok: false, error: 'Enter the business name.' };
+    var id = nextId('BL');
+    var l = { id: id, name: String(data.name).trim().slice(0, 80), type: data.type || 'restaurant', area: String(data.area || '').trim(), stage: 'new',
+      nextStepAt: bagDayKey(new Date()), estWeeklyCents: Math.max(0, data.estWeeklyCents || 0), notes: String(data.notes || '').trim().slice(0, 200) || 'New lead.', createdAt: new Date().toISOString(), contacts: [] };
+    b2bStore().leads.push(l);
+    return { ok: true, lead: l };
+  }
+  // Confirmed B2B lines for one delivery day (used by the pick list and Demand Radar).
+  function b2bLinesFor(dayKey) {
+    var lines = [];
+    b2bStore().orders.forEach(function (o) { if (o.status === 'confirmed' && o.deliveryDay === dayKey) o.items.forEach(function (i) { lines.push({ order: o, item: i }); }); });
+    return lines;
+  }
+
   /* ---------- Tyllage Demand Radar: supply vs demand per crop, plus the daily pick list ----------
    * For each MEOD-grown crop over the next few weeks:
    *   supply    = stock on hand + expected yield of batches harvesting in the window
@@ -1320,7 +1495,13 @@
         return b.productId === p.id && parseDayKey(b.harvestDate).getTime() <= until;
       });
       var harvest = batches.reduce(function (s, b) { return s + b.expectedQty; }, 0);
-      var confirmed = batches.reduce(function (s, b) { return s + batchPreordered(b); }, 0);
+      var preordered = batches.reduce(function (s, b) { return s + batchPreordered(b); }, 0);
+      // Confirmed trade (B2B) orders delivering in the window count as confirmed demand too.
+      var b2bUnits = b2bStore().orders.reduce(function (s, o) {
+        if (o.status !== 'confirmed' || parseDayKey(o.deliveryDay).getTime() > until) return s;
+        return s + o.items.reduce(function (t, i) { return t + (i.productId === p.id ? i.qty : 0); }, 0);
+      }, 0);
+      var confirmed = preordered + b2bUnits;
       // Weekly sales history (MEOD Fresh / Shopify mock): last 4 weeks set the pace, the 4
       // before give the trend, and week-to-week wobble sets the confidence.
       var weeks = (state.salesHistory && state.salesHistory.byProduct[p.id]) || [];
@@ -1340,7 +1521,7 @@
         : gap < -tolerance ? 'short' : gap > Math.max(tolerance, supply * 0.25) ? 'surplus' : 'balanced';
       return {
         product: p, stockKnown: st.known, stock: stock, harvest: harvest, batches: batches,
-        supply: supply, confirmed: confirmed, expected: expected, weekly: Math.round(weekly * 10) / 10, demand: demand, gap: gap,
+        supply: supply, confirmed: confirmed, preordered: preordered, b2b: b2bUnits, expected: expected, weekly: Math.round(weekly * 10) / 10, demand: demand, gap: gap,
         trendPct: trendPct, history: weeks,
         status: status, confidence: !weeks.length ? 'low' : cv < 0.12 ? 'high' : cv < 0.25 ? 'medium' : 'low',
         openBatch: batches.filter(batchOpen)[0] || null,
@@ -1363,7 +1544,7 @@
     function add(pid, qty, kind, ref, paid) {
       var p = byId('products', pid);
       if (!p || !qty) return;
-      var r = rows[pid] || (rows[pid] = { product: p, orders: 0, preorders: 0, bags: 0, awaitingPayment: 0, refs: [] });
+      var r = rows[pid] || (rows[pid] = { product: p, orders: 0, preorders: 0, bags: 0, b2b: 0, awaitingPayment: 0, refs: [] });
       r[kind] += qty;
       if (!paid) r.awaitingPayment += qty;
       if (r.refs.indexOf(ref) === -1) r.refs.push(ref);
@@ -1385,9 +1566,10 @@
         else pendingBags++;
       }
     });
+    b2bLinesFor(dayKey).forEach(function (l) { add(l.item.productId, l.item.qty, 'b2b', l.order.ref, true); ordersSeen[l.order.id] = true; });
     var list = Object.keys(rows).map(function (k) {
       var r = rows[k];
-      r.need = r.orders + r.preorders + r.bags;
+      r.need = r.orders + r.preorders + r.bags + r.b2b;
       r.buffer = Math.max(1, Math.ceil(r.need * 0.1));
       r.pick = r.need + r.buffer;
       r.meodGrown = r.product.meodGrown && r.product.category !== 'farm-more';
@@ -1624,6 +1806,10 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    b2b: {
+      TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,
+      createUsualOrder: b2bCreateUsualOrder, logContact: b2bLogContact, moveLead: b2bMoveLead, addLead: b2bAddLead, ordersOf: b2bOrdersOf
+    },
     radar: { weeks: RADAR_WEEKS, crops: radarCrops, pickList: pickList, deliveryKeys: nextDeliveryKeys, orderDeliveryKey: orderDeliveryKey },
     rewards: {
       summary: rewardsSummary, ledger: rewardsLedger, tiers: RW.tiers, tierFor: tierForBunches, nextTier: nextTier,

@@ -883,6 +883,8 @@ a.pill-btn { text-decoration: none; }
 }
 
 /* Bag pre-order days: a compact row for empty days, a fuller card for days with pre-orders. */
+/* "No pre-orders yet" panel has no hint line, so space the first day row off the heading. */
+.panel > h2 + .bag-day-empty { margin-top: 16px; }
 .bag-day-empty { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border: 1px dashed #e6dfd3; border-radius: 12px; color: var(--muted); font-size: .9rem; margin-bottom: 10px; }
 .bag-day-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .bag-day-progress .bar { flex: 1; height: 8px; border-radius: 999px; background: #e6dfd3; overflow: hidden; }

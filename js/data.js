@@ -48,6 +48,7 @@
     visitSessionMax: 40,            // guests per farm-visit session; bigger groups split into sessions
     visitSessionsPerDay: 3,         // visit sessions the farm can host in one day (illustrative)
     radarTolerance: 0.1,            // Demand Radar: a gap within this share of demand counts as balanced
+    promoLiftPer10: 0.2,            // Promotion simulator: each 10% off lifts sales by about 20% (illustrative)
     visitMaxPax: 200,               // largest group the booking form accepts
     visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
     visitCodeDays: 7,               // a visit's farm-shop code stays open this long after the visit
@@ -827,6 +828,68 @@
         }
       });
       s.migrations.reviewsV1 = true;
+    }
+    if (!s.migrations.lostDemandV1) {
+      // Demo lost demand from the last few weeks: trade enquiries MEOD couldn't fill,
+      // "Notify me" taps on sold-out products, and requests for crops MEOD doesn't grow.
+      var lp = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      var acct = function (re) { return ((s.b2b && s.b2b.accounts) || []).filter(function (a) { return re.test(a.name); })[0]; };
+      var t1 = new Date(); t1.setHours(0, 0, 0, 0);
+      var gf = acct(/Green Fork/), kk = acct(/Kopi/), hc = acct(/Harbour/);
+      // [source, reason, product title or crop name, qty, days ago, wanted in N days, customerId, account, who, note, notify]
+      var LD = [
+        ['b2b', 'quantity', 'Sweet Basil', 20, 2, 4, null, gf, null, 'Wanted 20 bunches for a Tuesday event; we had 6.', true],
+        ['soldout', 'ranout', 'Garden Mint', 1, 1, null, 'C-1002', null, null, '', true],
+        ['soldout', 'ranout', 'Garden Mint', 2, 3, null, 'C-1005', null, null, '', true],
+        ['soldout', 'ranout', 'Garden Mint', 1, 6, null, 'C-1003', null, null, '', true],
+        ['chat', 'ranout', 'Oyster Mushroom', 3, 2, null, 'C-1001', null, null, 'Asked on WhatsApp if more oyster mushrooms are coming.', true],
+        ['b2b', 'quantity', 'Oyster Mushroom', 10, 5, 2, null, hc, null, 'Catering order for 10 packs, we could do 4.', true],
+        ['soldout', 'ranout', 'Red Pak Choy', 2, 4, null, 'C-1006', null, null, '', true],
+        ['enquiry', 'ranout', 'Red Pak Choy', 6, 9, null, null, null, 'Walk-in customer (farm shop)', 'Wanted 6 for a dinner party.', false],
+        ['b2b', 'timing', 'Mesclun Mix', 8, 7, 1, null, kk, null, 'Asked for Wednesday delivery; we deliver Tue/Thu/Sat.', false],
+        ['chat', 'notgrown', 'Nai Bai', 4, 3, null, 'C-1004', null, null, 'Do you grow nai bai?', false],
+        ['phone', 'notgrown', 'Nai Bai', 10, 8, null, null, gf, null, 'Chef asked about baby nai bai for soup.', false],
+        ['enquiry', 'notgrown', 'Nai Bai', 3, 12, null, 'C-1005', null, null, '', false],
+        ['chat', 'notgrown', 'Cherry tomatoes', 2, 5, null, 'C-1002', null, null, '', false],
+        ['visit', 'notgrown', 'Baby spinach', 5, 14, null, null, null, 'Visitor at the farm shop', '', false]
+      ];
+      s.lostDemand = LD.map(function (r) {
+        var p = s.products.filter(function (x) { return x.title === r[2]; })[0] || null;
+        s.seq += 1;
+        return { id: 'LD-' + s.seq, source: r[0], reason: r[1], productId: p ? p.id : null, cropName: r[2], qty: r[3], wantedKey: r[5] != null ? bagDayKey(new Date(t1.getTime() + r[5] * 864e5)) : null,
+          customerId: r[6], accountId: r[7] ? r[7].id : null, who: r[8], note: r[9], notify: r[10], status: 'open',
+          at: new Date(t1.getTime() - r[4] * 864e5 + 11 * 36e5).toISOString(), by: r[0] === 'soldout' ? null : 'sales@meod.test' };
+      });
+      // Two fulfilled ones, so the conversion rate has a starting point.
+      [['Kai Lan', 8, 18, gf], ['Xiao Bai Cai', 12, 20, hc]].forEach(function (r) {
+        var p = lp(r[0]); if (!p) return;
+        s.seq += 1;
+        s.lostDemand.push({ id: 'LD-' + s.seq, source: 'b2b', reason: 'quantity', productId: p.id, cropName: p.title, qty: r[1], wantedKey: null, customerId: null, accountId: r[3] ? r[3].id : null,
+          who: null, note: 'Filled from the next harvest.', notify: true, status: 'fulfilled', at: new Date(t1.getTime() - r[2] * 864e5).toISOString(), by: 'sales@meod.test', resolvedBy: 'sales@meod.test' });
+      });
+      s.migrations.lostDemandV1 = true;
+    }
+    if (!s.migrations.pilotV1) {
+      // A baseline recorded four weeks ago (before Tyllage's features were in use, demo values),
+      // so the pilot page can show change since then.
+      s.pilotBaselines = [{ at: new Date(Date.now() - 28 * 864e5).toISOString(), by: 'admin@meod.test', note: 'Before the pilot (demo values)', days: 30,
+        conversion: 22, enquiries: 9, converted: 2, sellThrough: 78, harvestedUnits: 410, unsold: 90, campaigns: 1, campRevenueCents: 1300, campMarginCents: 600, lostUnits: 0, minutesSaved: 0 }];
+      s.imports = [];
+      // Recent demo activity, so "time saved" and campaign results aren't empty on a fresh demo:
+      // drafts staff used over the last few weeks, and a reorder after the Mushroom Monday campaign.
+      [['booking.replied', 'B-1001', 11], ['booking.replied', 'B-2058', 15], ['b2b.contacted', 'Green Fork Bistro (demo)', 6], ['b2b.contacted', 'Harbour Catering (demo)', 9],
+       ['campaign.submitted', 'Kai Lan', 12], ['rescue.alert', 'Bayam', 5], ['pricing.proposed', 'Sweet Basil', 0.2], ['briefing.sent', 'weekly', 7]].forEach(function (a) {
+        s.audit.push({ at: new Date(Date.now() - a[2] * 864e5).toISOString(), actor: 'sales@meod.test', event: a[0], target: a[1] });
+      });
+      var cp = s.campaigns.filter(function (c) { return c.id === 'CP-1001'; })[0];
+      var shiP = cp && s.products.filter(function (x) { return x.id === cp.productId; })[0];
+      if (shiP) {
+        var reItems = [{ productId: shiP.id, title: shiP.title, qty: 2, priceCents: shiP.priceCents }];
+        s.seq += 1;
+        s.orders.push(Object.assign({ id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: 'C-1003', groupEventId: null, status: 'fulfilled', items: reItems,
+          refundedCents: 0, createdAt: new Date(new Date(cp.createdAt).getTime() + 864e5).toISOString(), source: 'shopify-mock' }, priceOrder(reItems, false)));
+      }
+      s.migrations.pilotV1 = true;
     }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
@@ -1933,7 +1996,8 @@
     { key: 'minMarginRate', group: 'Pricing & margins', label: 'Minimum margin', unit: '%', min: 0, max: 60, pct: true, usedBy: ['Margin Guard', 'Price Advisor'], note: 'Margin Guard blocks any price that leaves less than this after the unit cost.' },
     { key: 'clearanceDefaultMinRate', group: 'Pricing & margins', label: 'Lowest discounted price', unit: '% of normal', min: 30, max: 95, pct: true, usedBy: ['Margin Guard', 'Buy to Clear', 'Harvest Rescue'], note: 'No discount may go below this share of the normal price.' },
     { key: 'b2bPriceRate', group: 'Pricing & margins', label: 'Trade price', unit: '% of retail', min: 50, max: 100, pct: true, usedBy: ['B2B buyers'], note: 'What restaurants, cafés and offices pay for standing orders.' },
-    { key: 'radarTolerance', group: 'Demand', label: 'Balanced band', unit: '± % of demand', min: 0, max: 30, pct: true, usedBy: ['Demand Radar', 'Price Advisor', 'Weekly briefing'], note: 'A gap between supply and demand within this band counts as balanced, not short or surplus.' }
+    { key: 'radarTolerance', group: 'Demand', label: 'Balanced band', unit: '± % of demand', min: 0, max: 30, pct: true, usedBy: ['Demand Radar', 'Price Advisor', 'Weekly briefing'], note: 'A gap between supply and demand within this band counts as balanced, not short or surplus.' },
+    { key: 'promoLiftPer10', group: 'Demand', label: 'Sales lift per 10% off', unit: '% more sales', min: 0, max: 100, pct: true, usedBy: ['Promotion simulator', 'Price Advisor'], note: 'How much extra a 10% discount is assumed to sell. Compare with real campaign results over time.' }
   ].concat(Object.keys(CAT_LABELS).map(function (c) {
     return { key: 'shelfDays.' + c, group: 'Harvest & freshness', label: CAT_LABELS[c] + ' shelf life', unit: 'days', min: 1, max: 21, usedBy: ['Harvest Rescue', 'Price Advisor'], note: 'Days after harvest a batch should be sold by.' };
   })).concat(Object.keys(CAT_LABELS).map(function (c) {
@@ -2073,6 +2137,356 @@
     if (state.leaderInvites.some(function (i) { return i.customerId === customerId; })) return { ok: false, error: 'Already invited.' };
     state.leaderInvites.unshift({ customerId: customerId, area: area, channel: channel, by: actor, at: new Date().toISOString(), status: 'invited' });
     return { ok: true };
+  }
+
+  /* ---------- Tyllage Lost Demand Intelligence ----------
+   * Demand that never became a sale: enquiries MEOD couldn't fill ("20 bunches of basil on
+   * Tuesday?"), "Notify me" taps on sold-out products, and requests for crops MEOD doesn't
+   * grow. Grouped per crop with a reason, so staff can tell weak demand from "we ran out".
+   * Quantities are what the person asked for; nothing here is counted as a sale.
+   */
+  var LOST_SOURCES = { enquiry: 'Enquiry', soldout: 'Sold-out tap', b2b: 'Trade buyer', chat: 'WhatsApp / chat', phone: 'Phone', visit: 'At the farm' };
+  var LOST_REASONS = { ranout: ['Ran out', 'red'], notgrown: ['Not grown', 'blue'], quantity: ['More than we had', 'amber'], timing: ['Wrong day', 'amber'] };
+  function lostList(days) {
+    var since = Date.now() - (days || 30) * 864e5;
+    return (state.lostDemand || []).filter(function (x) { return new Date(x.at).getTime() > since; })
+      .sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  }
+  function lostAdd(x, actor) {
+    var qty = Math.round(Number(x.qty) || 1);
+    if (!x.productId && !String(x.cropName || '').trim()) return { ok: false, error: 'Pick a product or type the crop they asked for.' };
+    if (qty < 1 || qty > 10000) return { ok: false, error: 'Enter how many they wanted.' };
+    state.lostDemand = state.lostDemand || [];
+    // One "Notify me" per customer per product is enough.
+    if (x.source === 'soldout' && state.lostDemand.some(function (d) { return d.source === 'soldout' && d.status === 'open' && d.productId === x.productId && d.customerId && d.customerId === x.customerId; })) {
+      return { ok: true, dupe: true };
+    }
+    var p = x.productId ? byId('products', x.productId) : null;
+    var id = nextId('LD');
+    state.lostDemand.unshift({ id: id, source: x.source || 'enquiry', reason: x.reason || (p ? (stockStatus(p).qty === 0 ? 'ranout' : 'quantity') : 'notgrown'),
+      productId: p ? p.id : null, cropName: p ? p.title : String(x.cropName).trim().slice(0, 40), qty: qty, wantedKey: x.wantedKey || null,
+      customerId: x.customerId || null, accountId: x.accountId || null, who: x.who || null, note: String(x.note || '').slice(0, 200),
+      notify: !!x.notify, status: 'open', at: new Date().toISOString(), by: actor || null });
+    return { ok: true, id: id };
+  }
+  function lostResolve(id, status, actor) {
+    var x = (state.lostDemand || []).filter(function (d) { return d.id === id; })[0];
+    if (!x) return { ok: false, error: 'Not found.' };
+    x.status = status; x.resolvedBy = actor; x.resolvedAt = new Date().toISOString();
+    return { ok: true };
+  }
+  // Per crop: how much was asked for and not sold, why, and what to do about it.
+  function lostInsights(days) {
+    var open = lostList(days || 30).filter(function (x) { return x.status === 'open'; });
+    var groups = {};
+    open.forEach(function (x) {
+      var key = x.productId || 'name:' + x.cropName.toLowerCase();
+      var g = groups[key] = groups[key] || { key: key, product: x.productId ? byId('products', x.productId) : null, name: x.cropName, items: [], units: 0, reasons: {}, people: {} };
+      g.items.push(x); g.units += x.qty; g.reasons[x.reason] = (g.reasons[x.reason] || 0) + 1;
+      g.people[x.customerId || x.accountId || x.who || x.id] = true;
+    });
+    var crops = radarCrops();
+    return Object.keys(groups).map(function (k) {
+      var g = groups[k];
+      g.requests = g.items.length; g.peopleCount = Object.keys(g.people).length;
+      g.reason = Object.keys(g.reasons).sort(function (a, b) { return g.reasons[b] - g.reasons[a]; })[0];
+      g.valueCents = g.product ? g.units * g.product.priceCents : 0;
+      g.notifyCount = g.items.filter(function (x) { return x.notify && (x.customerId || x.accountId); }).length;
+      var c = g.product ? crops.filter(function (r) { return r.product.id === g.product.id; })[0] : null;
+      g.radar = c || null;
+      if (!g.product) {
+        g.verdict = g.peopleCount >= 3 ? 'Worth a trial' : 'Keep watching';
+        g.why = g.peopleCount + ' different ' + (g.peopleCount === 1 ? 'person' : 'people') + ' asked for ' + g.name + ', which MEOD doesn\'t grow. ' +
+          (g.peopleCount >= 3 ? 'Enough interest to consider a small trial batch.' : 'Not enough yet to plan around.');
+      } else if (g.reason === 'ranout' || g.reason === 'quantity') {
+        var weekly = c ? c.weekly : 0;
+        g.verdict = 'Demand is there';
+        g.why = g.units + ' ' + g.product.title + ' asked for while ' + (g.reason === 'ranout' ? 'sold out' : 'we didn\'t have enough') + ' — that\'s ' +
+          (weekly ? Math.round(g.units / weekly * 100) + '% on top of normal weekly sales' : 'on top of recorded sales') + '. ' +
+          (c && c.status === 'short' ? 'Demand Radar already shows it short: sow another batch.' : 'Recorded sales understate demand: plan a bigger batch or open pre-orders.');
+      } else {
+        g.verdict = 'Timing';
+        g.why = 'Wanted on days MEOD couldn\'t deliver or harvest. Consider pre-orders for those dates or a standing order.';
+      }
+      g.score = g.units + g.peopleCount * 5 + (g.product ? 10 : 0);
+      return g;
+    }).sort(function (a, b) { return b.score - a.score; });
+  }
+  function lostUnitsFor(productId, days) {
+    return lostList(days || 28).filter(function (x) { return x.status === 'open' && x.productId === productId; }).reduce(function (s, x) { return s + x.qty; }, 0);
+  }
+
+  /* ---------- Tyllage Harvest Allocation Advisor ----------
+   * For each harvest due in the next 10 days: split the expected yield across confirmed trade
+   * orders, pre-orders, likely group-buy demand and normal shop sales until the next harvest,
+   * and show what's left unallocated (or short) — before anything is discounted. Priority when
+   * short: confirmed trade orders, then pre-orders, then group buys, then the shop.
+   */
+  function allocationPlan(days) {
+    var until = Date.now() + (days || 10) * 864e5;
+    var crops = radarCrops();
+    var since28 = Date.now() - 28 * 864e5;
+    return batchesUpcoming().filter(function (b) { return parseDayKey(b.harvestDate).getTime() <= until; }).map(function (b) {
+      var p = byId('products', b.productId);
+      var c = crops.filter(function (r) { return r.product.id === b.productId; })[0] || {};
+      var next = batchesUpcoming().filter(function (x) { return x.productId === b.productId && x.harvestDate > b.harvestDate; })[0];
+      var coverDays = next ? Math.max(2, Math.round((parseDayKey(next.harvestDate) - parseDayKey(b.harvestDate)) / 864e5)) : 7;
+      var hk = b.harvestDate, endKey = bagDayKey(new Date(parseDayKey(hk).getTime() + coverDays * 864e5));
+      var inWindow = b2bStore().orders.filter(function (o) { return o.status !== 'cancelled' && o.deliveryDay >= hk && o.deliveryDay < endKey; });
+      var b2b = inWindow.filter(function (o) { return o.status === 'confirmed'; })
+        .reduce(function (s, o) { return s + o.items.reduce(function (t, i) { return t + (i.productId === b.productId ? i.qty : 0); }, 0); }, 0);
+      // Plus standing orders not placed yet, from active accounts (delivered in the last 3 weeks).
+      var recentCut = bagDayKey(new Date(Date.now() - 21 * 864e5));
+      b2bStore().accounts.forEach(function (a) {
+        var active = b2bStore().orders.some(function (o) { return o.accountId === a.id && o.status === 'delivered' && o.deliveryDay >= recentCut; });
+        var usual = (a.usual || []).filter(function (u) { return u.productId === b.productId; })[0];
+        if (!active || !usual) return;
+        for (var d = parseDayKey(hk); bagDayKey(d) < endKey; d = new Date(d.getTime() + 864e5)) {
+          var key = bagDayKey(d);
+          if ((a.standingDays || []).indexOf(d.getDay()) > -1 && !inWindow.some(function (o) { return o.accountId === a.id && o.deliveryDay === key; })) b2b += usual.qty;
+        }
+      });
+      var pre = batchPreordered(b);
+      var groupWeekly = state.orders.filter(function (o) { return o.groupEventId && o.status !== 'cancelled' && new Date(o.createdAt).getTime() > since28; })
+        .reduce(function (s, o) { return s + o.items.reduce(function (t, i) { return t + (i.productId === b.productId ? i.qty : 0); }, 0); }, 0) / 4;
+      var openGroups = state.events.filter(function (e) { return e.status === 'open' && e.kind !== 'visit'; }).length;
+      var group = openGroups ? Math.round(groupWeekly * coverDays / 7) : 0;
+      var shop = Math.round((c.weekly || 0) * coverDays / 7);
+      var supply = b.expectedQty;
+      // Allocate in priority order; anything left is unallocated, anything missing is short.
+      var left = supply, alloc = {};
+      [['b2b', b2b], ['preorder', pre], ['group', group], ['shop', shop]].forEach(function (x) { alloc[x[0]] = Math.min(left, x[1]); left -= alloc[x[0]]; });
+      var wanted = b2b + pre + group + shop;
+      var unallocated = Math.max(0, supply - wanted), shortBy = Math.max(0, wanted - supply);
+      var lost = lostUnitsFor(b.productId);
+      var buyers = b2bStore().accounts.filter(function (a) { return (a.usual || []).some(function (u) { var up = byId('products', u.productId); return up && p && up.category === p.category; }); });
+      var options = [];
+      if (unallocated > 0) {
+        if (lost) options.push({ key: 'lost', title: 'Tell the ' + lost + ' unit(s) of lost demand', why: 'People asked for ' + p.title + ' while it was sold out — offer it to them first, at full price.' });
+        if (buyers.length) options.push({ key: 'b2b', title: 'Offer to ' + buyers.length + ' trade buyer(s)', why: 'Restaurants and cafés that already buy ' + CATEGORIES[p.category].label.toLowerCase() + ' — trade price, one delivery.', accountId: buyers[0].id });
+        if (batchOpen(b)) options.push({ key: 'preorder', title: 'Push pre-orders', why: 'Pre-orders are still open until the night before harvest.' });
+        options.push({ key: 'bundle', title: 'Bundle or promote', why: 'Compare options in the Promotion Impact Simulator before discounting.' });
+        if (unallocated > supply * 0.25) options.push({ key: 'smaller', title: 'Harvest less, leave the rest growing', why: 'If the crop can wait, pick only what\'s needed.' });
+      } else if (shortBy > 0) {
+        options.push({ key: 'short', title: 'Short by ' + shortBy + ': serve in priority order', why: 'Confirmed trade orders and pre-orders first, then group buys, then the shop. Pause promotions on ' + p.title + '.' });
+      }
+      return { batch: b, product: p, supply: supply, coverDays: coverDays, alloc: alloc, wanted: { b2b: b2b, preorder: pre, group: group, shop: shop },
+        unallocated: unallocated, shortBy: shortBy, lost: lost, options: options, weekly: c.weekly || 0 };
+    }).sort(function (a, b) { return a.batch.harvestDate < b.batch.harvestDate ? -1 : 1; });
+  }
+
+  /* ---------- Tyllage Promotion Impact Simulator ----------
+   * Before MEOD runs a promotion, compare options side by side over the selling window:
+   * units sold, revenue, contribution margin (revenue minus unit cost of what sells), what's
+   * left unsold and its value. Simple, stated assumptions — each 10% off lifts sales by
+   * RULES.promoLiftPer10 — so staff can see why one option beats another, and change them.
+   */
+  function promoSimulate(productId, opts) {
+    opts = opts || {};
+    var p = byId('products', productId);
+    if (!p) return null;
+    var c = radarCrops().filter(function (r) { return r.product.id === productId; })[0] || { weekly: weeklySales(productId), stock: p.stock.qty, supply: p.stock.qty, trendPct: 0 };
+    var weeks = opts.weeks || 2;
+    var avail = opts.units != null ? opts.units : Math.max(0, Math.round(c.stock + (c.harvest || 0) * weeks / RADAR_WEEKS));
+    var base = Math.max(0.5, c.weekly) * weeks;
+    var lift = opts.lift != null ? opts.lift : RULES.promoLiftPer10;
+    var cost = unitCost(productId).totalCents;
+    var price = p.priceCents;
+    function scenario(key, label, unitPrice, demand, extra) {
+      var sold = Math.min(avail, Math.round(demand));
+      var revenue = sold * unitPrice + (extra ? extra.revenue : 0);
+      var soldAll = sold + (extra ? extra.units : 0);
+      var margin = revenue - soldAll * cost - (extra ? extra.costCents || 0 : 0);
+      var guard = unitPrice < price ? marginGuard(productId, unitPrice) : { ok: true };
+      return { key: key, label: label, unitPrice: unitPrice, sold: soldAll, revenue: revenue, margin: margin, unsold: Math.max(0, avail - soldAll), unsoldValue: Math.max(0, avail - soldAll) * price,
+        blocked: !guard.ok, guard: guard, note: extra && extra.note };
+    }
+    var out = [];
+    out.push(scenario('none', 'No promotion', price, base, null));
+    var pct = opts.pct || 10;
+    out.push(scenario('discount', pct + '% off', Math.round(price * (1 - pct / 100)), base * (1 + lift * pct / 10), null));
+    // Bundle: pair with the fastest-rising crop; a share of its buyers take the bundle.
+    var rise = radarCrops().filter(function (r) { return r.product.id !== productId && r.trendPct > 0 && r.stock > 0; }).sort(function (a, b) { return b.trendPct - a.trendPct; })[0];
+    if (rise) {
+      var take = Math.round(rise.weekly * weeks * (opts.bundleTake != null ? opts.bundleTake : 0.3));
+      var bundlePrice = Math.round((price + rise.product.priceCents) * 0.9);
+      var bundleUnits = Math.min(take, Math.max(0, avail - Math.round(base)));
+      var s = scenario('bundle', 'Bundle with ' + rise.product.title, price, base, {
+        units: bundleUnits, revenue: bundleUnits * bundlePrice - bundleUnits * rise.product.priceCents, costCents: 0,
+        note: bundleUnits + ' bundles at ' + money(bundlePrice) + ' (10% off the pair); ' + rise.product.title + ' sells at full price inside the bundle' });
+      s.partner = rise.product;
+      out.push(s);
+    }
+    // Bulk buyer: one trade buyer takes a block at the trade price.
+    var bulkQty = Math.min(avail, opts.bulkQty != null ? opts.bulkQty : Math.max(5, Math.round((avail - base) * 0.6)));
+    var tradePrice = Math.round(price * RULES.b2bPriceRate);
+    out.push(scenario('bulk', 'Bulk trade offer', price, Math.min(base, avail - bulkQty), {
+      units: bulkQty, revenue: bulkQty * tradePrice, costCents: -bulkQty * 22, // no retail packaging for a bulk crate
+      note: bulkQty + ' units to one trade buyer at ' + money(tradePrice) + ' (' + Math.round(RULES.b2bPriceRate * 100) + '% of retail), no retail packaging' }));
+    // Best = highest margin that Margin Guard allows; fewer units left unsold breaks a tie.
+    var best = out.filter(function (x) { return !x.blocked; }).sort(function (a, b) { return b.margin - a.margin || a.unsold - b.unsold; })[0];
+    out.forEach(function (x) { x.best = x === best; });
+    return { product: p, avail: avail, base: Math.round(base), weeks: weeks, lift: lift, cost: cost, scenarios: out,
+      assumptions: [
+        'Normal sales: ' + (Math.round(c.weekly * 10) / 10) + ' a week (Demand Radar), so about ' + Math.round(base) + ' over ' + weeks + ' weeks.',
+        'Available to sell: ' + avail + ' (stock plus the share of upcoming harvests in this window).',
+        'Each 10% off lifts sales by about ' + Math.round(lift * 100) + '% (illustrative — MEOD can change it in Settings).',
+        'Unit cost ' + money(cost) + ' (Settings → Unit costs). Margin = revenue − unit cost of everything sold.',
+        'Anything unsold at the end is shown at its full-price value — the cost of doing nothing.'
+      ] };
+  }
+
+  /* ---------- Data import (Excel / CSV) ----------
+   * MEOD keeps sales and harvest records in spreadsheets. Staff upload one (CSV, or .xlsx
+   * read in the browser), the columns are matched by name ("Item", "Product", "SKU" →
+   * product; "Qty", "Units" → quantity…) and product names are matched to the catalogue,
+   * including aliases. Staff see a preview and what didn't match before importing.
+   */
+  var IMPORT_KINDS = {
+    sales: { label: 'Sales records', cols: { date: /^(date|day|order date|sold on)/, product: /^(product|item|sku|vegetable|crop|name)/, qty: /^(qty|quantity|units|bunches|packs|sold)/, price: /^(price|unit price|amount|total)/, channel: /^(channel|source|store)/ }, need: ['date', 'product', 'qty'] },
+    harvest: { label: 'Harvest records', cols: { product: /^(product|item|crop|vegetable|name)/, sow: /^(sow|sown|planted|seed)/, harvest: /^(harvest|harvested|ready|pick)/, expected: /^(expected|plan|planned|forecast)/, actual: /^(actual|yield|harvested qty|picked)/ }, need: ['product', 'harvest'] }
+  };
+  function parseCsv(text) {
+    var rows = [], row = [], cell = '', q = false;
+    text = String(text || '').replace(/^﻿/, '');
+    var delim = (text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === delim) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (c) { return String(c).trim(); }); });
+  }
+  function matchProduct(name) {
+    var n = String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!n) return null;
+    return state.products.filter(function (p) {
+      return p.title.toLowerCase() === n || (p.subtitle || '').toLowerCase() === n || (p.aliases || []).some(function (a) { return a.toLowerCase() === n; });
+    })[0] || state.products.filter(function (p) { return n.indexOf(p.title.toLowerCase()) > -1 || p.title.toLowerCase().indexOf(n) > -1; })[0] || null;
+  }
+  function parseDateCell(v) {
+    var s = String(v || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    var m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // Singapore style: day/month/year
+    if (m) { var y = m[3].length === 2 ? '20' + m[3] : m[3]; return y + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2); }
+    if (/^\d{5}$/.test(s)) return bagDayKey(new Date(Date.UTC(1899, 11, 30) + Number(s) * 864e5)); // Excel serial date
+    var d = new Date(s);
+    return isNaN(d) ? null : bagDayKey(d);
+  }
+  function importPreview(kind, rows) {
+    var K = IMPORT_KINDS[kind];
+    if (!rows.length) return { ok: false, error: 'The file is empty.' };
+    var head = rows[0].map(function (h) { return String(h).toLowerCase().trim(); });
+    var map = {};
+    Object.keys(K.cols).forEach(function (k) { var i = head.findIndex(function (h) { return K.cols[k].test(h); }); if (i > -1) map[k] = i; });
+    var missing = K.need.filter(function (k) { return map[k] == null; });
+    if (missing.length) return { ok: false, error: 'Couldn\'t find a column for: ' + missing.join(', ') + '. Headers found: ' + rows[0].join(', ') + '.', map: map };
+    var good = [], bad = [];
+    rows.slice(1).forEach(function (r, idx) {
+      var get = function (k) { return map[k] != null ? r[map[k]] : ''; };
+      var p = matchProduct(get('product'));
+      var rec = { line: idx + 2, raw: r, product: p };
+      if (kind === 'sales') {
+        rec.date = parseDateCell(get('date')); rec.qty = Math.round(Number(String(get('qty')).replace(/[^\d.\-]/g, '')));
+        rec.priceCents = map.price != null ? Math.round(Number(String(get('price')).replace(/[^\d.]/g, '')) * 100) || null : null; rec.channel = get('channel') || 'import';
+        rec.error = !p ? 'Unknown product "' + get('product') + '"' : !rec.date ? 'Bad date' : !(rec.qty > 0) ? 'Bad quantity' : null;
+      } else {
+        rec.harvest = parseDateCell(get('harvest')); rec.sow = map.sow != null ? parseDateCell(get('sow')) : null;
+        rec.expected = Math.round(Number(get('expected')) || 0); rec.actual = map.actual != null && String(get('actual')).trim() !== '' ? Math.round(Number(get('actual'))) : null;
+        rec.error = !p ? 'Unknown product "' + get('product') + '"' : !rec.harvest ? 'Bad harvest date' : !(rec.expected > 0 || rec.actual > 0) ? 'No quantity' : null;
+      }
+      (rec.error ? bad : good).push(rec);
+    });
+    return { ok: true, kind: kind, map: map, headers: rows[0], good: good, bad: bad };
+  }
+  function importApply(preview, actor, fileName) {
+    var n = 0;
+    if (preview.kind === 'sales') {
+      // Imported sales go into the weekly history Demand Radar reads (last 8 weeks).
+      state.salesHistory = state.salesHistory || { source: 'import', weeks: 8, byProduct: {} };
+      var now = new Date(); now.setHours(0, 0, 0, 0);
+      preview.good.forEach(function (r) {
+        var ago = Math.floor((now - parseDayKey(r.date)) / (7 * 864e5));
+        if (ago < 0 || ago > 7) return;
+        var arr = state.salesHistory.byProduct[r.product.id] = state.salesHistory.byProduct[r.product.id] || [0, 0, 0, 0, 0, 0, 0, 0];
+        arr[7 - ago] += r.qty; n++;
+      });
+    } else {
+      preview.good.forEach(function (r) {
+        var p = r.product, id = nextId('HB');
+        var done = r.actual != null && parseDayKey(r.harvest) <= new Date();
+        state.batches.push({ id: id, productId: p.id, sowDate: r.sow || bagDayKey(new Date(parseDayKey(r.harvest).getTime() - (RULES.growDays[p.category] || 30) * 864e5)), harvestDate: r.harvest,
+          expectedQty: r.expected || r.actual, preorderCap: done ? 0 : Math.round((r.expected || 0) * RULES.preorderDefaultShare), preorderPriceCents: p.priceCents,
+          status: done ? 'harvested' : 'planned', actualQty: done ? r.actual : undefined, toStock: done ? 0 : undefined, harvestedAt: done ? parseDayKey(r.harvest).toISOString() : undefined,
+          createdBy: actor, createdAt: new Date().toISOString(), source: 'import' });
+        n++;
+      });
+    }
+    state.imports = state.imports || [];
+    state.imports.unshift({ kind: preview.kind, file: fileName || 'upload', rows: n, skipped: preview.bad.length, by: actor, at: new Date().toISOString() });
+    return { ok: true, rows: n };
+  }
+  function importTemplate(kind) {
+    var today = new Date();
+    var d = function (n) { var x = new Date(today.getTime() - n * 864e5); return ('0' + x.getDate()).slice(-2) + '/' + ('0' + (x.getMonth() + 1)).slice(-2) + '/' + x.getFullYear(); };
+    return kind === 'sales'
+      ? 'Date,Product,Qty,Price,Channel\n' + d(3) + ',Xiao Bai Cai,12,3.50,Farm shop\n' + d(3) + ',Kai Lan,8,4.00,Farm shop\n' + d(10) + ',Bok Choy,15,3.50,Market\n'
+      : 'Product,Sow date,Harvest date,Expected qty,Actual qty\nKangkong,' + d(20) + ',' + d(-10) + ',40,\nCos Lettuce,' + d(45) + ',' + d(5) + ',30,27\n';
+  }
+
+  /* ---------- Pilot baseline metrics ----------
+   * The numbers a real pilot with MEOD would track, measured from the prototype's own
+   * records: enquiry-to-order conversion, sell-through, unsold units, campaign margin, lost
+   * demand and staff time saved by drafts. "Record baseline" stores today's figures, so later
+   * figures can be compared against them.
+   */
+  var DRAFT_MINUTES = { 'campaign.submitted': 15, 'booking.replied': 10, 'b2b.contacted': 8, 'content.planned': 20, 'feedback.apology': 8, 'briefing.sent': 30, 'groupbuy.invited': 8, 'rescue.alert': 12, 'pricing.proposed': 10 };
+  function pilotMetrics(days) {
+    days = days || 30;
+    var since = Date.now() - days * 864e5;
+    var inWin = function (iso) { return new Date(iso).getTime() > since; };
+    var bookings = state.bookings.filter(function (b) { return inWin(b.createdAt); });
+    var lost = (state.lostDemand || []).filter(function (x) { return inWin(x.at); });
+    // Enquiries = visit requests plus asks a person made to staff; sold-out taps and requests
+    // for crops MEOD doesn't grow aren't enquiries staff could convert.
+    var asks = lost.filter(function (x) { return x.source !== 'soldout' && x.reason !== 'notgrown'; });
+    var enquiries = bookings.length + asks.length;
+    var converted = bookings.filter(function (b) { return b.status === 'confirmed'; }).length + asks.filter(function (x) { return x.status === 'fulfilled'; }).length;
+    var harvested = state.batches.filter(function (b) { return b.status === 'harvested' && b.harvestedAt && inWin(b.harvestedAt); });
+    var harvestedUnits = harvested.reduce(function (s, b) { return s + (b.actualQty || 0); }, 0);
+    var unsold = rescueBatches().reduce(function (s, x) { return s + (x.level === 'expired' ? x.unsold : 0); }, 0) +
+      (state.rescueLog || []).filter(function (r) { return inWin(r.at) && r.action === 'compost'; }).reduce(function (s, r) { return s + r.qty; }, 0);
+    var sellThrough = harvestedUnits ? Math.max(0, Math.round((harvestedUnits - unsold) / harvestedUnits * 100)) : null;
+    // Campaign margin: orders for the campaign's product by its recipients within 7 days of sending.
+    var camps = state.campaigns.filter(function (c) { return c.status === 'sent' && inWin(c.sentAt || c.createdAt); });
+    var campRevenue = 0, campMargin = 0;
+    camps.forEach(function (c) {
+      var t0 = new Date(c.sentAt || c.createdAt).getTime();
+      state.orders.forEach(function (o) {
+        var t = new Date(o.createdAt).getTime();
+        if (t < t0 || t > t0 + 7 * 864e5 || (c.audience || []).indexOf(o.customerId) < 0) return;
+        o.items.forEach(function (i) { if (i.productId === c.productId) { campRevenue += i.qty * i.priceCents; campMargin += i.qty * (i.priceCents - unitCost(i.productId).totalCents); } });
+      });
+    });
+    var minutes = state.audit.filter(function (a) { return inWin(a.at) && DRAFT_MINUTES[a.event]; }).reduce(function (s, a) { return s + DRAFT_MINUTES[a.event]; }, 0);
+    var lostUnits = lost.filter(function (x) { return x.status === 'open'; }).reduce(function (s, x) { return s + x.qty; }, 0);
+    return {
+      days: days,
+      conversion: enquiries ? Math.round(converted / enquiries * 100) : null, enquiries: enquiries, converted: converted,
+      sellThrough: sellThrough, harvestedUnits: harvestedUnits, unsold: unsold,
+      campaigns: camps.length, campRevenueCents: campRevenue, campMarginCents: campMargin,
+      lostUnits: lostUnits, minutesSaved: minutes
+    };
+  }
+  function pilotRecordBaseline(actor, note) {
+    state.pilotBaselines = state.pilotBaselines || [];
+    var m = pilotMetrics(30);
+    state.pilotBaselines.unshift(Object.assign({ at: new Date().toISOString(), by: actor, note: note || '' }, m));
+    return { ok: true, baseline: state.pilotBaselines[0] };
   }
 
   /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
@@ -2607,6 +3021,11 @@
     settings: { list: settingsList, validate: settingValidate, impact: settingsImpact, save: settingSave, resetAll: settingsResetAll, saveCost: costSave, CATS: CAT_LABELS },
     leaderFinder: { areas: leaderFinder, invite: leaderInvite },
     reviews: { list: reviewsFor, stats: reviewStats, summary: reviewSummary, canWrite: reviewCanWrite, add: reviewAdd, name: reviewerName },
+    lost: { SOURCES: LOST_SOURCES, REASONS: LOST_REASONS, list: lostList, add: lostAdd, resolve: lostResolve, insights: lostInsights, unitsFor: lostUnitsFor },
+    allocation: { plan: allocationPlan },
+    promo: { simulate: promoSimulate },
+    importer: { KINDS: IMPORT_KINDS, parseCsv: parseCsv, preview: importPreview, apply: importApply, template: importTemplate },
+    pilot: { metrics: pilotMetrics, recordBaseline: pilotRecordBaseline, DRAFT_MINUTES: DRAFT_MINUTES },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },

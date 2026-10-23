@@ -40,8 +40,8 @@
 
   function can(session, permission) {
     var matrix = {
-      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'pricing.approve', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content'],
-      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content'],
+      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'pricing.approve', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot'],
+      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot'],
       leader: ['leader'],
       customer: ['customer']
     };

@@ -1359,6 +1359,8 @@
       } }
     ], proposals, 'No proposals yet — send a suggestion above for approval.')));
 
+    append(root, promoSimulatorPanel());
+
     /* ---- Margin Guard checker ---- */
     var sel = h('select', { 'aria-label': 'Product' }, S().products.filter(function (p) { return !p.bagOffer; }).map(function (p) { return h('option', { value: p.id, text: p.title + ' (' + money(p.priceCents) + ')' }); }));
     var priceIn = h('input', { type: 'number', min: 0, step: '0.05', 'aria-label': 'Price to check (S$)' });
@@ -1719,6 +1721,359 @@
     ], posted, 'Nothing posted in the last 30 days.')));
   }
 
+  /* ---------------- Lost Demand Intelligence (staff + admin) ----------------
+   * What people asked for and couldn't get: enquiries we couldn't fill, "Notify me" taps on
+   * sold-out products, and crops MEOD doesn't grow. Grouped per crop with a reason and what
+   * to do, so a crop that sold out isn't mistaken for one nobody wants. */
+  function lostWho(x) {
+    if (x.customerId) return customerLabel(x.customerId);
+    if (x.accountId) { var a = M.b2b.store().accounts.filter(function (y) { return y.id === x.accountId; })[0]; return a ? a.name : 'Trade buyer'; }
+    return x.who || '—';
+  }
+  function openLostNotify(g) {
+    document.querySelectorAll('.ld-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var asked = g.items.filter(function (x) { return x.notify && (x.customerId || x.accountId); });
+    var body = h('textarea', { rows: 7, 'aria-label': 'Message' });
+    body.value = 'Hi {first_name} 🌱\n\nYou asked us about ' + g.product.title + ' — good news, it\'s back' +
+      (g.radar && g.radar.openBatch ? ' and you can pre-order it from the ' + shortWeekday(M.clearance.parseDayKey(g.radar.openBatch.harvestDate).toISOString()) + ' harvest' : '') +
+      '. Reply here or order on MEOD Fresh.\n\n— The MEOD Farm team';
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog ld-dialog', 'aria-labelledby': 'ld-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'ld-title', text: 'Tell ' + asked.length + ' person(s) it\'s back' }), aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
+        h('div', { class: 'rd-form' },
+          h('label', null, 'To', h('input', { value: asked.map(lostWho).join(', '), readonly: true })),
+          h('label', null, 'Message', body),
+          h('small', { class: 'pf-hint', text: 'Only people who asked to be told are included. Sending marks their requests as fulfilled.' }))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: function () {
+          asked.forEach(function (x) { M.lost.resolve(x.id, 'fulfilled', session.email); });
+          closeDialog();
+          commit('lost.notified', g.product.id, asked.length + ' person(s) told ' + g.product.title + ' is back (simulated).');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+  function lostDemandView(root) {
+    var all = M.lost.list(30), open = all.filter(function (x) { return x.status === 'open'; });
+    var ins = M.lost.insights(30);
+    var units = open.reduce(function (s, x) { return s + x.qty; }, 0);
+    var value = ins.reduce(function (s, g) { return s + g.valueCents; }, 0);
+    var notGrown = ins.filter(function (g) { return !g.product; });
+    append(root, h('div', { class: 'kpis' },
+      kpi('Asked for, not sold', String(units), 'units across ' + open.length + ' request(s) · 30 days'),
+      kpi('Missed sales', money(value), 'at normal price, MEOD-grown crops'),
+      kpi('Top missed crop', ins[0] ? (ins[0].product ? ins[0].product.title : ins[0].name) : '—', ins[0] ? ins[0].units + ' units · ' + ins[0].peopleCount + ' people' : 'nothing yet'),
+      kpi('Crops we don\'t grow', String(notGrown.length), notGrown.length ? notGrown.map(function (g) { return g.name; }).slice(0, 2).join(', ') : 'no requests')));
+
+    append(root, panel(aiTitle('What people wanted and couldn\'t get'), 'Grouped per crop. "Demand is there" means the crop sold out or we didn\'t have enough — recorded sales understate how much people want it. Demand Radar shows these numbers beside each crop.',
+      ins.length ? h('div', { class: 'ops-brief aligned', style: '--rows:5' }, ins.map(function (g) {
+        var r = M.lost.REASONS[g.reason] || ['Other', 'grey'];
+        var act = !g.product ? h('a', { class: 'btn btn-sm btn-outline', href: '#harvest', text: 'Plan a trial batch' })
+          : g.notifyCount && M.stockStatus(g.product).qty > 0 ? h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Tell ' + g.notifyCount + ' it\'s back', onclick: function () { openLostNotify(g); } })
+          : h('a', { class: 'btn btn-sm btn-forest', href: '#harvest', text: g.radar && g.radar.openBatch ? 'See pre-orders' : 'Plan a batch' });
+        return h('article', { class: 'ops-card' + (g.product ? ' farm' : '') },
+          h('div', { class: 'ops-card-head' }, g.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(g.product)) : iconCircle(ICONS.search, 'soft'),
+            h('span', { class: 'fb-tags' }, badge(r[0], r[1]), badge(g.verdict, g.product ? 'green' : 'grey'))),
+          h('strong', { class: 'ops-title', text: (g.product ? g.product.title : g.name) + ' · ' + g.units + ' unit(s) asked for' }),
+          h('p', { text: g.why }),
+          h('small', { class: 'ops-est', text: g.requests + ' request(s) from ' + g.peopleCount + ' ' + (g.peopleCount === 1 ? 'person' : 'people') + (g.valueCents ? ' · ' + money(g.valueCents) + ' at normal price' : '') }),
+          h('div', { class: 'ops-foot' }, h('small', { text: g.notifyCount ? g.notifyCount + ' want to be told' : '' }), act));
+      })) : h('p', { class: 'empty', text: 'No unmet requests in the last 30 days.' })));
+
+    /* ---- Log a request ---- */
+    var prod = h('select', { 'aria-label': 'Product' }, h('option', { value: '', text: 'Something we don\'t grow…' }),
+      S().products.filter(function (p) { return !p.bagOffer; }).map(function (p) { return h('option', { value: p.id, text: p.title }); }));
+    var crop = h('input', { placeholder: 'e.g. Nai Bai', 'aria-label': 'Crop asked for', maxlength: 40 });
+    var cropLabel = h('label', null, 'Crop asked for', crop);
+    var qty = h('input', { type: 'number', min: 1, value: 1, 'aria-label': 'Quantity' }); qty.value = '1';
+    var when = h('input', { type: 'date', 'aria-label': 'Wanted on' });
+    var source = h('select', { 'aria-label': 'Source' }, ['enquiry', 'b2b', 'chat', 'phone', 'visit'].map(function (k) { return h('option', { value: k, text: M.lost.SOURCES[k] }); }));
+    var who = h('select', { 'aria-label': 'Who' }, h('option', { value: '', text: 'Not linked' }), S().customers.map(function (c) { return h('option', { value: c.id, text: c.name }); }),
+      M.b2b.store().accounts.map(function (a) { return h('option', { value: a.id, text: a.name }); }));
+    var reason = h('select', { 'aria-label': 'Why not' }, ['ranout', 'quantity', 'timing', 'notgrown'].map(function (k) { return h('option', { value: k, text: M.lost.REASONS[k][0] }); }));
+    var notify = h('input', { type: 'checkbox' });
+    var note = h('input', { placeholder: 'What they said (optional)', 'aria-label': 'Note', maxlength: 200 });
+    var syncCrop = function () { cropLabel.style.display = prod.value ? 'none' : ''; if (!prod.value) reason.value = 'notgrown'; else if (reason.value === 'notgrown') reason.value = M.stockStatus(M.byId('products', prod.value)).qty === 0 ? 'ranout' : 'quantity'; };
+    prod.addEventListener('change', syncCrop); syncCrop();
+    var form = h('form', { class: 'form-grid ld-form', novalidate: true, onsubmit: function (e) {
+      e.preventDefault();
+      var isAcc = who.value && who.value.indexOf('C-') !== 0;
+      var r = M.lost.add({ source: source.value, reason: reason.value, productId: prod.value || null, cropName: crop.value, qty: qty.value, wantedKey: when.value || null,
+        customerId: who.value && !isAcc ? who.value : null, accountId: isAcc ? who.value : null, note: note.value, notify: notify.checked }, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('lost.logged', r.id, 'Request logged.');
+    } },
+      h('label', null, 'Product', prod), cropLabel, h('label', null, 'How many', qty), h('label', null, 'Wanted on', when),
+      h('label', null, 'Source', source), h('label', null, 'From', who), h('label', null, 'Why we couldn\'t', reason),
+      h('label', { class: 'ld-note' }, 'Note', note),
+      h('label', { class: 'toggle' }, notify, h('span', { text: 'They want to be told when it\'s available' })),
+      h('div', { class: 'ld-submit' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Log request' })));
+    append(root, panel('Log a request we couldn\'t fill', 'For asks that come in by WhatsApp, phone, trade buyers or at the farm. Shop "Notify me" taps on sold-out products are logged automatically.', form));
+
+    append(root, panel('All requests', 'Last 30 days, newest first.', table([
+      { label: 'When', render: function (x) { return h('span', null, shortDate(x.at), h('br'), h('small', { text: M.lost.SOURCES[x.source] || x.source })); } },
+      { label: 'Asked for', render: function (x) { return h('span', null, h('strong', { text: x.qty + ' × ' + x.cropName }), x.wantedKey ? [h('br'), h('small', { text: 'for ' + shortWeekday(M.clearance.parseDayKey(x.wantedKey).toISOString()) })] : null); } },
+      { label: 'From', render: function (x) { return h('span', null, lostWho(x), x.note ? [h('br'), h('small', { text: x.note })] : null); } },
+      { label: 'Why not', render: function (x) { var r = M.lost.REASONS[x.reason] || ['Other', 'grey']; return badge(r[0], r[1]); } },
+      { label: 'Status', render: function (x) { return statusBadge(x.status === 'open' ? 'open' : x.status === 'fulfilled' ? 'resolved' : 'closed'); } },
+      { label: 'Actions', render: function (x) {
+        if (x.status !== 'open') return '—';
+        return h('div', { class: 'actions stack' },
+          mini('Fulfilled', function () { M.lost.resolve(x.id, 'fulfilled', session.email); commit('lost.fulfilled', x.id, 'Marked as fulfilled.'); }),
+          mini('Close', function () { M.lost.resolve(x.id, 'closed', session.email); commit('lost.closed', x.id, 'Request closed.'); }, { danger: true }));
+      } }
+    ], all, 'No requests logged yet.')));
+  }
+
+  /* ---------------- Harvest Allocation Advisor (staff + admin) ----------------
+   * For each harvest due in the next 10 days: who the yield is already promised to (trade
+   * orders, pre-orders), likely group-buy and shop demand until the next harvest, and what's
+   * left over — with options to place it at full price before anyone thinks about discounts. */
+  var ALLOC_SEGS = [['b2b', 'Trade (confirmed + standing)', 'al-b2b'], ['preorder', 'Pre-orders', 'al-pre'], ['group', 'Group buys', 'al-group'], ['shop', 'Shop (expected)', 'al-shop']];
+  function allocationView(root) {
+    var plan = M.allocation.plan(10);
+    var tot = function (k) { return plan.reduce(function (s, x) { return s + x.alloc[k]; }, 0); };
+    var unalloc = plan.reduce(function (s, x) { return s + x.unallocated; }, 0), shorts = plan.filter(function (x) { return x.shortBy > 0; });
+    append(root, h('div', { class: 'kpis' },
+      kpi('Harvests · 10 days', String(plan.length), plan.reduce(function (s, x) { return s + x.supply; }, 0) + ' units expected'),
+      kpi('Already promised', String(tot('b2b') + tot('preorder')), tot('b2b') + ' trade · ' + tot('preorder') + ' pre-orders'),
+      kpi('Unallocated', String(unalloc), 'units with no buyer yet — place them before discounting'),
+      kpi('Short', String(shorts.length), shorts.length ? shorts.map(function (x) { return x.product.title; }).slice(0, 2).join(', ') : 'every harvest covers its orders')));
+    append(root, panel(aiTitle('Where each harvest goes'), 'Expected yield split in priority order: confirmed trade orders, pre-orders, likely group-buy demand, then normal shop sales until the next harvest. Group and shop figures are estimates from the last 4 weeks.',
+      h('ul', { class: 'al-legend' }, ALLOC_SEGS.map(function (s) { return h('li', null, h('span', { class: 'al-dot ' + s[2] }), s[1]); }), h('li', null, h('span', { class: 'al-dot al-free' }), 'Unallocated')),
+      plan.length ? h('div', { class: 'al-list' }, plan.map(function (x) {
+        var bar = h('div', { class: 'al-bar', role: 'img', 'aria-label': ALLOC_SEGS.map(function (s) { return s[1] + ' ' + x.alloc[s[0]]; }).join(', ') + ', unallocated ' + x.unallocated });
+        ALLOC_SEGS.forEach(function (s) { if (x.alloc[s[0]]) { var seg = h('span', { class: s[2], title: s[1] + ': ' + x.alloc[s[0]] }); seg.style.width = (x.alloc[s[0]] / x.supply * 100) + '%'; bar.appendChild(seg); } });
+        if (x.unallocated) { var free = h('span', { class: 'al-free', title: 'Unallocated: ' + x.unallocated }); free.style.width = (x.unallocated / x.supply * 100) + '%'; bar.appendChild(free); }
+        var status = x.shortBy ? badge('Short by ' + x.shortBy, 'red') : x.unallocated ? badge(x.unallocated + ' unallocated', 'amber') : badge('Fully allocated', 'green');
+        return h('article', { class: 'al-card' + (x.shortBy ? ' short' : '') },
+          h('div', { class: 'al-head' },
+            h('span', { class: 'rw-tier-cell' }, thumbMini(x.product), h('span', null, h('strong', { text: x.product.title }), h('br'),
+              h('small', { text: 'Harvest ' + shortWeekday(M.clearance.parseDayKey(x.batch.harvestDate).toISOString()) + ' · ' + x.supply + ' expected · covers ' + x.coverDays + ' days' }))),
+            status),
+          bar,
+          h('ul', { class: 'al-nums' }, ALLOC_SEGS.map(function (s) {
+            return h('li', null, h('span', { class: 'al-dot ' + s[2] }), h('small', { text: s[1] }), h('strong', { text: String(x.wanted[s[0]]) + (x.wanted[s[0]] > x.alloc[s[0]] ? ' (' + x.alloc[s[0]] + ' covered)' : '') }));
+          }), h('li', null, h('span', { class: 'al-dot al-free' }), h('small', { text: 'Unallocated' }), h('strong', { text: String(x.unallocated) }))),
+          x.lost ? h('p', { class: 'al-lost', text: '+ ' + x.lost + ' unit(s) of lost demand: people asked for ' + x.product.title + ' while it was sold out.' }) : null,
+          x.options.length ? h('ol', { class: 'rescue-opts al-opts' }, x.options.map(function (o, i) {
+            var btn = o.key === 'b2b' ? mini('Draft offer', function () { var acc = M.b2b.store().accounts.filter(function (a) { return a.id === o.accountId; })[0]; openB2BMessage('offer', { account: acc, product: x.product }); })
+              : o.key === 'lost' ? h('a', { class: 'mini', href: '#lost', text: 'Lost demand' })
+              : o.key === 'preorder' ? h('a', { class: 'mini', href: '#campaigns', text: 'Campaigns' })
+              : o.key === 'bundle' ? h('a', { class: 'mini', href: '#pricing', text: 'Simulator' })
+              : o.key === 'smaller' ? h('a', { class: 'mini', href: '#harvest', text: 'Harvest Planner' }) : null;
+            return h('li', { class: i === 0 ? 'best' : '' }, h('span', { class: 'rescue-opt-text' }, h('strong', { text: (i === 0 ? 'Best: ' : '') + o.title }), h('small', { text: o.why })), btn);
+          })) : null);
+      })) : h('p', { class: 'empty', text: 'No harvests due in the next 10 days.' })));
+  }
+
+  /* ---- Promotion Impact Simulator (inside Price Advisor) ----
+   * Compare no promotion, a discount, a bundle and a bulk trade offer for one product over the
+   * selling window, with every assumption shown. Staff pick one and send it for approval. */
+  function promoSimulatorPanel() {
+    var crops = M.radar.crops();
+    var pick = (crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; })[0] || crops[0]).product;
+    var st = { productId: pick.id, pct: 10, weeks: 2, lift: Math.round(M.RULES.promoLiftPer10 * 100) };
+    var sel = h('select', { 'aria-label': 'Product' }, crops.map(function (c) { return h('option', { value: c.product.id, text: c.product.title + (c.status === 'surplus' ? ' · surplus' : c.status === 'short' ? ' · short' : '') }); }));
+    sel.value = st.productId;
+    var pct = h('select', { 'aria-label': 'Discount' }, [10, 15, 20, 25, 30].map(function (n) { return h('option', { value: String(n), text: n + '% off' }); }));
+    var weeks = h('select', { 'aria-label': 'Window' }, [1, 2, 3].map(function (n) { return h('option', { value: String(n), text: n + ' week' + (n > 1 ? 's' : '') }); })); weeks.value = '2';
+    var lift = h('input', { type: 'number', min: 0, max: 100, step: 5, 'aria-label': 'Lift per 10% off' }); lift.value = String(st.lift);
+    var out = h('div', { class: 'sim-out', 'aria-live': 'polite' });
+    function draw() {
+      var r = M.promo.simulate(sel.value, { pct: Number(pct.value), weeks: Number(weeks.value), lift: Math.max(0, Number(lift.value) || 0) / 100 });
+      out.textContent = '';
+      var maxRev = Math.max.apply(null, r.scenarios.map(function (s) { return s.revenue; }).concat([1]));
+      append(out,
+        h('div', { class: 'sim-grid' }, r.scenarios.map(function (s) {
+          var bar = h('span', { class: 'sim-bar' }, h('span')); bar.firstChild.style.width = Math.round(s.revenue / maxRev * 100) + '%';
+          var act = s.key === 'none' ? h('span', { class: 'pa-act pa-status', text: 'Keep as is' })
+            : s.blocked ? h('span', { class: 'pa-act pa-status', text: 'Blocked by Margin Guard' })
+            : s.key === 'bulk' ? h('button', { class: 'pa-act btn btn-sm btn-outline', type: 'button', text: 'Draft trade offer', onclick: function () {
+                var acc = M.b2b.store().accounts.filter(function (a) { return (a.usual || []).some(function (u) { var up = M.byId('products', u.productId); return up && up.category === r.product.category; }); })[0] || M.b2b.store().accounts[0];
+                openB2BMessage('offer', { account: acc, product: r.product }); } })
+            : h('button', { class: 'pa-act btn btn-sm btn-forest', type: 'button', text: 'Send for approval', onclick: function () {
+                var sug = s.key === 'bundle'
+                  ? { kind: 'bundle', product: r.product, partner: s.partner, priceCents: Math.round((r.product.priceCents + s.partner.priceCents) * 0.9), fullCents: r.product.priceCents + s.partner.priceCents, qty: s.sold - r.base > 0 ? s.sold - r.base : 10, guard: { ok: true }, reason: 'Promotion simulator: ' + s.note + '.' }
+                  : { kind: 'discount', product: r.product, priceCents: s.unitPrice, qty: s.sold, guard: s.guard, reason: 'Promotion simulator: ' + s.label + ' sells about ' + s.sold + ' over ' + r.weeks + ' week(s), margin ' + money(s.margin) + '.' };
+                var x = M.pricing.propose(sug, session.email);
+                if (!x.ok) { toast(x.error); return; }
+                commit('pricing.proposed', x.id, s.label + ' for ' + r.product.title + ' sent for approval.');
+              } });
+          return h('article', { class: 'sim-card' + (s.best ? ' best' : '') + (s.blocked ? ' blocked' : '') },
+            h('div', { class: 'sim-head' }, h('strong', { text: s.label }), s.best ? badge('Best margin', 'green') : s.blocked ? badge('Blocked', 'red') : h('span')),
+            h('div', { class: 'sim-price' }, s.key === 'none' || s.key === 'bundle' ? h('strong', { text: money(s.unitPrice) }) : [h('span', { class: 'price-was', text: money(r.product.priceCents) }), h('strong', { text: money(s.unitPrice) })]),
+            h('ul', { class: 'sim-nums' },
+              h('li', null, h('small', { text: 'Sells' }), h('strong', { text: s.sold + ' units' })),
+              h('li', null, h('small', { text: 'Revenue' }), h('strong', { text: money(s.revenue) })),
+              h('li', { class: 'sim-margin' }, h('small', { text: 'Margin' }), h('strong', { text: money(s.margin) })),
+              h('li', { class: s.unsold ? 'sim-left' : '' }, h('small', { text: 'Left unsold' }), h('strong', { text: s.unsold + (s.unsold ? ' (' + money(s.unsoldValue) + ')' : '') }))),
+            bar,
+            h('small', { class: 'sim-note', text: s.note || (s.blocked ? s.guard.reasons.join('; ') + '.' : s.key === 'none' ? 'Normal price, normal sales.' : 'Same buyers, more of them at the lower price.') }),
+            act);
+        })),
+        h('details', { class: 'sim-assume' }, h('summary', { text: 'Assumptions behind these numbers' }), h('ul', null, r.assumptions.map(function (a) { return h('li', { text: a }); }))));
+    }
+    [sel, pct, weeks].forEach(function (el) { el.addEventListener('change', draw); });
+    lift.addEventListener('input', draw);
+    draw();
+    return panel(aiTitle('Promotion Impact Simulator'), 'Compare options before running a promotion: what sells, the revenue and margin, and what\'s left unsold. Estimates, not promises — the assumptions are listed underneath.',
+      h('div', { class: 'form-grid sim-form' }, h('label', null, 'Product', sel), h('label', null, 'Discount to test', pct), h('label', null, 'Selling window', weeks), h('label', null, 'Sales lift per 10% off (%)', lift)),
+      out);
+  }
+
+  /* ---------------- Data import (staff + admin) ----------------
+   * Upload sales or harvest records from Excel or CSV. Columns and product names are matched
+   * automatically; staff see a preview and what didn't match before anything is imported. */
+  var XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  function loadXlsx(cb) {
+    if (window.XLSX) { cb(null); return; }
+    var sc = document.createElement('script');
+    sc.src = XLSX_URL; sc.onload = function () { cb(null); }; sc.onerror = function () { cb('Couldn\'t load the Excel reader (offline?). Save the sheet as CSV and upload that instead.'); };
+    document.head.appendChild(sc);
+  }
+  function downloadText(name, text) {
+    var a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/csv' })), download: name });
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+  function importView(root) {
+    var st = importView.state || (importView.state = { kind: 'sales', preview: null, file: '' });
+    var kindSel = h('select', { 'aria-label': 'What are you importing?' }, Object.keys(M.importer.KINDS).map(function (k) { return h('option', { value: k, text: M.importer.KINDS[k].label }); }));
+    kindSel.value = st.kind;
+    var file = h('input', { type: 'file', accept: '.csv,.tsv,.txt,.xlsx,.xls', 'aria-label': 'Spreadsheet file' });
+    var out = h('div', { class: 'im-out' });
+    function show() {
+      out.textContent = '';
+      var p = st.preview;
+      if (!p) { append(out, h('p', { class: 'hint', text: 'Pick a file to see a preview. Nothing is imported until you confirm.' })); return; }
+      if (!p.ok) { append(out, h('p', { class: 'callout red', text: p.error })); return; }
+      var K = M.importer.KINDS[p.kind];
+      append(out,
+        h('div', { class: 'im-summary' },
+          h('span', { class: 'im-chip ok', text: '✓ ' + p.good.length + ' row(s) ready' }),
+          p.bad.length ? h('span', { class: 'im-chip bad', text: '✗ ' + p.bad.length + ' row(s) skipped' }) : null,
+          h('small', { text: 'Columns matched: ' + Object.keys(p.map).map(function (k) { return k + ' ← "' + p.headers[p.map[k]] + '"'; }).join(' · ') })),
+        table(p.kind === 'sales' ? [
+          { label: 'Line', num: true, render: function (r) { return String(r.line); } },
+          { label: 'Date', render: function (r) { return r.date ? shortDate(M.clearance.parseDayKey(r.date).toISOString()) : '—'; } },
+          { label: 'Product', render: function (r) { return r.product ? r.product.title : '—'; } },
+          { label: 'Qty', num: true, render: function (r) { return String(r.qty); } },
+          { label: 'Channel', render: function (r) { return r.channel; } }
+        ] : [
+          { label: 'Line', num: true, render: function (r) { return String(r.line); } },
+          { label: 'Product', render: function (r) { return r.product ? r.product.title : '—'; } },
+          { label: 'Harvest', render: function (r) { return r.harvest ? shortDate(M.clearance.parseDayKey(r.harvest).toISOString()) : '—'; } },
+          { label: 'Expected', num: true, render: function (r) { return String(r.expected || '—'); } },
+          { label: 'Actual', num: true, render: function (r) { return r.actual != null ? String(r.actual) : '—'; } }
+        ], p.good.slice(0, 8), 'No usable rows.'),
+        p.good.length > 8 ? h('small', { class: 'hint', text: '…and ' + (p.good.length - 8) + ' more.' }) : null,
+        p.bad.length ? h('details', { class: 'im-bad' }, h('summary', { text: 'Skipped rows (' + p.bad.length + ')' }),
+          h('ul', null, p.bad.slice(0, 20).map(function (r) { return h('li', { text: 'Line ' + r.line + ': ' + r.error }); }))) : null,
+        h('div', { class: 'im-actions' },
+          h('small', { text: p.kind === 'sales' ? 'Sales from the last 8 weeks go into the weekly history Demand Radar uses.' : 'Future harvests become planned batches; past ones with an actual quantity are recorded as harvested.' }),
+          h('button', { class: 'btn btn-sm btn-forest', type: 'button', disabled: !p.good.length, text: 'Import ' + p.good.length + ' row(s)', onclick: function () {
+            var r = M.importer.apply(p, session.email, st.file);
+            st.preview = null;
+            commit('import.done', st.file, r.rows + ' ' + K.label.toLowerCase() + ' imported from ' + st.file + '.');
+          } })));
+    }
+    function readFile(f) {
+      st.file = f.name;
+      var finish = function (rows) { st.preview = M.importer.preview(st.kind, rows); show(); };
+      if (/\.xlsx?$/i.test(f.name)) {
+        loadXlsx(function (err) {
+          if (err) { st.preview = { ok: false, error: err }; show(); return; }
+          var rd = new FileReader();
+          rd.onload = function () {
+            try { var wb = window.XLSX.read(new Uint8Array(rd.result), { type: 'array' }); finish(window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' })); }
+            catch (e) { st.preview = { ok: false, error: 'Couldn\'t read that workbook. Try saving it as CSV.' }; show(); }
+          };
+          rd.readAsArrayBuffer(f);
+        });
+      } else {
+        var rd2 = new FileReader();
+        rd2.onload = function () { finish(M.importer.parseCsv(rd2.result)); };
+        rd2.readAsText(f);
+      }
+    }
+    kindSel.addEventListener('change', function () { st.kind = kindSel.value; st.preview = null; show(); });
+    file.addEventListener('change', function () { if (file.files[0]) readFile(file.files[0]); });
+    show();
+    append(root, panel(aiTitle('Import from Excel'), 'Upload the spreadsheets MEOD already keeps — no new software to learn. Column names and product names are matched for you (including names like "Bok Choy" or "kailan"); dates can be day/month/year.',
+      h('div', { class: 'form-grid im-form' },
+        h('label', null, 'What are you importing?', kindSel),
+        h('label', null, 'File (.xlsx or .csv)', file),
+        h('div', { class: 'im-tpl' }, h('small', { text: 'Need a starting point?' }), mini('Download template', function () { downloadText('meod-' + st.kind + '-template.csv', M.importer.template(st.kind)); }))),
+      out));
+    append(root, panel('Import history', null, table([
+      { label: 'When', render: function (r) { return h('span', null, shortDate(r.at), h('br'), h('small', { text: r.by })); } },
+      { label: 'File', render: function (r) { return r.file; } },
+      { label: 'Type', render: function (r) { return (M.importer.KINDS[r.kind] || {}).label || r.kind; } },
+      { label: 'Rows', num: true, render: function (r) { return r.rows + (r.skipped ? ' (' + r.skipped + ' skipped)' : ''); } }
+    ], S().imports || [], 'Nothing imported yet.')));
+  }
+
+  /* ---------------- Pilot metrics (staff + admin) ----------------
+   * What a pilot with MEOD would measure, from the portal's own records, against a recorded
+   * baseline. No promises: each number says how it's worked out. */
+  function pilotView(root) {
+    var m = M.pilot.metrics(30), bl = (S().pilotBaselines || [])[0] || null;
+    var pctOrDash = function (v) { return v == null ? '—' : v + '%'; };
+    var rows = [
+      { key: 'conversion', label: 'Enquiry-to-order rate', fmt: pctOrDash, good: 'up', how: 'Visit enquiries confirmed + lost-demand requests fulfilled, out of all enquiries and requests (' + m.converted + ' of ' + m.enquiries + ').' },
+      { key: 'sellThrough', label: 'Sell-through', fmt: pctOrDash, good: 'up', how: 'Share of harvested units sold, processed or donated rather than left past sell-by or composted (' + m.harvestedUnits + ' harvested).' },
+      { key: 'unsold', label: 'Unsold units', fmt: function (v) { return String(v); }, good: 'down', how: 'Units past their sell-by date plus units composted, from Harvest Rescue.' },
+      { key: 'campMarginCents', label: 'Campaign margin', fmt: function (v) { return money(v || 0); }, good: 'up', how: 'Margin on orders for a campaign\'s product by its recipients within 7 days of sending (' + m.campaigns + ' campaign(s) sent).' },
+      { key: 'lostUnits', label: 'Lost demand (open)', fmt: function (v) { return v + ' units'; }, good: 'track', how: 'Units people asked for and couldn\'t get — capturing this is new, so it starts at zero in the baseline.' },
+      { key: 'minutesSaved', label: 'Staff time saved', fmt: function (v) { return v >= 60 ? Math.round(v / 6) / 10 + ' h' : v + ' min'; }, good: 'up', how: 'AI drafts used × typical minutes to write one by hand (reply 10, campaign 15, trade message 8, social post 20, briefing 30).' }
+    ];
+    append(root, h('div', { class: 'kpis' },
+      kpi('Enquiry-to-order', pctOrDash(m.conversion), m.converted + ' of ' + m.enquiries + ' · 30 days'),
+      kpi('Sell-through', pctOrDash(m.sellThrough), m.unsold + ' unit(s) unsold'),
+      kpi('Campaign margin', money(m.campMarginCents), m.campaigns + ' campaign(s) sent'),
+      kpi('Time saved', rows[5].fmt(m.minutesSaved), 'by AI drafts · 30 days')));
+    append(root, panel('Now vs baseline', bl ? 'Baseline recorded ' + shortDate(bl.at) + ' by ' + bl.by + (bl.note ? ' — ' + bl.note : '') + '. Figures cover the 30 days before each date.' : 'No baseline yet — record one before the pilot starts.',
+      table([
+        { label: 'Measure', render: function (r) { return h('span', null, h('strong', { text: r.label }), h('br'), h('small', { text: r.how })); } },
+        { label: 'Baseline', num: true, render: function (r) { return bl ? r.fmt(bl[r.key]) : '—'; } },
+        { label: 'Now', num: true, render: function (r) { return h('strong', { text: r.fmt(m[r.key]) }); } },
+        { label: 'Change', num: true, render: function (r) {
+          if (!bl || bl[r.key] == null || m[r.key] == null) return '—';
+          var d = m[r.key] - bl[r.key];
+          if (!d) return h('small', { text: 'same' });
+          var better = r.good === 'up' ? d > 0 : r.good === 'down' ? d < 0 : null;
+          var txt = (d > 0 ? '▲ ' : '▼ ') + (/conversion|sellThrough/.test(r.key) ? Math.abs(d) + ' pts' : r.fmt(Math.abs(d)));
+          return h('span', { class: better === null ? 'pm-flat' : better ? 'pm-good' : 'pm-bad', text: txt });
+        } }
+      ], rows, ''),
+      h('div', { class: 'pm-foot' },
+        h('small', { class: 'hint', text: 'Prototype figures from demo data. In a real pilot these come from MEOD\'s own orders, harvests and enquiries over the same weeks.' }),
+        h('div', { class: 'actions' },
+          mini('Export CSV', function () {
+            var csv = 'Measure,Baseline,Now\n' + rows.map(function (r) { return '"' + r.label + '",' + (bl ? bl[r.key] : '') + ',' + m[r.key]; }).join('\n');
+            downloadText('meod-pilot-metrics.csv', csv);
+          }),
+          mini('Record new baseline', function () {
+            if (!confirm('Record today\'s figures as the new baseline?')) return;
+            M.pilot.recordBaseline(session.email, '');
+            commit('pilot.baseline', 'pilot', 'Baseline recorded.');
+          })))));
+  }
+
+  // Shop: "Notify me" on a sold-out product logs lost demand (and asks to be told when back).
+  function notifyListed(p) { return (S().lostDemand || []).some(function (d) { return d.source === 'soldout' && d.status === 'open' && d.productId === p.id && d.customerId === session.customerId; }); }
+  function notifyMe(p, after) {
+    var r = M.lost.add({ source: 'soldout', reason: 'ranout', productId: p.id, qty: 1, customerId: session.customerId, notify: true }, null);
+    if (!r.ok) { toast(r.error); return; }
+    if (r.dupe) { toast('You\'re already on the list for ' + p.title + '.'); return; }
+    commit('lost.notify_me', p.id, 'We\'ll let you know when ' + p.title + ' is back.');
+    if (after) after();
+  }
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
@@ -2053,6 +2408,10 @@
     M.feedback.clusters(14).filter(function (g) { return g.pattern && !g.resolved; }).slice(0, 2).forEach(function (g, i) {
       push(89 - i, 'Customers', g.theme === 'late' ? ICONS.truck : ICONS.chat, g.title, g.cause.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.'), { label: 'Open Feedback', href: '#feedback' });
     });
+    var li = M.lost.insights(14).filter(function (g) { return g.product; })[0];
+    if (li && li.units >= 5) push(78, 'Sales', ICONS.search, li.units + ' ' + li.product.title + ' asked for but not sold', li.why.split('. ')[0] + '.', { label: 'Lost demand', href: '#lost' });
+    var al = M.allocation.plan(7).filter(function (x) { return x.unallocated >= 10; }).sort(function (a, b) { return b.unallocated - a.unallocated; })[0];
+    if (al) push(77, 'Farm ops', ICONS.box, al.unallocated + ' ' + al.product.title + ' from the ' + shortWeekday(M.clearance.parseDayKey(al.batch.harvestDate).toISOString()) + ' harvest have no buyer yet', 'Place them with trade buyers or pre-orders before discounting.', { label: 'Harvest allocation', href: '#allocation' });
     var postsWaiting = (S().contentPlan || []).filter(function (c) { return c.status === 'pending'; });
     if (postsWaiting.length) push(64, 'Sales', ICONS.chat, postsWaiting.length + ' social post(s) waiting for approval', 'Planned in the Content studio. Approve them so staff can post on the day.', { label: 'Content studio', href: '#content' });
     else if (!M.content.upcoming(7).filter(function (c) { return c.status !== 'posted'; }).length) push(62, 'Sales', ICONS.chat, 'No social posts planned this week', 'The Content studio has ' + M.content.ideas().length + ' ready-made ideas from this week\'s harvest, recipes and support-local posts.', { label: 'Content studio', href: '#content' });
@@ -2221,6 +2580,11 @@
     balanced: { label: 'Balanced', tone: 'green' }, unknown: { label: 'Can\'t tell', tone: 'grey' }, idle: { label: 'No activity', tone: 'grey' }
   };
   function radarAdvice(c) {
+    var a = radarAdviceBase(c), lost = M.lost.unitsFor(c.product.id);
+    if (lost) a.text += ' Plus ' + lost + ' unit(s) asked for while it was sold out (Lost demand) — real demand is higher than sales show.';
+    return a;
+  }
+  function radarAdviceBase(c) {
     var p = c.product, pct = c.demand ? Math.round(Math.abs(c.gap) / c.demand * 100) : 0;
     var grow = M.RULES.growDays[p.category] || 30;
     var ready = shortDate(new Date(Date.now() + grow * 864e5).toISOString());
@@ -3212,6 +3576,9 @@
     rescue: { label: 'Harvest Rescue', tone: 'amber' },
     pricing: { label: 'Pricing', tone: 'amber' },
     feedback: { label: 'Feedback', tone: 'blue' },
+    lost: { label: 'Lost demand', tone: 'amber' },
+    import: { label: 'Import', tone: 'grey' },
+    pilot: { label: 'Pilot', tone: 'green' },
     content: { label: 'Content', tone: 'green' },
     briefing: { label: 'Briefing', tone: 'green' }
   };
@@ -3229,7 +3596,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'settings.changed': 'Changed an AI assumption', 'review.posted': 'Posted a product review', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'lost.logged': 'Logged an unmet request', 'lost.notify_me': 'Asked to be told when a product is back', 'lost.notified': 'Told customers a product is back', 'lost.fulfilled': 'Fulfilled an unmet request', 'lost.closed': 'Closed an unmet request', 'import.done': 'Imported a spreadsheet', 'pilot.baseline': 'Recorded a pilot baseline', 'settings.changed': 'Changed an AI assumption', 'review.posted': 'Posted a product review', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -3958,13 +4325,16 @@
       qtyLabel.textContent = String(qty);
       minus.disabled = qty <= 1;
       plus.disabled = qty >= maxQty;
-      addBtn.disabled = !maxQty;
-      addBtn.textContent = !maxQty ? (s.key === 'stale' ? 'Can\'t confirm stock' : 'Sold out')
+      var canNotify = !maxQty && !l && s.key === 'out' && session.customerId;
+      addBtn.disabled = !maxQty && !(canNotify && !notifyListed(p));
+      addBtn.textContent = canNotify ? (notifyListed(p) ? '✓ We\'ll tell you when it\'s back' : 'Notify me when it\'s back')
+        : !maxQty ? (s.key === 'stale' ? 'Can\'t confirm stock' : 'Sold out')
         : (inCart ? 'Update cart · ' : 'Add to cart · ') + money(unitCents * qty);
     }
     minus.addEventListener('click', function () { if (qty > 1) { qty--; sync(); } });
     plus.addEventListener('click', function () { if (qty < maxQty) { qty++; sync(); } });
     addBtn.addEventListener('click', function () {
+      if (!maxQty) { notifyMe(p, function () { if (opts.onCartChange) opts.onCartChange(); closeDialog(); }); return; }
       cart[cartKey] = qty;
       saveCart();
       if (opts.onCartChange) opts.onCartChange();
@@ -4165,8 +4535,11 @@
         var canAdd = s.known && q < s.qty;
         var media = h('div', { class: 'shop-media' }, thumb(p), stockBadge(p));
         var control = q === 0
-          ? h('button', { class: 'btn btn-sm btn-forest shop-add', type: 'button', disabled: !canAdd, text: canAdd ? '+ Add' : (s.key === 'stale' ? 'Checking…' : 'Sold out'),
-              'aria-label': 'Add ' + p.title + ' to cart', onclick: function () { setQty(p.id, 1); } })
+          ? (s.key === 'out'
+            ? h('button', { class: 'btn btn-sm btn-outline shop-add shop-notify', type: 'button', disabled: notifyListed(p), text: notifyListed(p) ? '✓ On the list' : 'Notify me',
+                'aria-label': 'Tell me when ' + p.title + ' is back', onclick: function () { notifyMe(p); } })
+            : h('button', { class: 'btn btn-sm btn-forest shop-add', type: 'button', disabled: !canAdd, text: canAdd ? '+ Add' : (s.key === 'stale' ? 'Checking…' : 'Sold out'),
+              'aria-label': 'Add ' + p.title + ' to cart', onclick: function () { setQty(p.id, 1); } }))
           : h('div', { class: 'qty' },
               h('button', { type: 'button', 'aria-label': 'Remove one ' + p.title, text: '−', onclick: function () { setQty(p.id, q - 1); } }),
               h('span', { text: String(q) }),
@@ -5052,7 +5425,10 @@
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
       { id: 'briefing', group: 'Today', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
+      { id: 'pilot', group: 'Today', label: 'Pilot metrics', perm: 'pilot', title: 'Pilot metrics', sub: 'What a pilot with MEOD would measure, compared with a recorded baseline.', render: pilotView },
+      { id: 'lost', group: 'Farm ops', label: 'Lost demand', perm: 'lost', title: 'Lost demand', sub: 'What people asked for and couldn\'t get — so a sold-out crop isn\'t mistaken for weak demand.', render: lostDemandView },
       { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
+      { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
@@ -5068,6 +5444,7 @@
       { id: 'inbox', group: 'Customers', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'feedback', group: 'Customers', label: 'Feedback', perm: 'feedback', title: 'Feedback', sub: 'What customers and buyers say, grouped by theme and traced to the batch it came from.', render: feedbackView, count: function () { return M.feedback.clusters(14).filter(function (g) { return g.pattern && !g.resolved; }).length; } },
       { id: 'customers', group: 'Customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },
+      { id: 'import', group: 'Admin', label: 'Data import', perm: 'pilot', title: 'Data import', sub: 'Bring in sales and harvest records from Excel — no new software needed.', render: importView },
       { id: 'users', group: 'Admin', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
       { id: 'audit', group: 'Admin', label: 'Audit log', perm: 'audit', title: 'Audit log', sub: 'Who did what, and when.', render: auditView },
       { id: 'settings', group: 'Admin', label: 'Settings', perm: 'settings', title: 'Settings', sub: 'Rules and demo controls.', render: settingsView }

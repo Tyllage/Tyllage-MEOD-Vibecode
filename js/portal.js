@@ -1363,26 +1363,31 @@
     var sel = h('select', { 'aria-label': 'Product' }, S().products.filter(function (p) { return !p.bagOffer; }).map(function (p) { return h('option', { value: p.id, text: p.title + ' (' + money(p.priceCents) + ')' }); }));
     var priceIn = h('input', { type: 'number', min: 0, step: '0.05', 'aria-label': 'Price to check (S$)' });
     var out = h('div', { class: 'guard-out', 'aria-live': 'polite' });
+    var costsOut = h('div', { class: 'guard-cost-box' });
     function check() {
       var p = M.byId('products', sel.value);
       var c = Math.round((parseFloat(priceIn.value) || 0) * 100);
       var g = M.pricing.guard(p.id, c);
       out.textContent = '';
-      append(out,
-        guardBox(g, money(c) + (p.priceCents ? ' (' + Math.round((1 - c / p.priceCents) * 100) + '% off)' : '')),
+      costsOut.textContent = '';
+      append(out, guardBox(g, money(c) + (p.priceCents ? ' (' + Math.round((1 - c / p.priceCents) * 100) + '% off)' : '')));
+      append(costsOut,
+        h('h3', { text: 'Cost breakdown · ' + p.title }),
         h('ul', { class: 'guard-costs' },
           h('li', null, h('span', { text: 'Growing' }), h('span', { text: money(g.cost.growCents) })),
           h('li', null, h('span', { text: 'Packaging' }), h('span', { text: money(g.cost.packCents) })),
           h('li', null, h('span', { text: 'Handling' }), h('span', { text: money(g.cost.handleCents) })),
           h('li', { class: 'tot' }, h('span', { text: 'Unit cost' }), h('span', { text: money(g.cost.totalCents) })),
-          h('li', null, h('span', { text: 'Floor (' + (g.floorBy === 'cost' ? 'cost + ' + Math.round(M.RULES.minMarginRate * 100) + '% margin' : '60% minimum price') + ')' }), h('span', { text: money(g.floorCents) }))));
+          h('li', null, h('span', { text: 'Floor (' + (g.floorBy === 'cost' ? 'cost + ' + Math.round(M.RULES.minMarginRate * 100) + '% margin' : Math.round(M.RULES.clearanceDefaultMinRate * 100) + '% minimum price') + ')' }), h('span', { text: money(g.floorCents) }))));
     }
     sel.addEventListener('change', function () { priceIn.value = (M.byId('products', sel.value).priceCents * 0.8 / 100).toFixed(2); check(); });
     priceIn.addEventListener('input', check);
     priceIn.value = (M.byId('products', sel.value).priceCents * 0.8 / 100).toFixed(2);
     check();
     append(root, panel('Margin Guard checker', 'Try any price before proposing it. Costs are illustrative — MEOD would enter real growing, packaging and handling costs.',
-      h('div', { class: 'form-grid guard-form' }, h('label', null, 'Product', sel), h('label', null, 'Price (S$)', priceIn)), out));
+      h('div', { class: 'guard-layout' },
+        h('div', { class: 'guard-left' }, h('div', { class: 'form-grid guard-form' }, h('label', null, 'Product', sel), h('label', null, 'Price (S$)', priceIn)), out),
+        costsOut)));
   }
 
   /* ---------------- Feedback intelligence (staff + admin) ----------------

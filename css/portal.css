@@ -101,7 +101,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .b-blue { background: #dbe9f3; color: var(--berry); }
 
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.mini { border: 1.5px solid var(--forest); background: var(--white); color: var(--forest); border-radius: 8px; padding: 4px 10px; font: 600 .78rem var(--font-body); cursor: pointer; }
+/* In tables, keep row buttons (e.g. Mark paid + Cancel) side by side on desktop; the phone
+   card layout below 640px still lets them wrap. */
+@media (min-width: 641px) { .table-wrap td .actions { flex-wrap: nowrap; } }
+.mini { border: 1.5px solid var(--forest); background: var(--white); color: var(--forest); border-radius: 8px; padding: 4px 10px; font: 600 .78rem var(--font-body); cursor: pointer; white-space: nowrap; }
 .mini:hover { background: var(--forest); color: var(--white); }
 .mini.danger { border-color: var(--danger); color: var(--danger); }
 .mini.danger:hover { background: var(--danger); color: var(--white); }

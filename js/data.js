@@ -701,6 +701,57 @@
         createdBy: 'sales@meod.test', createdAt: new Date(Date.now() - 3 * 36e5).toISOString(), decidedBy: null }] : [];
       s.migrations.pricingV1 = true;
     }
+    if (!s.migrations.feedbackV1) {
+      // Four weeks of customer feedback from every channel, so Feedback intelligence has real
+      // patterns to find: three freshness complaints from one Kai Lan batch, two late
+      // deliveries on the same Thursday round, a few one-offs and plenty of praise.
+      var pF = function (title) { var x = s.products.filter(function (y) { return y.title === title; })[0]; return x ? x.id : null; };
+      var t0 = new Date(); t0.setHours(0, 0, 0, 0);
+      var dk = function (n) { return bagDayKey(new Date(t0.getTime() - n * 864e5)); };
+      var at = function (n, hr) { return new Date(t0.getTime() - n * 864e5 + (hr || 19) * 36e5).toISOString(); };
+      var lastThu = 1; while (new Date(t0.getTime() - lastThu * 864e5).getDay() !== 4) lastThu += 1;
+      // The Kai Lan batch the complaints trace back to (all sold, so it's not in Harvest Rescue).
+      var kl = s.products.filter(function (y) { return y.title === 'Kai Lan'; })[0];
+      var klBatch = null;
+      if (kl) {
+        s.seq += 1;
+        klBatch = { id: 'HB-' + s.seq, productId: kl.id, sowDate: dk(6 + (RULES.growDays[kl.category] || 30)), harvestDate: dk(6), expectedQty: 30, preorderCap: 0, preorderPriceCents: kl.priceCents,
+          status: 'harvested', actualQty: 28, toStock: 0, harvestedAt: at(6, 7), sellBy: dk(6 - (RULES.shelfDays[kl.category] || 4)), createdBy: 'admin@meod.test', createdAt: at(50, 10) };
+        s.batches.push(klBatch);
+      }
+      var gf = (s.b2b && s.b2b.accounts || []).filter(function (a) { return /Green Fork/.test(a.name); })[0];
+      var kk = (s.b2b && s.b2b.accounts || []).filter(function (a) { return /Kopi/.test(a.name); })[0];
+      // [source, customerId, accountId, who, product, delivered N days ago, rating, text, received N days ago, ticketId]
+      var rows = [
+        ['ticket', 'C-1003', null, null, 'Kai Lan', 4, 2, 'Kai Lan leaves were wilted and yellowing when the box arrived.', 0, 'T-1001'],
+        ['rating', 'C-1006', null, null, 'Kai Lan', 5, 2, 'Kai Lan looked limp, had to throw some of it away.', 4],
+        ['b2b', null, gf && gf.id, null, 'Kai Lan', 4, null, 'Kai Lan this week was soggy at the stems — couldn\'t use about a third for service.', 3],
+        ['rating', 'C-1005', null, null, null, lastThu, 2, 'Delivery came really late, after 9pm instead of the 6–9pm slot.', lastThu],
+        ['chat', 'C-1002', null, null, null, lastThu, null, 'Our order was late again, the veggies sat outside the door.', lastThu - 1 > 0 ? lastThu - 1 : 0],
+        ['rating', 'C-1001', null, null, 'Sweet Basil', 2, 3, 'The basil was missing from my order, the rest was fine.', 2],
+        ['chat', 'C-1004', null, null, null, 9, null, 'Love the veg but there is so much plastic packaging.', 8],
+        ['rating', 'C-1005', null, null, null, 10, 3, 'A bit pricey compared to the supermarket.', 10],
+        ['rating', 'C-1001', null, null, 'Shiitake Mushroom', 4, 5, 'Shiitake was so fresh and meaty, best we have had.', 4],
+        ['rating', 'C-1002', null, null, 'Cos Lettuce', 3, 5, 'Love how crunchy the Cos lettuce is.', 3],
+        ['visit', null, null, 'Primary school teacher', null, null, 5, 'The kids loved the farm tour and finally learnt where their food comes from. Thank you!', 6],
+        ['rating', 'C-1003', null, null, 'Mesclun Mix', 7, 5, 'Mesclun lasted a whole week in the fridge.', 6],
+        ['b2b', null, kk && kk.id, null, 'Xiao Bai Cai', 5, null, 'Xiao Bai Cai has been consistently great, customers notice.', 5],
+        ['rating', 'C-1006', null, null, 'Bayam', 19, 2, 'Bayam leaves were going brown.', 18],
+        ['chat', 'C-1001', null, null, null, 16, null, 'Delivery was late and nobody told us.', 16],
+        ['rating', 'C-1004', null, null, 'Kangkong', 20, 5, 'Kangkong is delicious, thank you!', 20],
+        ['visit', null, null, 'Corporate team', null, null, 4, 'Great hands-on session, the team enjoyed harvesting.', 22]
+      ];
+      s.feedback = rows.map(function (r) {
+        s.seq += 1;
+        var pid = r[4] ? pF(r[4]) : null;
+        return { id: 'FB-' + s.seq, source: r[0], customerId: r[1], accountId: r[2] || null, who: r[3], productId: pid, deliveryKey: r[5] != null ? dk(r[5]) : null,
+          batchId: r[4] === 'Kai Lan' && klBatch ? klBatch.id : null, rating: r[6], text: r[7], at: r[9] ? s.tickets.filter(function (t) { return t.id === r[9]; }).map(function (t) { return t.createdAt; })[0] || at(r[8]) : at(r[8]),
+          ticketId: r[9] || null, loggedBy: r[0] === 'chat' || r[0] === 'b2b' ? 'sales@meod.test' : null };
+      });
+      s.feedbackActions = [];
+      s.feedbackResolved = {};
+      s.migrations.feedbackV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -1523,6 +1574,127 @@
     return { ok: true, proposal: pp };
   }
 
+  /* ---------- Tyllage Feedback intelligence: complaint themes traced to batches ----------
+   * Every piece of feedback (delivery ratings, WhatsApp chats, support tickets, trade buyers,
+   * visit surveys) is tagged with a theme by keyword rules, and linked to the harvest batch it
+   * most likely came from (latest harvest of that crop on or before the delivery day). Issues
+   * that share a batch — or a delivery day, for late deliveries — are grouped into patterns
+   * with a likely cause. Staff decide what to do; nothing is sent automatically.
+   */
+  var FEEDBACK_THEMES = {
+    freshness: { label: 'Freshness', owner: 'Farm & packing', tone: 'red', re: /wilt|limp|yellow|soggy|slimy|brown|rott|mushy|spoil|not fresh|bruis|went bad/ },
+    late: { label: 'Late delivery', owner: 'Delivery', tone: 'amber', re: /\blate\b|delay|didn.?t arrive|never arrived|waited|after \d+ ?pm|missed (the|my) slot/ },
+    missing: { label: 'Wrong or missing item', owner: 'Packing', tone: 'amber', re: /missing|wrong item|forgot|left out|not in (my|the) (order|bag|box)/ },
+    packaging: { label: 'Packaging', owner: 'Packing', tone: 'blue', re: /plastic|packag|crushed|squashed|leak|torn/ },
+    price: { label: 'Price', owner: 'Sales', tone: 'blue', re: /pric|expensive|cheaper|supermarket|costly/ },
+    praise: { label: 'Praise', owner: 'Sales', tone: 'green', re: /fresh|love|great|delicious|crunchy|tasty|amazing|thank|best|lasted|meaty|enjoy|consistent/ }
+  };
+  var FEEDBACK_SOURCES = { rating: 'Delivery rating', chat: 'WhatsApp chat', ticket: 'Support ticket', b2b: 'Trade buyer', visit: 'Visit survey', call: 'Phone call' };
+  var NEG_WORDS = /bad|disappoint|unhappy|poor|throw|threw|refund|not happy|complain/;
+  function feedbackClassify(text, rating) {
+    var t = String(text || '').toLowerCase();
+    var themes = Object.keys(FEEDBACK_THEMES).filter(function (k) { return k !== 'praise' && FEEDBACK_THEMES[k].re.test(t); });
+    var sentiment = rating != null ? (rating <= 2 ? 'neg' : rating >= 4 ? 'pos' : 'mixed')
+      : themes.length || NEG_WORDS.test(t) ? 'neg' : FEEDBACK_THEMES.praise.re.test(t) ? 'pos' : 'mixed';
+    if (!themes.length && sentiment !== 'neg' && FEEDBACK_THEMES.praise.re.test(t)) themes = ['praise'];
+    if (themes.length > 1 && sentiment === 'pos') themes = themes.filter(function (k) { return k === 'price' || k === 'packaging'; }).concat(['praise']).slice(0, 2);
+    return { themes: themes.length ? themes : ['other'], sentiment: sentiment };
+  }
+  // The batch a delivery most likely came from: the latest harvest of that crop on or before it.
+  function feedbackBatchFor(productId, deliveryKey) {
+    if (!productId || !deliveryKey) return null;
+    return (state.batches || []).filter(function (b) { return b.productId === productId && b.status === 'harvested' && b.harvestDate <= deliveryKey; })
+      .sort(function (a, b) { return a.harvestDate < b.harvestDate ? 1 : -1; })[0] || null;
+  }
+  function feedbackItems() {
+    return (state.feedback || []).map(function (f) {
+      var c = feedbackClassify(f.text, f.rating);
+      var batch = f.batchId ? byId('batches', f.batchId) : feedbackBatchFor(f.productId, f.deliveryKey);
+      return { f: f, themes: c.themes, theme: c.themes[0], sentiment: c.sentiment, product: f.productId ? byId('products', f.productId) : null, batch: batch };
+    }).sort(function (a, b) { return a.f.at < b.f.at ? 1 : -1; });
+  }
+  function feedbackClusters(days) {
+    var since = Date.now() - (days || 14) * 864e5;
+    var groups = {};
+    feedbackItems().forEach(function (x) {
+      if (new Date(x.f.at).getTime() < since || x.sentiment === 'pos') return;
+      x.themes.filter(function (k) { return k !== 'praise' && k !== 'other'; }).forEach(function (k) {
+        var key = k === 'late' ? 'late|' + (x.f.deliveryKey || 'unknown')
+          : (k === 'freshness' || k === 'missing') && x.batch ? k + '|' + x.batch.id
+          : x.product && k !== 'price' && k !== 'packaging' ? k + '|p' + x.product.id : k;
+        (groups[key] = groups[key] || { key: key, theme: k, items: [] }).items.push(x);
+      });
+    });
+    var resolved = state.feedbackResolved || {};
+    return Object.keys(groups).map(function (key) {
+      var g = groups[key], th = FEEDBACK_THEMES[g.theme], n = g.items.length;
+      var first = g.items[0];
+      g.batch = first.batch && key === g.theme + '|' + first.batch.id ? first.batch : null;
+      g.product = first.product;
+      g.deliveryKey = g.theme === 'late' ? first.f.deliveryKey : null;
+      g.pattern = n >= 2;
+      g.resolved = resolved[key] || null;
+      g.apologised = (state.feedbackActions || []).some(function (a) { return a.key === key && a.action === 'apology'; });
+      g.owner = th.owner;
+      var days = g.items.map(function (x) { return x.f.deliveryKey; }).filter(Boolean).sort();
+      var dayLabel = function (k) { return parseDayKey(k).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); };
+      if (g.theme === 'late') {
+        g.title = n + ' late-delivery report' + (n > 1 ? 's' : '') + (g.deliveryKey && g.deliveryKey !== 'unknown' ? ' · ' + dayLabel(g.deliveryKey) + ' round' : '');
+        g.cause = n > 1 ? 'All on the same delivery round, so it\'s likely the route or the number of drops that day rather than one driver\'s mistake. Check the route plan and slot capacity for that day.'
+          : 'One report so far. Check the delivery record for that order.';
+      } else if (g.batch) {
+        var others = feedbackItems().filter(function (x) { return x.product && x.product.id === g.product.id && (!x.batch || x.batch.id !== g.batch.id) && x.sentiment === 'neg' && x.themes.indexOf(g.theme) > -1; }).length;
+        g.title = n + ' ' + th.label.toLowerCase() + ' report' + (n > 1 ? 's' : '') + ' · ' + g.product.title + ' batch harvested ' + dayLabel(g.batch.harvestDate);
+        g.cause = (n > 1 ? 'All ' + n + ' came from the same batch' : 'Traced to one batch') +
+          (days.length ? ', delivered ' + (days[0] === days[days.length - 1] ? dayLabel(days[0]) : dayLabel(days[0]) + '–' + dayLabel(days[days.length - 1])) : '') + '. ' +
+          (g.theme === 'freshness'
+            ? (others ? others + ' other ' + g.product.title + ' complaint(s) from other batches, so check the crop too.' : 'No similar complaints about ' + g.product.title + ' from other batches, so it\'s likely how this batch was cooled, washed or packed, not the crop itself.') + ' Check the cold-room log and pack times for that harvest.'
+            : 'Check the pack list for that day.');
+      } else {
+        g.title = n + ' ' + th.label.toLowerCase() + ' report' + (n > 1 ? 's' : '') + (g.product ? ' · ' + g.product.title : '');
+        g.cause = g.theme === 'price' ? 'Customers comparing with supermarket prices. Explain what local, pesticide-free and same-day harvest means — and Singapore\'s 30 by 30 goal — rather than discounting.'
+          : g.theme === 'packaging' ? 'Customers care about waste. Consider a plastic-free option or a "bring back your box" note.'
+          : n > 1 ? 'Repeated for the same product — check how it is picked and packed.' : 'One report so far — watch for more.';
+      }
+      g.score = (g.pattern ? 50 : 0) + n * 10 + (g.theme === 'freshness' ? 15 : g.theme === 'late' || g.theme === 'missing' ? 10 : 0);
+      return g;
+    }).sort(function (a, b) { return (a.resolved ? 1 : 0) - (b.resolved ? 1 : 0) || b.score - a.score; });
+  }
+  // Theme counts: the last 14 days vs the 14 days before.
+  function feedbackTrends() {
+    var now = Date.now(), out = {};
+    Object.keys(FEEDBACK_THEMES).forEach(function (k) { out[k] = { theme: k, label: FEEDBACK_THEMES[k].label, tone: FEEDBACK_THEMES[k].tone, now: 0, before: 0 }; });
+    feedbackItems().forEach(function (x) {
+      var age = now - new Date(x.f.at).getTime();
+      x.themes.forEach(function (k) { if (!out[k]) return; if (age < 14 * 864e5) out[k].now += 1; else if (age < 28 * 864e5) out[k].before += 1; });
+    });
+    return Object.keys(out).map(function (k) { return out[k]; });
+  }
+  function feedbackAdd(f, actor) {
+    if (!String(f.text || '').trim()) return { ok: false, error: 'Enter what the customer said.' };
+    state.feedback = state.feedback || [];
+    var batch = feedbackBatchFor(f.productId, f.deliveryKey);
+    var id = nextId('FB');
+    state.feedback.unshift({ id: id, source: f.source || 'chat', customerId: f.customerId || null, accountId: f.accountId || null, who: f.who || null, productId: f.productId || null,
+      deliveryKey: f.deliveryKey || null, batchId: batch ? batch.id : null, rating: f.rating != null ? f.rating : null, text: String(f.text).trim().slice(0, 400), at: new Date().toISOString(), loggedBy: actor });
+    return { ok: true, id: id, batch: batch };
+  }
+  function feedbackLog(key, action, actor, note) {
+    state.feedbackActions = state.feedbackActions || [];
+    state.feedbackActions.unshift({ key: key, action: action, by: actor, at: new Date().toISOString(), note: note || '' });
+  }
+  function feedbackResolve(key, actor, note) {
+    state.feedbackResolved = state.feedbackResolved || {};
+    state.feedbackResolved[key] = { by: actor, at: new Date().toISOString(), note: note || '' };
+    feedbackLog(key, 'resolved', actor, note);
+  }
+  function feedbackFlagBatch(batchId, theme, actor, note) {
+    var b = byId('batches', batchId);
+    if (!b) return { ok: false, error: 'Batch not found.' };
+    b.qualityFlag = { theme: theme, by: actor, at: new Date().toISOString(), note: note || '' };
+    return { ok: true, batch: b };
+  }
+
   /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
    * Each recorded harvest gets a sell-by date (harvest day + the category's shelf days). Unsold
    * units are estimated first-in-first-out: what went into stock, minus regular sales of that
@@ -2053,6 +2225,7 @@
     },
     GROUP_TYPES: GROUP_TYPES,
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
+    feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, flagBatch: feedbackFlagBatch },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },
     b2b: {
       TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,

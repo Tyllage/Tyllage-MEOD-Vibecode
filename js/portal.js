@@ -1287,6 +1287,175 @@
       h('div', { class: 'form-grid guard-form' }, h('label', null, 'Product', sel), h('label', null, 'Price (S$)', priceIn)), out));
   }
 
+  /* ---------------- Feedback intelligence (staff + admin) ----------------
+   * Feedback from every channel, tagged by theme and traced to the harvest batch or delivery
+   * round it came from. Patterns (2+ reports with the same cause) come first, with a likely
+   * cause and next steps: flag the batch, message the people affected (staff send), or mark
+   * resolved. A log form tags new feedback as you type. */
+  function fbWho(f) {
+    if (f.customerId) return customerLabel(f.customerId);
+    if (f.accountId) { var a = M.b2b.store().accounts.filter(function (x) { return x.id === f.accountId; })[0]; return a ? a.name : 'Trade buyer'; }
+    return f.who || 'Guest';
+  }
+  function fbThemeBadges(x) {
+    return x.themes.map(function (k) { var th = M.feedback.THEMES[k]; return th ? badge(th.label, th.tone) : badge('Other', 'grey'); });
+  }
+  function fbDay(key) { return M.clearance.parseDayKey(key).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }); }
+  function fbStars(r) { return r == null ? '—' : '★★★★★'.slice(0, r) + '☆☆☆☆☆'.slice(0, 5 - r); }
+
+  function openApology(g) {
+    document.querySelectorAll('.fb-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var people = [];
+    g.items.forEach(function (x) {
+      var id = x.f.customerId || x.f.accountId;
+      if (id && people.indexOf(id) < 0) people.push(id);
+    });
+    var names = people.map(function (id) { return id.indexOf('C-') === 0 ? customerLabel(id) : fbWho({ accountId: id }); });
+    var what = g.theme === 'late' ? 'your delivery arriving late' : g.theme === 'missing' ? 'the item missing from your order'
+      : 'the ' + (g.product ? g.product.title : 'produce') + ' not being up to our usual standard';
+    var fix = g.theme === 'late' ? 'We\'re reviewing that delivery round so it doesn\'t happen again.'
+      : g.batch ? 'We\'ve traced it to one harvest batch and are checking how it was cooled and packed.' : 'We\'re looking into what went wrong.';
+    var body = h('textarea', { rows: 8, 'aria-label': 'Message' });
+    body.value = 'Hi {first_name},\n\nSorry about ' + what + ' — thank you for telling us. ' + fix +
+      '\n\nWe\'d like to make it right: reply here and we\'ll replace it on your next delivery, free.\n\n— The MEOD Farm team';
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog fb-dialog', 'aria-labelledby': 'fb-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'fb-title', text: 'Message ' + people.length + ' person(s) affected' }), aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
+        h('div', { class: 'rd-form' },
+          h('label', null, 'To', h('input', { value: names.join(', '), readonly: true })),
+          h('label', null, 'Message', body),
+          h('small', { class: 'pf-hint', text: 'A service reply about their own order, so it goes to everyone affected — not only people who opted in to promotions. {first_name} is filled in per person.' }))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: function () {
+          M.feedback.log(g.key, 'apology', session.email, people.length + ' person(s)');
+          closeDialog();
+          commit('feedback.apology', g.key, 'Apology sent to ' + people.length + ' person(s) (simulated).');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+
+  function feedbackView(root) {
+    var all = M.feedback.items();
+    var since = Date.now() - 14 * 864e5;
+    var recent = all.filter(function (x) { return new Date(x.f.at).getTime() > since; });
+    var rated = recent.filter(function (x) { return x.f.rating != null; });
+    var avg = rated.length ? (rated.reduce(function (s, x) { return s + x.f.rating; }, 0) / rated.length).toFixed(1) : '—';
+    var issues = recent.filter(function (x) { return x.sentiment !== 'pos'; });
+    var clusters = M.feedback.clusters(14);
+    var patterns = clusters.filter(function (g) { return g.pattern && !g.resolved; });
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Feedback · 14 days', String(recent.length), 'ratings, chats, tickets, trade buyers and visits'),
+      kpi('Average rating', avg + (rated.length ? ' / 5' : ''), rated.length + ' delivery rating(s)'),
+      kpi('Issues', String(issues.length), recent.length ? Math.round(issues.length / recent.length * 100) + '% of feedback' : 'none'),
+      kpi('Patterns found', String(patterns.length), 'issues that share a batch or delivery round')));
+
+    /* ---- Patterns ---- */
+    function flag(g) {
+      var r = M.feedback.flagBatch(g.batch.id, g.theme, session.email, g.items.length + ' report(s)');
+      if (!r.ok) { toast(r.error); return; }
+      M.feedback.log(g.key, 'flagged', session.email, g.batch.id);
+      commit('feedback.flagged', g.batch.id, g.product.title + ' batch from ' + fbDay(g.batch.harvestDate) + ' flagged for a quality check.');
+    }
+    function resolve(g) {
+      var note = prompt('What was done? (optional)', g.theme === 'late' ? 'Route reviewed with the driver' : g.batch ? 'Cold-room checked; packing step fixed' : '');
+      if (note === null) return;
+      M.feedback.resolve(g.key, session.email, note);
+      commit('feedback.resolved', g.key, 'Marked as resolved.');
+    }
+    var active = clusters.filter(function (g) { return !g.resolved; });
+    append(root, panel(aiTitle('Issues and likely causes'), 'Last 14 days. Reports that share a harvest batch or delivery round are grouped, with the most likely cause. Staff decide what to do — nothing is sent automatically.',
+      active.length ? h('div', { class: 'ops-brief fb-patterns' }, active.map(function (g) {
+        var th = M.feedback.THEMES[g.theme];
+        var people = g.items.filter(function (x) { return x.f.customerId || x.f.accountId; }).length;
+        return h('article', { class: 'ops-card' + (g.pattern ? ' fb-pattern' : '') },
+          h('div', { class: 'ops-card-head' },
+            g.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(g.product)) : iconCircle(g.theme === 'late' ? ICONS.truck : ICONS.chat, 'soft'),
+            h('span', { class: 'fb-tags' }, badge(th.label, th.tone), g.pattern ? badge('Pattern', 'red') : badge('One-off', 'grey'))),
+          h('strong', { class: 'ops-title', text: g.title }),
+          h('p', { class: 'fb-cause', text: g.cause }),
+          h('ul', { class: 'fb-quotes' }, g.items.slice(0, 3).map(function (x) {
+            return h('li', null, h('q', { text: x.f.text }), h('small', { text: fbWho(x.f) + ' · ' + M.feedback.SOURCES[x.f.source] + ' · ' + ago(x.f.at) }));
+          })),
+          h('small', { class: 'ops-est', text: 'Owner: ' + g.owner + (g.batch && g.batch.qualityFlag ? ' · batch flagged by ' + g.batch.qualityFlag.by : '') + (g.apologised ? ' · apology sent' : '') }),
+          h('div', { class: 'ops-foot fb-actions' },
+            g.batch && !g.batch.qualityFlag ? mini('Flag batch', function () { flag(g); }) : null,
+            people && !g.apologised ? mini('Message ' + people + ' affected', function () { openApology(g); }) : null,
+            mini('Mark resolved', function () { resolve(g); })));
+      })) : h('p', { class: 'empty', text: 'No open issues in the last 14 days. 🌱' })));
+
+    /* ---- Themes + praise ---- */
+    var trends = M.feedback.trends().filter(function (t) { return t.now || t.before; });
+    var max = Math.max.apply(null, trends.map(function (t) { return Math.max(t.now, t.before); }).concat([1]));
+    var praise = recent.filter(function (x) { return x.sentiment === 'pos'; }).slice(0, 4);
+    append(root, h('div', { class: 'two-col fb-grid' },
+      panel(aiTitle('Themes'), 'Last 14 days compared with the 14 days before.',
+        h('ul', { class: 'fb-trends' }, trends.map(function (t) {
+          var bar = h('span', { class: 'fb-bar tone-' + t.tone }, h('span'));
+          bar.firstChild.style.width = Math.round(t.now / max * 100) + '%';
+          var diff = t.now - t.before;
+          return h('li', null,
+            h('span', { class: 'fb-trend-label', text: t.label }), bar,
+            h('strong', { text: String(t.now) }),
+            h('small', { class: 'fb-diff ' + (diff === 0 ? '' : (t.theme === 'praise') === (diff > 0) ? 'good' : 'bad'), text: diff === 0 ? 'same' : (diff > 0 ? '▲ ' : '▼ ') + Math.abs(diff) }));
+        }))),
+      panel('What customers love', 'Worth sharing in posts and on the website — ask the person first before quoting them.',
+        praise.length ? h('ul', { class: 'fb-quotes fb-praise' }, praise.map(function (x) {
+          return h('li', null, h('q', { text: x.f.text }), h('small', { text: fbWho(x.f) + ' · ' + M.feedback.SOURCES[x.f.source] + (x.product ? ' · ' + x.product.title : '') }));
+        })) : h('p', { class: 'empty', text: 'No praise logged in the last 14 days.' }))));
+
+    /* ---- Log feedback ---- */
+    var text = h('textarea', { rows: 3, maxlength: 400, placeholder: 'Paste or type what the customer said, e.g. "the kai lan was limp when it arrived"', 'aria-label': 'Feedback' });
+    var source = h('select', { 'aria-label': 'Source' }, Object.keys(M.feedback.SOURCES).filter(function (k) { return k !== 'ticket'; }).map(function (k) { return h('option', { value: k, text: M.feedback.SOURCES[k] }); }));
+    var who = h('select', { 'aria-label': 'Customer' }, h('option', { value: '', text: 'Not linked' }), S().customers.map(function (c) { return h('option', { value: c.id, text: c.name }); }),
+      M.b2b.store().accounts.map(function (a) { return h('option', { value: a.id, text: a.name }); }));
+    var prod = h('select', { 'aria-label': 'Product' }, h('option', { value: '', text: 'Not about one product' }), S().products.filter(function (p) { return p.meodGrown && !p.bagOffer; }).map(function (p) { return h('option', { value: p.id, text: p.title }); }));
+    var day = h('input', { type: 'date', 'aria-label': 'Delivery date' }); day.value = M.clearance.dayKey(new Date(Date.now() - 864e5));
+    var rating = h('select', { 'aria-label': 'Rating' }, h('option', { value: '', text: 'No rating' }), [5, 4, 3, 2, 1].map(function (n) { return h('option', { value: String(n), text: n + ' ★' }); }));
+    var preview = h('div', { class: 'fb-preview', 'aria-live': 'polite' });
+    function updatePreview() {
+      preview.textContent = '';
+      if (!text.value.trim()) { append(preview, h('small', { class: 'hint', text: 'AI tags the theme as you type.' })); return; }
+      var c = M.feedback.classify(text.value, rating.value ? Number(rating.value) : null);
+      var b = M.feedback.batchFor(prod.value, day.value);
+      append(preview, aiPill(), c.themes.map(function (k) { var th = M.feedback.THEMES[k]; return th ? badge(th.label, th.tone) : badge('Other', 'grey'); }),
+        badge(c.sentiment === 'pos' ? 'Positive' : c.sentiment === 'neg' ? 'Negative' : 'Mixed', c.sentiment === 'pos' ? 'green' : c.sentiment === 'neg' ? 'red' : 'grey'),
+        h('small', { text: prod.value ? (b ? 'Links to the batch harvested ' + fbDay(b.harvestDate) : 'No harvested batch found before that date') : '' }));
+    }
+    [text, rating, prod, day].forEach(function (el) { el.addEventListener('input', updatePreview); el.addEventListener('change', updatePreview); });
+    updatePreview();
+    var form = h('form', { class: 'fb-form', novalidate: true, onsubmit: function (e) {
+      e.preventDefault();
+      var isAcc = who.value && who.value.indexOf('C-') !== 0;
+      var r = M.feedback.add({ source: source.value, customerId: who.value && !isAcc ? who.value : null, accountId: isAcc ? who.value : null, productId: prod.value || null,
+        deliveryKey: day.value || null, rating: rating.value ? Number(rating.value) : null, text: text.value }, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('feedback.logged', r.id, 'Feedback logged' + (r.batch ? ' and linked to the ' + fbDay(r.batch.harvestDate) + ' batch' : '') + '.');
+    } },
+      h('label', { class: 'fb-text' }, 'What they said', text),
+      h('div', { class: 'form-grid fb-fields' },
+        h('label', null, 'Source', source), h('label', null, 'From', who), h('label', null, 'Product', prod),
+        h('label', null, 'Delivered', day), h('label', null, 'Rating', rating)),
+      preview,
+      h('div', { class: 'fb-submit' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Log feedback' })));
+    append(root, panel('Log feedback', 'For comments that come in by phone, WhatsApp or at the farm. Linking a product and delivery date lets the AI trace it to a batch.', form));
+
+    /* ---- All feedback ---- */
+    append(root, panel('All feedback', 'Newest first. Support tickets marked as complaints appear here automatically.', table([
+      { label: 'When', render: function (x) { return h('span', null, shortDate(x.f.at), h('br'), h('small', { text: M.feedback.SOURCES[x.f.source] + (x.f.ticketId ? ' ' + x.f.ticketId : '') })); } },
+      { label: 'From', render: function (x) { return fbWho(x.f); } },
+      { label: 'Feedback', render: function (x) { return h('span', { class: 'fb-cell' }, h('span', { text: x.f.text }), h('span', { class: 'fb-tags' }, fbThemeBadges(x))); } },
+      { label: 'Batch', render: function (x) { return x.batch ? h('span', null, x.product.title, h('br'), h('small', { text: 'harvested ' + fbDay(x.batch.harvestDate) })) : x.product ? x.product.title : '—'; } },
+      { label: 'Rating', render: function (x) { return h('span', { class: 'fb-stars', 'aria-label': x.f.rating != null ? x.f.rating + ' out of 5' : 'No rating', text: fbStars(x.f.rating) }); } }
+    ], all.slice(0, 40), 'No feedback yet.')));
+  }
+
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
@@ -1618,6 +1787,9 @@
       push(75 + Math.min(10, enquiries.length * 2), 'Sales', ICONS.users, enquiries.length + ' farm-visit enquiry(s) waiting for a reply (' + pax + ' guests)',
         'Oldest: ' + (oldest.org || oldest.name) + ', ' + ago(oldest.createdAt) + '. AI reply drafts are ready to check.', { label: 'Visits', href: '#visits' });
     }
+    M.feedback.clusters(14).filter(function (g) { return g.pattern && !g.resolved; }).slice(0, 2).forEach(function (g, i) {
+      push(89 - i, 'Customers', g.theme === 'late' ? ICONS.truck : ICONS.chat, g.title, g.cause.split('. ').slice(0, 2).join('. ').replace(/\.?$/, '.'), { label: 'Open Feedback', href: '#feedback' });
+    });
     var priceWaiting = (S().priceProposals || []).filter(function (pp) { return pp.status === 'pending'; });
     if (priceWaiting.length) push(67, 'Sales', ICONS.tag, priceWaiting.length + ' price change(s) waiting for approval', 'Checked by Margin Guard. Approving a discount lists it on Buy to Clear.', { label: 'Price Advisor', href: '#pricing' });
     var toApprove = S().campaigns.filter(function (c) { return c.status === 'pending_approval'; });
@@ -2692,6 +2864,7 @@
     b2b: { label: 'B2B', tone: 'blue' },
     rescue: { label: 'Harvest Rescue', tone: 'amber' },
     pricing: { label: 'Pricing', tone: 'amber' },
+    feedback: { label: 'Feedback', tone: 'blue' },
     briefing: { label: 'Briefing', tone: 'green' }
   };
   var AUDIT_LABELS = {
@@ -2708,7 +2881,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -4339,25 +4512,26 @@
   /* ---------------- routing ---------------- */
   var NAV = {
     staff: [
-      { id: 'overview', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
-      { id: 'briefing', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
-      { id: 'inventory', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
-      { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
-      { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
-      { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
-      { id: 'b2b', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
-      { id: 'radar', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
-      { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
-      { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
-      { id: 'rescue', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
-      { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
-      { id: 'pricing', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },
-      { id: 'rewards', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
-      { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
-      { id: 'customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },
-      { id: 'users', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
-      { id: 'audit', label: 'Audit log', perm: 'audit', title: 'Audit log', sub: 'Who did what, and when.', render: auditView },
-      { id: 'settings', label: 'Settings', perm: 'settings', title: 'Settings', sub: 'Rules and demo controls.', render: settingsView }
+      { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
+      { id: 'briefing', group: 'Today', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
+      { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
+      { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
+      { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
+      { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
+      { id: 'orders', group: 'Sales', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
+      { id: 'b2b', group: 'Sales', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
+      { id: 'campaigns', group: 'Sales', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'pricing', group: 'Sales', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },
+      { id: 'clearance', group: 'Sales', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
+      { id: 'rewards', group: 'Sales', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
+      { id: 'groupbuy', group: 'Sales', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
+      { id: 'visits', group: 'Sales', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
+      { id: 'inbox', group: 'Customers', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
+      { id: 'feedback', group: 'Customers', label: 'Feedback', perm: 'feedback', title: 'Feedback', sub: 'What customers and buyers say, grouped by theme and traced to the batch it came from.', render: feedbackView, count: function () { return M.feedback.clusters(14).filter(function (g) { return g.pattern && !g.resolved; }).length; } },
+      { id: 'customers', group: 'Customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },
+      { id: 'users', group: 'Admin', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
+      { id: 'audit', group: 'Admin', label: 'Audit log', perm: 'audit', title: 'Audit log', sub: 'Who did what, and when.', render: auditView },
+      { id: 'settings', group: 'Admin', label: 'Settings', perm: 'settings', title: 'Settings', sub: 'Rules and demo controls.', render: settingsView }
     ],
     leader: [
       { id: 'overview', label: 'Overview', title: 'My group buys', sub: 'Share your code and see how your group is doing.', render: leaderOverview },
@@ -4384,9 +4558,16 @@
 
     var side = $('[data-side-nav]'), mob = $('[data-mobile-nav]');
     side.textContent = ''; mob.textContent = '';
+    var lastGroup = null;
     items.forEach(function (v) {
       var n = v.count ? v.count() : 0;
       var current = v === view ? 'page' : null;
+      // Staff links are grouped under headings (Today, Farm ops, Sales, Customers, Admin).
+      if (v.group && v.group !== lastGroup) {
+        side.appendChild(h('span', { class: 'side-group', text: v.group }));
+        mob.appendChild(h('span', { class: 'mob-group', text: v.group }));
+        lastGroup = v.group;
+      }
       side.appendChild(h('a', { class: 'side-link', href: '#' + v.id, 'aria-current': current }, v.label, n ? h('span', { class: 'count', text: String(n) }) : null));
       mob.appendChild(h('a', { href: '#' + v.id, 'aria-current': current, text: v.label }));
     });

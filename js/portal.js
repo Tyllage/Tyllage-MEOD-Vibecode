@@ -484,7 +484,7 @@
   function adviceCards(adv, todo) {
     var first = adv.filter(function (x) { return x.hold || todo.indexOf(x) > -1 && todo.indexOf(x) < 6; });
     var rest = adv.filter(function (x) { return first.indexOf(x) < 0; });
-    var grid = function (list) { return h('div', { class: 'ops-brief adv-list' }, list.map(function (x) {
+    var grid = function (list) { return h('div', { class: 'ops-brief adv-list aligned', style: '--rows:4' }, list.map(function (x) {
         var src = ADVISOR_SOURCE[x.source];
         return h('article', { class: 'ops-card' + (x.hold ? ' adv-hold' : x.source === 'rescue' || x.source === 'radar' || x.source === 'preorder' ? ' farm' : '') + (x.done ? ' adv-done' : '') },
           h('div', { class: 'ops-card-head' },
@@ -1474,7 +1474,7 @@
     }
     var active = clusters.filter(function (g) { return !g.resolved; });
     append(root, panel(aiTitle('Issues and likely causes'), 'Last 14 days. Reports that share a harvest batch or delivery round are grouped, with the most likely cause. Staff decide what to do — nothing is sent automatically.',
-      active.length ? h('div', { class: 'ops-brief fb-patterns' }, active.map(function (g) {
+      active.length ? h('div', { class: 'ops-brief fb-patterns aligned', style: '--rows:6' }, active.map(function (g) {
         var th = M.feedback.THEMES[g.theme];
         var people = g.items.filter(function (x) { return x.f.customerId || x.f.accountId; }).length;
         return h('article', { class: 'ops-card' + (g.pattern ? ' fb-pattern' : '') },
@@ -1922,7 +1922,7 @@
     /* ---- Buyer insights ---- */
     var ins = M.b2b.insights();
     append(root, panel(aiTitle('Buyer insights'), 'From each account\'s standing days and order history, plus what the farm has in surplus. You send every message.',
-      ins.length ? h('div', { class: 'ops-brief' }, ins.map(function (x) {
+      ins.length ? h('div', { class: 'ops-brief aligned', style: '--rows:4' }, ins.map(function (x) {
         var k = B2B_KIND[x.kind];
         var acts = x.actions.map(function (a) {
           if (a === 'usual') return h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Confirm usual order', onclick: function () { createUsual(x.account.id, x.dayKey); } });
@@ -2772,7 +2772,7 @@
     append(root, h('section', { class: 'panel' },
       aiTitle('AI ops brief'),
       h('p', { class: 'hint', text: 'What to do with rewards this week, linking what members buy with what the farm needs to sell. Each one opens a draft for you to check.' }),
-      insights.length ? h('div', { class: 'ops-brief' }, insights.map(function (x, i) {
+      insights.length ? h('div', { class: 'ops-brief aligned', style: '--rows:5' }, insights.map(function (x, i) {
         return h('article', { class: 'ops-card' + (x.area === 'Farm ops' ? ' farm' : '') },
           h('div', { class: 'ops-card-head' }, iconCircle(x.icon, 'soft'), h('span', { class: 'badge ' + (x.area === 'Farm ops' ? 'b-green' : 'b-amber'), text: (i + 1) + ' · ' + x.area })),
           h('strong', { class: 'ops-title', text: x.title }),
@@ -2963,7 +2963,7 @@
     var suggest = areas.filter(function (a) { return a.suggest; });
     var others = areas.filter(function (a) { return !a.suggest; });
     return panel(aiTitle('Find new group-buy leaders'), 'Neighbourhoods with 3+ active customers but no group-buy leader, and the regular who\'d likely make a good one. Only customers who opted in to messages are suggested. Areas come from the delivery postal district.',
-      suggest.length ? h('div', { class: 'ops-brief' }, suggest.map(function (a) {
+      suggest.length ? h('div', { class: 'ops-brief aligned', style: '--rows:6' }, suggest.map(function (a) {
         var x = a.candidate;
         return h('article', { class: 'ops-card farm' },
           h('div', { class: 'ops-card-head' }, iconCircle(ICONS.pin, 'soft'), badge(a.active + ' active customers', 'green')),

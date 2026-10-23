@@ -1734,3 +1734,7 @@ a.pill-btn { text-decoration: none; }
 .ops-brief.aligned > .ops-card > .ops-foot { margin-top: 0; align-self: stretch; align-items: flex-end; }
 /* "Nudge these" sits beside the Prev/Next minis: same height, a little more weight. */
 .pager .btn { padding: 6px 14px; font-size: .8rem; line-height: 1.2; min-height: 0; }
+/* Visit bookings: one column of action buttons, so Ref and the other columns get the width back. */
+.nowrap { white-space: nowrap; }
+.actions.stack { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 6px; }
+.actions.stack .mini { text-align: center; }

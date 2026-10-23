@@ -362,7 +362,7 @@
 
     append(root, panel(aiTitle('Farm visit bookings'), 'From the Experiences page. In production, confirming sends an approved WhatsApp template or an email.',
       table([
-        { label: 'Ref', render: function (b) { return h('span', null, h('strong', { text: b.id }), h('br'), h('small', { text: ago(b.createdAt) })); } },
+        { label: 'Ref', render: function (b) { return h('span', { class: 'nowrap' }, h('strong', { text: b.id }), h('br'), h('small', { text: ago(b.createdAt) })); } },
         { label: 'Contact', render: function (b) { return h('span', null, b.org ? h('strong', { text: b.org }) : null, b.org ? h('br') : null, b.name, h('br'), h('small', { text: b.email })); } },
         { label: 'Experience', render: function (b) { return b.experience + ' · ' + b.pax + ' pax' + (M.visits.sessions(b.pax) > 1 ? ' (' + M.visits.sessions(b.pax) + ' sessions)' : ''); } },
         { label: 'Date', render: function (b) {
@@ -374,7 +374,7 @@
         { label: 'Status', render: function (b) { return statusBadge(b.status); } },
         { label: 'Actions', render: function (b) {
           if (b.status !== 'new') return '—';
-          return h('div', { class: 'actions' },
+          return h('div', { class: 'actions stack' },
             mini('✨ Draft reply', function () { openReplyDialog(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
@@ -2502,7 +2502,7 @@
         { label: 'Message', render: function (b) { return b.message || '—'; } },
         { label: 'Last reply', render: lastReplyCell },
         { label: 'Actions', render: function (b) {
-          return h('div', { class: 'actions' },
+          return h('div', { class: 'actions stack' },
             mini('✨ Draft reply', function () { openReplyDialog(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));

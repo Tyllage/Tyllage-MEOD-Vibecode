@@ -523,11 +523,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .profile-meta span { display: inline-flex; align-items: center; gap: 6px; }
 .profile-meta .icon-circle.bare { width: 15px; height: 15px; color: var(--gold); }
 .prefs-layout { grid-template-columns: 1.6fr 1fr; align-items: start; }
-.pref-row { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-top: 1px solid #f0ebe3; cursor: pointer; }
-.pref-row:first-of-type { border-top: 0; }
+/* Rows are a mix of <label> (switches) and <div> (language), so set text styles here rather
+   than relying on the global label style, and draw dividers between rows of any element type. */
+.pref-row { display: flex; align-items: center; gap: 14px; padding: 16px 0; cursor: pointer; font-size: .9rem; font-weight: 600; color: var(--ink); }
+.pref-row + .pref-row { border-top: 1px solid #f0ebe3; }
 .pref-text { flex: 1; min-width: 0; }
-.pref-text strong { display: block; }
-.pref-text small { color: var(--muted); font-size: .84rem; }
+.pref-text strong { display: block; font-size: .9rem; font-weight: 700; }
+.pref-text small { color: var(--muted); font-size: .84rem; font-weight: 600; }
 .switch-ui { position: relative; flex: none; width: 50px; height: 28px; }
 .switch-ui input { position: absolute; inset: 0; opacity: 0; margin: 0; width: 100%; height: 100%; cursor: pointer; z-index: 1; }
 .switch-track { position: absolute; inset: 0; border-radius: 999px; background: #d6cfc3; transition: background .2s ease; }

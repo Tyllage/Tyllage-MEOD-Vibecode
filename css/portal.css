@@ -1612,6 +1612,9 @@ a.pill-btn { text-decoration: none; }
 
 /* ---------- Campaign Advisor ---------- */
 .adv-list { margin-bottom: 4px; }
+/* Every action button in the list is the same size, on one line. */
+.adv-list .ops-foot .btn { flex: none; width: 150px; justify-content: center; text-align: center; white-space: nowrap; }
+.adv-list .ops-foot > small { min-width: 0; }
 .ops-card.adv-hold { background: #f7f6f3; border-style: dashed; }
 .ops-card.adv-done { opacity: .7; }
 

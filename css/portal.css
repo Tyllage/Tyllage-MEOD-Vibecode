@@ -1864,24 +1864,23 @@ a.pill-btn { text-decoration: none; }
 .tw-opt.blocked { opacity: .75; }
 .sim-bar.neg > span { background: #c0533f; }
 
-/* ---------- Ask Tyllage ---------- */
-.cp-form { margin-top: 14px; }
-.cp-voice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 12px; }
-.cp-lang { display: inline-flex; align-items: center; gap: 6px; }
-.cp-lang small { color: var(--muted); }
-.cp-list { display: grid; gap: 16px; margin-top: 18px; }
-.cp-item { display: grid; gap: 10px; }
-.cp-q { display: flex; align-items: center; gap: 10px; }
-.cp-q .icon-circle.soft { width: 32px; height: 32px; }
-.cp-q .icon-circle.soft svg { width: 15px; height: 15px; }
-.cp-a { display: grid; gap: 10px; padding: 16px 18px; border-radius: 14px; background: #f6faf3; border: 1px solid #dbe9d3; margin-left: 42px; min-width: 0; }
-.cp-a.cant { background: #fbfaf6; border-color: #eee8de; }
-.cp-a p { margin: 0; line-height: 1.5; }
-.cp-a .rw-head { margin: 0; }
-.cp-a .table-wrap { margin: 0; }
+/* ---------- Ask Tyllage (reuses the Ask MEOD chat layout) ---------- */
+.bubble-row.cp-wide { max-width: 94%; width: 100%; }
+.bubble-row.cp-wide .bubble { flex: 1; min-width: 0; display: grid; gap: 10px; }
+.bubble .table-wrap { margin: 0; font-size: .85rem; }
 .cp-how { color: var(--muted); font-size: .78rem; }
-.cp-links { display: flex; flex-wrap: wrap; gap: 6px; }
-@media (max-width: 520px) { .cp-a { margin-left: 0; } }
+.cp-links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.cp-links .msg-link { margin: 0; font-size: .85rem; }
+.cp-mic { background: var(--white); color: var(--forest); border: 1.5px solid #dcd5c9; }
+.cp-mic:hover { background: #eaf4e5; border-color: var(--forest); }
+.cp-mic:disabled { opacity: .45; cursor: not-allowed; background: var(--white); }
+.cp-mic.listening { opacity: 1; background: #c0533f; border-color: #c0533f; color: var(--white); animation: cp-pulse 1.2s infinite ease-in-out; }
+@keyframes cp-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(192,83,63,.45); } 50% { box-shadow: 0 0 0 8px rgba(192,83,63,0); } }
+.cp-lang { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.cp-lang small { color: var(--muted); }
+.cp-lang select { width: auto; }
+@media (prefers-reduced-motion: reduce) { .cp-mic.listening { animation: none; } }
+@media (max-width: 640px) { .bubble-row.cp-wide { max-width: 100%; } .bubble-row.cp-wide .avatar { display: none; } }
 
 /* ---------- Learning-journey package ---------- */
 .vp-total { margin: 4px 0 0; font-size: 1.05rem; }

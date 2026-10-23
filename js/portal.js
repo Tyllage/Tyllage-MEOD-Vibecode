@@ -2326,55 +2326,88 @@
 
   /* ---------------- Ask Tyllage: Ops Copilot (staff + admin) ----------------
    * Questions in English or 中文, typed or spoken. Answers are tables of real records, with how
-   * they were worked out and links to the pages behind them — or "I can't answer that yet". */
+   * they were worked out and links to the pages behind them — or "I can't answer that yet".
+   * Laid out like the customer's Ask MEOD chat. */
   var COPILOT_EXAMPLES = ['Which vegetables are selling slower this week?', 'What enquiries haven\'t been answered?', 'What\'s at risk of going to waste?', 'What is waiting for approval?', '哪些询问还没回复？', '哪些蔬菜卖得慢？', 'How is Kai Lan doing?'];
+  var MIC_ICON = '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>';
+  var COPILOT_PLACEHOLDER = 'Ask about sales, stock, harvests, enquiries… (English or 中文)';
   function copilotView(root) {
-    var st = copilotView.state || (copilotView.state = { history: [] });
-    var input = h('input', { type: 'search', class: 'user-search ai-ask', placeholder: 'Ask about sales, stock, harvests, enquiries… (English or 中文)', 'aria-label': 'Ask Tyllage', maxlength: 200 });
+    var st = copilotView.state || (copilotView.state = { history: [
+      { who: 'bot', text: 'Hi ' + String(session.name || 'there').split(' ')[0] + '! I\'m Tyllage 🌱 Ask me about sales, stock, harvests, enquiries or approvals, in English or 中文. I answer from MEOD\'s records and show my working.', at: new Date().toISOString() }
+    ] });
+    var log = h('div', { class: 'chat-log', 'aria-live': 'polite' });
+    var input = h('input', { placeholder: COPILOT_PLACEHOLDER, maxlength: 200, 'aria-label': 'Ask Tyllage', autocomplete: 'off' });
     var lang = h('select', { 'aria-label': 'Voice language' }, h('option', { value: 'en-SG', text: 'English' }), h('option', { value: 'zh-CN', text: '中文' }));
     var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    var mic = h('button', { type: 'button', class: 'btn btn-sm btn-outline cp-mic', 'aria-label': 'Ask by voice', text: '🎤 Speak', disabled: !Rec, title: Rec ? 'Ask by voice' : 'Voice needs Chrome or Edge' });
-    var list = h('div', { class: 'cp-list', 'aria-live': 'polite' });
+    var mic = h('button', { type: 'button', class: 'chat-send cp-mic', 'aria-label': 'Ask by voice', disabled: !Rec, title: Rec ? 'Ask by voice' : 'Voice needs Chrome or Edge' }, iconCircle(MIC_ICON, 'bare'));
+
+    function time(iso) { return new Date(iso).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }); }
+    function bubble(m) {
+      if (m.who === 'user') return h('div', { class: 'bubble-row user' }, h('div', { class: 'bubble' }, h('p', { text: m.text }), h('time', { text: time(m.at) })));
+      var r = m.r, rich = r && r.ok;
+      return h('div', { class: 'bubble-row bot' + (rich ? ' cp-wide' : '') },
+        h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'T' }),
+        h('div', { class: 'bubble' },
+          h('p', { text: r ? r.answer : m.text }),
+          rich && r.rows.length ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, r.cols.map(function (c) { return h('th', { text: c }); }))),
+            h('tbody', null, r.rows.map(function (row) { return h('tr', null, row.map(function (c, ci) { return h('td', { 'data-label': r.cols[ci], text: c }); })); })))) : null,
+          rich ? h('small', { class: 'cp-how', text: (r.zh ? '计算方法：' : 'How I worked this out: ') + r.how }) : null,
+          rich && r.links.length ? h('div', { class: 'cp-links' }, r.links.map(function (l) { return h('a', { class: 'msg-link', href: l[1], text: l[0] + ' →' }); })) : null,
+          h('time', { text: time(m.at) })));
+    }
+    function drawLog() { log.textContent = ''; st.history.forEach(function (m) { log.appendChild(bubble(m)); }); log.scrollTop = log.scrollHeight; }
     function ask(q) {
-      if (!String(q).trim()) return;
-      st.history.unshift({ q: q, r: M.copilot.ask(q), at: new Date().toISOString() });
-      st.history = st.history.slice(0, 8);
-      input.value = '';
-      drawList();
+      q = String(q || '').trim();
+      if (!q) return;
+      st.history.push({ who: 'user', text: q, at: new Date().toISOString() });
+      drawLog();
+      var typing = h('div', { class: 'bubble-row bot' }, h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'T' }), h('div', { class: 'bubble typing', 'aria-label': 'Tyllage is working it out' }, h('i'), h('i'), h('i')));
+      log.appendChild(typing);
+      log.scrollTop = log.scrollHeight;
+      var r = M.copilot.ask(q);
+      setTimeout(function () {
+        st.history.push({ who: 'bot', r: r, at: new Date().toISOString() });
+        st.history = st.history.slice(-20);
+        drawLog();
+      }, 500);
     }
-    function drawList() {
-      list.textContent = '';
-      if (!st.history.length) { append(list, h('p', { class: 'hint', text: 'Try one of the examples above, or press 🎤 and ask out loud.' })); return; }
-      st.history.forEach(function (x, i) {
-        var r = x.r;
-        append(list, h('article', { class: 'cp-item' + (i === 0 ? ' latest' : '') },
-          h('div', { class: 'cp-q' }, iconCircle(ICONS.chat, 'soft'), h('strong', { text: x.q })),
-          h('div', { class: 'cp-a' + (r.ok ? '' : ' cant') },
-            h('div', { class: 'rw-head' }, h('strong', { text: r.zh ? 'Tyllage 回答' : 'Tyllage' }), aiPill()),
-            h('p', { text: r.answer }),
-            r.ok && r.rows.length ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, r.cols.map(function (c) { return h('th', { text: c }); }))),
-              h('tbody', null, r.rows.map(function (row) { return h('tr', null, row.map(function (c, ci) { return h('td', { 'data-label': r.cols[ci], text: c }); })); })))) : null,
-            r.ok ? h('small', { class: 'cp-how', text: (r.zh ? '计算方法：' : 'How I worked this out: ') + r.how }) : null,
-            r.ok && r.links.length ? h('div', { class: 'cp-links' }, r.links.map(function (l) { return h('a', { class: 'mini', href: l[1], text: l[0] + ' →' }); })) : null)));
-      });
-    }
-    var form = h('form', { class: 'ai-ask-form cp-form', onsubmit: function (e) { e.preventDefault(); ask(input.value); } },
-      iconCircle(ICONS.search, 'bare'), input, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Ask' }));
+    var form = h('form', { class: 'chat-form' }, mic, input, h('button', { class: 'chat-send', type: 'submit', 'aria-label': 'Ask' }, iconCircle('<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/>', 'bare')));
+    form.addEventListener('submit', function (e) { e.preventDefault(); var t = input.value; input.value = ''; ask(t); });
     mic.addEventListener('click', function () {
       if (!Rec) return;
       var rec = new Rec(); rec.lang = lang.value; rec.interimResults = false; rec.maxAlternatives = 1;
-      mic.textContent = '● Listening…'; mic.disabled = true;
-      rec.onresult = function (e) { var said = e.results[0][0].transcript; input.value = said; ask(said); };
+      mic.classList.add('listening'); mic.disabled = true; input.placeholder = lang.value === 'zh-CN' ? '正在听…' : 'Listening…';
+      rec.onresult = function (e) { ask(e.results[0][0].transcript); };
       rec.onerror = function (e) { toast(e.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Didn\'t catch that — try again.'); };
-      rec.onend = function () { mic.textContent = '🎤 Speak'; mic.disabled = false; };
+      rec.onend = function () { mic.classList.remove('listening'); mic.disabled = false; input.placeholder = COPILOT_PLACEHOLDER; };
       rec.start();
     });
-    append(root, panel(aiTitle('Ask Tyllage'), 'Ask about the farm in English or 中文 — typed or spoken. Every answer comes from MEOD\'s records, shows how it was worked out, and links to the page behind it. If the records can\'t answer, it says so instead of guessing.',
-      form,
-      h('div', { class: 'cp-voice' }, mic, h('label', { class: 'cp-lang' }, h('small', { text: 'Voice language' }), lang), h('small', { class: 'hint', text: Rec ? 'Uses your browser\'s speech recognition.' : 'Voice needs Chrome or Edge; typing works everywhere.' })),
-      h('div', { class: 'ai-examples' }, h('small', { text: 'Try:' }), COPILOT_EXAMPLES.map(function (ex) { return h('button', { type: 'button', class: 'chip', text: ex, onclick: function () { ask(ex); } }); })),
-      list));
-    drawList();
+    var chips = h('div', { class: 'quick-chips' }, COPILOT_EXAMPLES.map(function (q) { return h('button', { type: 'button', text: q, onclick: function () { ask(q); } }); }));
+
+    drawLog();
+    append(root, h('div', { class: 'chat-layout' },
+      h('section', { class: 'chat-card' },
+        h('header', { class: 'chat-header' },
+          h('span', { class: 'avatar av-bot big', 'aria-hidden': 'true', text: 'T' }),
+          h('div', { class: 'chat-head-text' }, h('strong', { text: 'Ask Tyllage' }),
+            h('small', null, h('span', { class: 'status-dot on', text: 'Answers from MEOD\'s records' }), ' · English / 中文')),
+          aiPill()),
+        log, chips, form),
+      h('aside', { class: 'chat-side' },
+        h('section', { class: 'panel' },
+          h('h2', { text: 'I can answer' }),
+          h('ul', { class: 'help-list' },
+            [[ICONS.leaf, 'Sales & crops', 'Slow sellers, best sellers, this week\'s sales'], [ICONS.chat, 'Enquiries', 'Tickets, visit requests and feedback waiting'],
+             [ICONS.clock, 'Waste & harvests', 'Batches near sell-by, harvests due'], [ICONS.shield, 'Approvals', 'Prices, campaigns and posts waiting'],
+             [ICONS.box, 'Any vegetable', 'Try "How is Kai Lan doing?"']]
+              .map(function (x) { return h('li', null, iconCircle(x[0], 'soft'), h('span', null, h('strong', { text: x[1] }), h('small', { text: x[2] }))); }))),
+        h('section', { class: 'panel' },
+          h('h2', { text: 'Ask out loud' }),
+          h('p', { class: 'hint', text: Rec ? 'Press the mic beside the message box and speak.' : 'Voice needs Chrome or Edge; typing works everywhere.' }),
+          h('label', { class: 'cp-lang' }, h('small', { text: 'Voice language' }), lang)),
+        h('section', { class: 'panel human-card' },
+          h('h2', { text: 'No guessing' }),
+          h('p', { class: 'hint', text: 'Every answer comes from MEOD\'s records, shows how it was worked out and links to the page behind it. If the records can\'t answer, Tyllage says so.' })))));
   }
 
   /* ---- Small add-ons: substitutes, learning-journey packages, re-invites ---- */

@@ -2805,6 +2805,7 @@
     var weekAgo = Date.now() - 7 * 864e5;
     var res = { zh: zh, question: q };
     if (!q) return Object.assign(res, { ok: false, answer: L('Ask me about sales, stock, harvests, enquiries or approvals.', '可以问我销售、库存、采收、询问或待批准事项。') });
+    if (!intent && !prod && /^(hi|hello|hey|yo|hiya|good (morning|afternoon|evening)|你好|您好|嗨)\b|^(你好|您好|嗨)/i.test(q)) return Object.assign(res, { ok: false, answer: L('Hi! Ask me about sales, stock, harvests, enquiries or approvals — or tap one of the suggestions below.', '你好！可以问我销售、库存、采收、询问或待批准事项，也可以点下面的建议问题。') });
     if (prod && (!intent || intent.key === 'slow' || intent.key === 'top')) intent = { key: 'product' };
     if (!intent) return Object.assign(res, { ok: false, answer: L('I can\'t answer that from the farm\'s records yet. Try: "Which vegetables are selling slower this week?", "What enquiries haven\'t been answered?", "What\'s at risk of going to waste?"', '我暂时无法用农场的记录回答这个问题。可以试试：「哪些蔬菜这周卖得慢？」「哪些询问还没回复？」「哪些可能浪费？」') });
     var r = { ok: true, intent: intent.key, rows: [], cols: [], links: [] };

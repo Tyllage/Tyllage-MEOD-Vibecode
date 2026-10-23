@@ -2653,7 +2653,8 @@
         [['Get a code', 'Your estate or office leader shares a group code.'], ['Order as usual', 'Shop here or on WhatsApp — 5% off at checkout.'], ['Collect together', 'Pick up on the agreed day with your group.']]
           .map(function (s, i) { return h('li', null, h('b', { text: String(i + 1) }), h('span', null, h('strong', { text: s[0] }), h('small', { text: s[1] }))); }))));
 
-    var open = S().events.filter(function (e) { return e.status === 'open'; });
+    // Visit farm-shop codes are handed to visitors on the day, so they aren't listed here.
+    var open = S().events.filter(function (e) { return e.status === 'open' && e.kind !== 'visit' && new Date(e.endsAt).getTime() > Date.now(); });
     append(root, h('section', { class: 'panel' },
       h('h2', { text: 'Open group buys' }),
       h('p', { class: 'hint', text: 'Codes are shared by each group\'s leader. Ask yours, or start one with MEOD.' }),

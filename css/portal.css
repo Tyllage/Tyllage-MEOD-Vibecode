@@ -501,10 +501,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .gb-detail strong { display: block; }
 .gb-detail small { color: var(--muted); }
 .gb-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
-.gb-card { border: 1px solid #eee8de; border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
-.gb-meta { display: grid; gap: 4px; font-size: .84rem; color: var(--muted); }
-.gb-meta > span { display: flex; align-items: center; gap: 6px; }
-.gb-meta .icon-circle.bare { width: 14px; height: 14px; }
+/* Each card spans two shared rows (subgrid), so the details start at the same height in
+   every card of a row even when one title wraps onto two lines. */
+.gb-card { border: 1px solid #eee8de; border-radius: 14px; padding: 14px 16px; display: grid; grid-template-rows: subgrid; grid-row: span 2; gap: 12px; align-content: start; }
+.gb-card .user-cell { align-items: flex-start; }
+.gb-card .user-cell .avatar { flex: none; }
+.gb-card .user-cell strong { display: block; line-height: 1.3; }
+.gb-meta { display: grid; gap: 6px; align-content: start; font-size: .84rem; color: var(--muted); border-top: 1px dashed #eee8de; padding-top: 10px; }
+.gb-meta > span { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; }
+.gb-meta .icon-circle.bare { flex: none; width: 14px; height: 14px; margin-top: 2px; }
 
 /* ---- Preferences ---- */
 .profile-card {

@@ -1165,6 +1165,170 @@
     ], done, 'No harvests recorded yet.')));
   }
 
+  /* ---------------- Demand Radar + harvest & pack list (staff + admin) ----------------
+   * Radar: per crop, next few weeks of supply (stock + planned harvests) against demand
+   * (confirmed pre-orders + expected sales from weekly history), with a plain suggestion and
+   * one-click next steps. Pick list: what to harvest and pack for each delivery morning.
+   * Suggestions are rule-based and only advise — staff decide what to plant, promote or clear. */
+  var RADAR_STATUS = {
+    short: { label: 'Short', tone: 'red' }, surplus: { label: 'Surplus', tone: 'amber' },
+    balanced: { label: 'Balanced', tone: 'green' }, unknown: { label: 'Can\'t tell', tone: 'grey' }, idle: { label: 'No activity', tone: 'grey' }
+  };
+  function radarAdvice(c) {
+    var p = c.product, pct = c.demand ? Math.round(Math.abs(c.gap) / c.demand * 100) : 0;
+    var grow = M.RULES.growDays[p.category] || 30;
+    var ready = shortDate(new Date(Date.now() + grow * 864e5).toISOString());
+    var trend = c.trendPct > 5 ? ' Demand is up ' + c.trendPct + '% on the previous 4 weeks.' : c.trendPct < -5 ? ' Demand is down ' + Math.abs(c.trendPct) + '% on the previous 4 weeks.' : '';
+    if (c.status === 'short') {
+      return { text: 'About ' + Math.abs(c.gap) + ' units (' + pct + '%) more demand than supply.' + trend + ' Hold back promotions on ' + p.title + ', and consider sowing another batch — sown today it would be ready around ' + ready + '.',
+        actions: [{ label: 'Plan a batch', href: '#harvest' }] };
+    }
+    if (c.status === 'surplus') {
+      var acts = [{ label: 'Draft promo', promo: true }];
+      if (c.openBatch) acts.push({ label: 'See pre-orders', href: '#harvest' });
+      acts.push({ label: 'Buy to Clear', href: '#clearance' });
+      return { text: 'About ' + c.gap + ' units more supply than expected demand.' + trend + ' Promote it now' + (c.openBatch ? ', push pre-orders for the ' + shortWeekday(M.clearance.parseDayKey(c.openBatch.harvestDate).toISOString()) + ' harvest' : '') +
+        ', list extra on Buy to Clear before it loses value, and review the next sowing size.', actions: acts };
+    }
+    if (c.status === 'unknown') return { text: 'Stock sync failed, so stock isn\'t counted. Re-sync before relying on this row.', actions: [{ label: 'Stock', href: '#inventory' }] };
+    if (c.status === 'idle') return { text: 'No stock, harvests or sales in this window.', actions: [] };
+    return { text: 'Supply and demand are within about 10% of each other.' + trend + ' No action needed.', actions: [] };
+  }
+  function radarPromo(c) {
+    var p = c.product;
+    var a = audienceFor(p.id);
+    var b = c.openBatch;
+    var msg = b
+      ? 'Pre-order the next harvest 🌱 Our ' + p.title + ' will be picked on ' + shortWeekday(M.clearance.parseDayKey(b.harvestDate).toISOString()) + ' and delivered the same day — pre-orders earn 2× reward points. Reply STOP to opt out.'
+      : DRAFTS.en(p);
+    var id = M.nextId('CP');
+    S().campaigns.unshift({
+      id: id, kind: 'radar-surplus', productId: p.id, title: p.title + ' — Demand Radar promo', language: 'en', message: msg,
+      audience: a.eligible, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+    });
+    commit('campaign.submitted', id, 'Promo for ' + p.title + ' drafted for ' + a.eligible.length + ' opted-in buyer(s) — waiting for approval in Campaign Studio.');
+  }
+  function radarBars(c) {
+    var max = Math.max(c.supply, c.demand, 1);
+    var seg = function (cls, v) { var s = h('span', { class: cls }); s.style.width = (v / max * 100) + '%'; return s; };
+    return h('div', { class: 'radar-bars', 'aria-hidden': 'true' },
+      h('div', { class: 'radar-bar' }, seg('rb-stock', c.stock), seg('rb-harvest', c.harvest)),
+      h('div', { class: 'radar-bar' }, seg('rb-confirmed', c.confirmed), seg('rb-expected', c.expected)));
+  }
+
+  function radarView(root) {
+    var crops = M.radar.crops();
+    var weeks = M.radar.weeks;
+    var st = radarView.state || (radarView.state = { filter: 'all', day: null });
+    var by = function (s) { return crops.filter(function (c) { return c.status === s; }); };
+    var units = function (list) { return list.reduce(function (s, c) { return s + Math.abs(c.gap); }, 0); };
+    var confirmed = crops.reduce(function (s, c) { return s + c.confirmed; }, 0);
+    append(root, h('div', { class: 'kpis' },
+      kpi('Crops tracked', String(crops.length), 'MEOD-grown, next ' + weeks + ' weeks'),
+      kpi('Short', String(by('short').length), units(by('short')) + ' units more demand than supply'),
+      kpi('Surplus', String(by('surplus').length), units(by('surplus')) + ' units at risk of going unsold'),
+      kpi('Pre-orders', String(confirmed), 'already confirmed against planned harvests')));
+
+    /* ---- Supply vs demand ---- */
+    var order = { short: 0, surplus: 1, unknown: 2, balanced: 3, idle: 4 };
+    var chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Filter crops' });
+    var list = h('div', { class: 'radar-list' });
+    function draw() {
+      chips.textContent = '';
+      [['all', 'All'], ['short', 'Short'], ['surplus', 'Surplus'], ['balanced', 'Balanced']].forEach(function (f) {
+        var n = f[0] === 'all' ? crops.length : by(f[0]).length;
+        append(chips, h('button', { type: 'button', class: 'chip' + (st.filter === f[0] ? ' active' : ''), 'aria-pressed': String(st.filter === f[0]),
+          onclick: function () { st.filter = f[0]; draw(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(n) })));
+      });
+      var rows = crops.filter(function (c) { return st.filter === 'all' || c.status === st.filter; })
+        .sort(function (a, b) { return order[a.status] - order[b.status] || Math.abs(b.gap) - Math.abs(a.gap); });
+      list.textContent = '';
+      if (!rows.length) { append(list, h('p', { class: 'empty', text: 'No crops in this group.' })); return; }
+      rows.forEach(function (c) {
+        var s = RADAR_STATUS[c.status], adv = radarAdvice(c);
+        append(list, h('article', { class: 'radar-row st-' + c.status },
+          h('div', { class: 'radar-crop' },
+            h('span', { class: 'rw-tier-cell' }, thumbMini(c.product), h('strong', { text: c.product.title })),
+            h('div', { class: 'radar-tags' }, badge(s.label, s.tone),
+              c.trendPct ? h('span', { class: 'mini-chip', text: (c.trendPct > 0 ? '↑ ' : '↓ ') + Math.abs(c.trendPct) + '% trend' }) : null,
+              h('span', { class: 'mini-chip', text: c.confidence + ' confidence' }))),
+          h('div', { class: 'radar-numbers' },
+            radarBars(c),
+            h('small', null, h('b', { text: 'Supply ' + c.supply }), ' = ' + c.stock + ' in stock + ' + c.harvest + ' harvesting'),
+            h('small', null, h('b', { text: 'Demand ' + c.demand }), ' = ' + c.confirmed + ' pre-ordered + ~' + c.expected + ' expected (' + c.weekly + '/wk)'),
+            h('small', { class: 'radar-gap ' + (c.gap < 0 ? 'neg' : 'pos'), text: (c.gap >= 0 ? '+' : '−') + Math.abs(c.gap) + ' gap' })),
+          h('div', { class: 'radar-advice' },
+            h('p', { text: adv.text }),
+            adv.actions.length ? h('div', { class: 'actions' }, adv.actions.map(function (a) {
+              return a.promo ? mini(a.label, function () { radarPromo(c); }) : h('a', { class: 'mini', href: a.href, text: a.label });
+            })) : null)));
+      });
+    }
+    draw();
+    append(root, panel(aiTitle('Supply vs demand · next ' + weeks + ' weeks'),
+      'Supply is stock plus planned harvests; demand is confirmed pre-orders plus expected sales from the last 4 weeks (MEOD Fresh history, mock). Estimates, not forecasts — confidence shows how steady sales have been.',
+      h('div', { class: 'radar-legend', 'aria-hidden': 'true' },
+        h('span', null, h('i', { class: 'rb-stock' }), 'In stock'), h('span', null, h('i', { class: 'rb-harvest' }), 'Harvesting'),
+        h('span', null, h('i', { class: 'rb-confirmed' }), 'Pre-ordered'), h('span', null, h('i', { class: 'rb-expected' }), 'Expected')),
+      h('div', { class: 'user-toolbar' }, chips), list));
+
+    /* ---- Harvest & pack list ---- */
+    var days = M.radar.deliveryKeys(3);
+    if (!st.day || days.indexOf(st.day) === -1) st.day = days[0];
+    var dayChips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Delivery day' });
+    var pickBox = h('div');
+    function pickTable(pl) {
+      return table([
+        { label: 'Produce', render: function (r) { return h('span', { class: 'rw-tier-cell' }, thumbMini(r.product), h('strong', { text: r.product.title })); } },
+        { label: 'Orders', num: true, render: function (r) { return r.orders ? String(r.orders) : '—'; } },
+        { label: 'Pre-orders', num: true, render: function (r) { return r.preorders ? String(r.preorders) : '—'; } },
+        { label: 'Bags', num: true, render: function (r) { return r.bags ? String(r.bags) : '—'; } },
+        { label: 'Buffer', num: true, render: function (r) { return '+' + r.buffer; } },
+        { label: 'Harvest / pack', num: true, render: function (r) { return h('strong', { text: String(r.pick) }); } },
+        { label: 'Awaiting payment', num: true, render: function (r) { return r.awaitingPayment ? String(r.awaitingPayment) : '—'; } }
+      ], pl.rows, 'Nothing to harvest or pack for this day yet.');
+    }
+    function printPick(pl) {
+      var dlg = h('dialog', { class: 'receipt-dialog pick-print' });
+      var dayText = weekdayLongLabel(M.clearance.parseDayKey(pl.dayKey));
+      append(dlg, h('div', { class: 'receipt' },
+        h('div', { class: 'r-head' }, h('img', { src: 'assets/img/favicon.png', alt: '', width: 44, height: 44 }),
+          h('div', null, h('strong', { text: 'Harvest & pack list' }), h('small', { text: dayText + ' · ' + pl.orderCount + ' order(s)' }))),
+        h('table', { class: 'r-items' },
+          h('thead', null, h('tr', null, h('th', { text: 'Produce' }), h('th', { class: 'num', text: 'Need' }), h('th', { class: 'num', text: 'Buffer' }), h('th', { class: 'num', text: 'Pick' }), h('th', { text: '✓' }))),
+          h('tbody', null, pl.rows.map(function (r) { return h('tr', null, h('td', { text: r.product.title }), h('td', { class: 'num', text: String(r.need) }), h('td', { class: 'num', text: '+' + r.buffer }), h('td', { class: 'num', text: String(r.pick) }), h('td', { text: '☐' })); }))),
+        h('p', { class: 'r-foot', text: 'Buffer = 10% (min. 1) for damage and walk-in sales. Generated by Tyllage (prototype).' })),
+        h('div', { class: 'r-actions no-print' },
+          h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: function () { dlg.close(); } }),
+          h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Print', onclick: function () { window.print(); } })));
+      dlg.addEventListener('close', function () { dlg.remove(); });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    }
+    function drawPick() {
+      dayChips.textContent = '';
+      days.forEach(function (k) {
+        var n = M.radar.pickList(k).rows.reduce(function (s, r) { return s + r.pick; }, 0);
+        append(dayChips, h('button', { type: 'button', class: 'chip' + (st.day === k ? ' active' : ''), 'aria-pressed': String(st.day === k),
+          onclick: function () { st.day = k; drawPick(); } }, shortWeekday(M.clearance.parseDayKey(k).toISOString()) + ' ', h('span', { class: 'chip-count', text: String(n) })));
+      });
+      var pl = M.radar.pickList(st.day);
+      var total = pl.rows.reduce(function (s, r) { return s + r.pick; }, 0);
+      pickBox.textContent = '';
+      append(pickBox,
+        h('div', { class: 'pick-summary' },
+          h('span', null, h('strong', { text: String(total) }), ' units to harvest & pack · ', h('strong', { text: String(pl.orderCount) }), ' order(s)'),
+          pl.rows.length ? h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Print list', onclick: function () { printPick(pl); } }) : null),
+        pl.pendingBags ? h('p', { class: 'callout', text: pl.pendingBags + ' Surprise Harvest Bag(s) for this day still need their contents approved in Buy to Clear.' }) : null,
+        pickTable(pl));
+    }
+    drawPick();
+    append(root, panel('Harvest & pack list', 'For each delivery morning: paid and awaiting-payment orders, pre-orders harvesting that day, and approved Surprise Harvest Bags. Orders from MEOD Fresh would be added here once Shopify is connected.',
+      h('div', { class: 'user-toolbar' }, dayChips), pickBox));
+  }
+  // Small product thumbnail for list rows.
+  function thumbMini(p) { var t = thumb(p); t.classList.add('thumb-mini'); return t; }
+
   /* ---------------- Visits: learning journeys → farm sales (staff + admin) ---------------- */
   function visitShopUrl(code) { return new URL('visit.html?code=' + encodeURIComponent(code), location.href).href; }
   // QR codes come from qrcodejs (cdnjs), loaded only when a QR is first shown. If it can't
@@ -3567,6 +3731,7 @@
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'radar', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'visits', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },

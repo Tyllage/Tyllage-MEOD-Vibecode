@@ -559,6 +559,43 @@
       createVisitGroup(s, rc);
       s.migrations.visitsV1 = true;
     }
+    if (!s.migrations.radarHistoryV1) {
+      // 8 weeks of weekly unit sales per crop across all channels, standing in for MEOD
+      // Fresh (Shopify) order history — the portal's own demo orders are only a small slice.
+      // [title, typical units a week, trend per week (+/−)]. Synthetic, deterministic.
+      s.salesHistory = { source: 'shopify-mock', weeks: 8, byProduct: {} };
+      var hist = [
+        ['Xiao Bai Cai', 46, 1.5], ['HK Cai Xin', 26, 0], ['Red Pak Choy', 11, -0.5], ['Kai Lan', 34, 1],
+        ['Kangkong', 31, 0.5], ['Bayam', 14, -1], ['Cos Lettuce', 27, 0], ['Mizuna', 9, 0],
+        ['Tuscan Kale', 17, 1], ['Mesclun Mix', 21, 0.5], ['Shiitake Mushroom', 23, 0], ['Oyster Mushroom', 19, 1.5],
+        ['Sweet Basil', 9, -0.5], ['Garden Mint', 6, 0]
+      ];
+      var seed = 11;
+      var noise = function () { seed = (seed * 9301 + 49297) % 233280; return seed / 233280 - 0.5; };
+      hist.forEach(function (r) {
+        var p = s.products.filter(function (x) { return x.title === r[0]; })[0];
+        if (!p) return;
+        var weeks = [];
+        for (var w = 0; w < 8; w++) weeks.push(Math.max(0, Math.round(r[1] + r[2] * (w - 4) + noise() * r[1] * 0.25)));
+        s.salesHistory.byProduct[p.id] = weeks; // oldest → newest
+      });
+      // Planned batches for the staple crops too, so the radar has a realistic mix of
+      // short / balanced / surplus. [title, harvest on the Nth upcoming delivery day, expected]
+      [['Xiao Bai Cai', 2, 80], ['Kai Lan', 3, 62], ['Kangkong', 2, 48], ['HK Cai Xin', 4, 50], ['Mesclun Mix', 3, 30], ['Shiitake Mushroom', 1, 44]].forEach(function (r) {
+        var p = s.products.filter(function (x) { return x.title === r[0]; })[0];
+        if (!p) return;
+        var harvest = nextDeliveryDay(new Date());
+        for (var k = 1; k < r[1]; k++) harvest = nextDeliveryDay(harvest);
+        var sow = new Date(harvest.getTime() - (RULES.growDays[p.category] || 30) * 864e5);
+        s.seq += 1;
+        s.batches.push({
+          id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(sow), harvestDate: bagDayKey(harvest),
+          expectedQty: r[2], preorderCap: Math.round(r[2] * RULES.preorderDefaultShare), preorderPriceCents: p.priceCents,
+          status: 'planned', createdBy: 'admin@meod.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
+        });
+      });
+      s.migrations.radarHistoryV1 = true;
+    }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
       s.rewardsStore = s.rewardsStore || { vouchers: [], redemptions: [] };
@@ -1264,6 +1301,106 @@
     });
   }
 
+  /* ---------- Tyllage Demand Radar: supply vs demand per crop, plus the daily pick list ----------
+   * For each MEOD-grown crop over the next few weeks:
+   *   supply    = stock on hand + expected yield of batches harvesting in the window
+   *   confirmed = pre-orders already placed against those batches
+   *   expected  = recent regular sales (28-day weekly average) × weeks in the window
+   *   gap       = supply − (confirmed + expected)  → surplus / balanced / short
+   * Confidence reflects how much order history there is. PROTOTYPE: simple, explainable
+   * arithmetic — not a trained forecast — so every number can be traced. MEOD staff decide.
+   */
+  var RADAR_WEEKS = 3;
+  function radarCrops() {
+    var now = Date.now(), until = now + RADAR_WEEKS * 7 * 864e5;
+    return state.products.filter(function (p) { return p.meodGrown && p.category !== 'farm-more' && !p.bagOffer; }).map(function (p) {
+      var st = stockStatus(p);
+      var stock = st.known ? Math.max(0, p.stock.qty) : 0;
+      var batches = batchesUpcoming().filter(function (b) {
+        return b.productId === p.id && parseDayKey(b.harvestDate).getTime() <= until;
+      });
+      var harvest = batches.reduce(function (s, b) { return s + b.expectedQty; }, 0);
+      var confirmed = batches.reduce(function (s, b) { return s + batchPreordered(b); }, 0);
+      // Weekly sales history (MEOD Fresh / Shopify mock): last 4 weeks set the pace, the 4
+      // before give the trend, and week-to-week wobble sets the confidence.
+      var weeks = (state.salesHistory && state.salesHistory.byProduct[p.id]) || [];
+      var avg = function (a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : 0; };
+      var recent = weeks.slice(-4), before = weeks.slice(-8, -4);
+      var weekly = weeks.length ? avg(recent) : weeklySales(p.id);
+      var trendPct = before.length && avg(before) ? Math.round((avg(recent) - avg(before)) / avg(before) * 100) : 0;
+      var sd = recent.length ? Math.sqrt(avg(recent.map(function (x) { return (x - weekly) * (x - weekly); }))) : 0;
+      var cv = weekly ? sd / weekly : 1;
+      var expected = Math.round(weekly * RADAR_WEEKS);
+      var supply = stock + harvest;
+      var demand = confirmed + expected;
+      var gap = supply - demand;
+      // A gap within ~10% of demand (at least 3 units) counts as balanced.
+      var tolerance = Math.max(3, Math.round(demand * 0.1));
+      var status = !st.known ? 'unknown' : supply === 0 && demand === 0 ? 'idle'
+        : gap < -tolerance ? 'short' : gap > Math.max(tolerance, supply * 0.25) ? 'surplus' : 'balanced';
+      return {
+        product: p, stockKnown: st.known, stock: stock, harvest: harvest, batches: batches,
+        supply: supply, confirmed: confirmed, expected: expected, weekly: Math.round(weekly * 10) / 10, demand: demand, gap: gap,
+        trendPct: trendPct, history: weeks,
+        status: status, confidence: !weeks.length ? 'low' : cv < 0.12 ? 'high' : cv < 0.25 ? 'medium' : 'low',
+        openBatch: batches.filter(batchOpen)[0] || null,
+        clearance: clearanceListActive().filter(function (l) { return l.productId === p.id; })[0] || null
+      };
+    });
+  }
+
+  // Delivery day an order goes out on (pre-order lines go on their own harvest day).
+  function orderDeliveryKey(o) {
+    if (o.bagSize && o.deliveryDay) return o.deliveryDay;
+    var d = nextDeliveryDay(Math.max(new Date(o.createdAt).getTime(), Date.now() - 864e5));
+    return bagDayKey(d);
+  }
+  // What to harvest and pack for one delivery morning: paid and awaiting-payment orders,
+  // pre-orders harvesting that day, and approved Surprise Harvest Bag contents. A small
+  // buffer (10%, at least 1) covers damage and walk-in sales — staff can ignore it.
+  function pickList(dayKey) {
+    var rows = {}, ordersSeen = {}, pendingBags = 0;
+    function add(pid, qty, kind, ref, paid) {
+      var p = byId('products', pid);
+      if (!p || !qty) return;
+      var r = rows[pid] || (rows[pid] = { product: p, orders: 0, preorders: 0, bags: 0, awaitingPayment: 0, refs: [] });
+      r[kind] += qty;
+      if (!paid) r.awaitingPayment += qty;
+      if (r.refs.indexOf(ref) === -1) r.refs.push(ref);
+    }
+    state.orders.forEach(function (o) {
+      if (o.status !== 'paid' && o.status !== 'pending_payment') return;
+      var paid = o.status === 'paid';
+      o.items.forEach(function (i) {
+        if (i.preorderBatchId) {
+          if (i.harvestDate === dayKey) { add(i.productId, i.qty, 'preorders', o.ref, paid); ordersSeen[o.id] = true; }
+          return;
+        }
+        if (i.bag) return;
+        if (orderDeliveryKey(o) === dayKey) { add(i.productId, i.qty, 'orders', o.ref, paid); ordersSeen[o.id] = true; }
+      });
+      if (o.bagSize && o.deliveryDay === dayKey) {
+        ordersSeen[o.id] = true;
+        if (o.bagContentsApproved) (o.bagContents || []).forEach(function (it) { add(it.productId, it.qty, 'bags', o.ref, paid); });
+        else pendingBags++;
+      }
+    });
+    var list = Object.keys(rows).map(function (k) {
+      var r = rows[k];
+      r.need = r.orders + r.preorders + r.bags;
+      r.buffer = Math.max(1, Math.ceil(r.need * 0.1));
+      r.pick = r.need + r.buffer;
+      r.meodGrown = r.product.meodGrown && r.product.category !== 'farm-more';
+      return r;
+    }).sort(function (a, b) { return (b.meodGrown - a.meodGrown) || b.pick - a.pick; });
+    return { dayKey: dayKey, rows: list, orderCount: Object.keys(ordersSeen).length, pendingBags: pendingBags };
+  }
+  function nextDeliveryKeys(n) {
+    var out = [], d = new Date();
+    for (var i = 0; i < n; i++) { d = nextDeliveryDay(d); out.push(bagDayKey(d)); }
+    return out;
+  }
+
   // Commission ledger derived from orders so every figure is reproducible.
   // Basis: net merchandise (subtotal − discount), delivery excluded; accrues
   // once paid/fulfilled; refunds post a matching negative adjustment.
@@ -1487,6 +1624,7 @@
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
     },
     GROUP_TYPES: GROUP_TYPES,
+    radar: { weeks: RADAR_WEEKS, crops: radarCrops, pickList: pickList, deliveryKeys: nextDeliveryKeys, orderDeliveryKey: orderDeliveryKey },
     rewards: {
       summary: rewardsSummary, ledger: rewardsLedger, tiers: RW.tiers, tierFor: tierForBunches, nextTier: nextTier,
       syncTierVouchers: syncTierVouchers, redeem: redeemPoints, vouchers: customerVouchers, usable: voucherUsable,

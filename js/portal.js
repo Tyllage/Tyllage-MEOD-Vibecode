@@ -1936,8 +1936,7 @@
       kpi('Orders', String(mine.length)),
       kpi('Latest order', last ? last.ref : '—', last ? last.status.replace('_', ' ') : null),
       kpi('Group buy', c.groupCode || 'Not joined', c.groupCode ? '5% off applied at checkout' : 'Join with a leader code'),
-      kpi('Messages', c.consentMarketing ? 'On' : 'Off', 'Change in Preferences')));
-    append(root, rewardsStrip(c));
+      rewardsKpi(c)));
     append(root, picksPanel(c));
   }
 
@@ -1966,16 +1965,16 @@
     return bar;
   }
   // Home: a compact strip in the same card style as the KPIs above it.
-  function rewardsStrip(c) {
+  // Home: a Rewards card in the KPI row, same style as Orders / Latest order / Group buy,
+  // linking to the Rewards page.
+  function rewardsKpi(c) {
     syncRewards(c);
     var s = M.rewards.summary(c.id);
-    return h('a', { class: 'panel rw-strip', href: '#rewards' },
-      iconCircle(TIER_ICONS[s.tier.key], 'soft'),
-      h('span', { class: 'rw-strip-text' },
-        h('strong', { text: s.tier.label + ' member · ' + s.points + ' points' }),
-        h('small', { text: s.next ? s.toNext + ' more bunch' + (s.toNext === 1 ? '' : 'es') + ' of MEOD greens to ' + s.next.label : 'Top tier — thank you for growing with us' }),
-        progressBar(s.progressPct, 'Progress to next tier')),
-      h('span', { class: 'pill-btn', text: 'Rewards →' }));
+    return h('a', { class: 'kpi kpi-link', href: '#rewards', 'aria-label': 'Rewards: ' + s.points + ' points, ' + s.tier.label + ' member' },
+      h('span', { text: 'Rewards' }),
+      h('strong', { text: s.points + ' pts' }),
+      h('small', { text: s.tier.label + (s.next ? ' · ' + s.toNext + ' to ' + s.next.label : ' · top tier') }),
+      progressBar(s.progressPct, 'Progress to next tier'));
   }
 
   // Stamp card: one stamp per bunch, or one per few bunches when a tier is far away, so the

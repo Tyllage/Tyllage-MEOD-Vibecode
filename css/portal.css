@@ -1126,12 +1126,12 @@ a.pill-btn { text-decoration: none; }
 .rw-bar { display: block; height: 8px; border-radius: 999px; background: #e6dfd3; overflow: hidden; }
 .rw-fill { display: block; height: 100%; border-radius: inherit; background: var(--leaf); }
 
-/* Home strip — same card as the KPIs */
-.rw-strip { display: flex; align-items: center; gap: 16px; text-decoration: none; color: inherit; }
-.rw-strip-text { flex: 1; min-width: 0; display: grid; gap: 6px; }
-.rw-strip-text strong { color: var(--forest); }
-.rw-strip-text small { color: var(--muted); }
-.rw-strip .pill-btn { flex: none; }
+/* Home: Rewards card in the KPI row (a .kpi that links to Rewards) */
+.kpi-link { display: block; text-decoration: none; color: inherit; transition: box-shadow .2s ease, transform .2s ease; }
+.kpi-link:hover { box-shadow: 0 8px 22px rgba(5,79,18,.12); transform: translateY(-2px); }
+.kpi-link:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.kpi-link small { display: block; }
+.kpi-link .rw-bar { margin-top: 10px; height: 6px; }
 
 /* Membership card */
 .rw-card {
@@ -1217,8 +1217,6 @@ a.pill-btn { text-decoration: none; }
   .rw-card { padding: 22px 18px; }
   .rw-tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
   .rw-tiers li + li::before { display: none; }
-  .rw-strip { flex-wrap: wrap; }
-  .rw-strip .pill-btn { margin-left: auto; }
   .rw-stamps { grid-template-columns: repeat(5, minmax(0, 46px)); gap: 10px; }
   .rw-tip { flex-wrap: wrap; }
 }

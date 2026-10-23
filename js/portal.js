@@ -3067,7 +3067,30 @@
     var root = $('[data-view]');
     root.textContent = '';
     view.render(root);
+    fitTables();
   }
+
+  // Tables that don't fit their panel switch to stacked cards (.as-cards). Phones always get
+  // cards from CSS; this covers tablets and narrow desktop windows. Re-checked on resize and
+  // whenever a view redraws part of itself (filters, search, approvals).
+  function fitTables() {
+    if (window.innerWidth <= 640) return;
+    document.querySelectorAll('[data-view] .table-wrap').forEach(function (wrap) {
+      var table = wrap.querySelector('table');
+      if (!table) return;
+      wrap.classList.remove('as-cards');
+      if (table.scrollWidth > wrap.clientWidth + 1) wrap.classList.add('as-cards');
+    });
+  }
+  var fitQueued = false;
+  function queueFit() {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(function () { fitQueued = false; fitTables(); });
+  }
+  window.addEventListener('resize', queueFit);
+  // childList only: toggling .as-cards changes an attribute, so it can't retrigger this.
+  new MutationObserver(queueFit).observe($('[data-view]'), { childList: true, subtree: true });
 
   function signOut() {
     M.auth.signOut();

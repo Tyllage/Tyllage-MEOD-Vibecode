@@ -350,7 +350,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .r-refund { color: var(--danger); font-weight: 600; }
 .r-note { margin: 16px 0 4px; text-align: center; color: var(--forest); font-weight: 600; }
 .r-foot { margin: 0 0 12px; text-align: center; font-size: .72rem; color: var(--muted); }
-.r-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; }
+.r-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; }
 
 @media (max-width: 640px) {
   .pill-row { justify-content: flex-start; }
@@ -1093,3 +1093,29 @@ a.pill-btn { text-decoration: none; }
 .clear-cell:hover strong, .clear-cell:focus-visible strong { text-decoration: underline; }
 .muted-dash { color: #b9b0a2; }
 @media (max-width: 640px) { .clear-cell { justify-items: end; text-align: right; } }
+
+/* ---- Tables too wide for their panel become stacked cards at any width ----
+   Phones always get cards (the max-width: 640px rules above). Between ~641px and wide
+   desktops, portal.js adds .as-cards to a .table-wrap whose table doesn't fit, so tablets
+   and narrow laptop windows get the same readable cards instead of sideways scrolling.
+   These mirror the phone rules, including the per-column tweaks. */
+.table-wrap.as-cards { overflow-x: visible; }
+.table-wrap.as-cards table, .table-wrap.as-cards tbody, .table-wrap.as-cards tr, .table-wrap.as-cards td { display: block; width: 100%; }
+.table-wrap.as-cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.table-wrap.as-cards tr { border: 1.5px solid #eee8de; border-radius: 12px; padding: 6px 14px; margin-bottom: 12px; }
+.table-wrap.as-cards td { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 8px 0; border-bottom: 1px dashed #f0ebe3; text-align: right; white-space: normal; }
+.table-wrap.as-cards td::before { content: attr(data-label); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; text-align: left; flex: none; max-width: 40%; }
+.table-wrap.as-cards td[data-label=""]::before { content: none; }
+.table-wrap.as-cards td[data-label=""] { justify-content: flex-start; }
+.table-wrap.as-cards tr td:last-child { border-bottom: 0; }
+.table-wrap.as-cards .actions { justify-content: flex-end; flex-wrap: wrap; }
+.table-wrap.as-cards td .user-cell { text-align: left; }
+.table-wrap.as-cards td[data-label="User"], .table-wrap.as-cards td[data-label="Customer"] { justify-content: flex-start; padding-bottom: 12px; }
+.table-wrap.as-cards td[data-label="Who"] { justify-content: flex-start; }
+.table-wrap.as-cards td[data-label="User"]::before, .table-wrap.as-cards td[data-label="Customer"]::before, .table-wrap.as-cards td[data-label="Who"]::before { content: none; }
+.clearance-table .table-wrap.as-cards td, .clearance-table .table-wrap.as-cards th { white-space: normal; }
+@media (min-width: 900px) {
+  /* Wide-enough cards: two columns of cards side by side. */
+  .table-wrap.as-cards tbody { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+  .table-wrap.as-cards tr { margin-bottom: 0; }
+}

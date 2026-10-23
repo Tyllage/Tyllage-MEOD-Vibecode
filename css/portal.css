@@ -1001,3 +1001,26 @@ a.pill-btn { text-decoration: none; }
 }
 .grade-dialog .toggle { white-space: normal; }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- Restock reminders (Campaign Studio) + recipe ideas ---- */
+.restock-product { display: grid; gap: 4px; min-width: 180px; }
+.restock-preview summary { cursor: pointer; color: var(--leaf); font-size: .82rem; font-weight: 600; }
+.restock-preview p { margin: 6px 0 4px; padding: 10px 12px; border-radius: 10px; background: #eaf4e5; font-size: .86rem; line-height: 1.45; max-width: 460px; white-space: normal; }
+.restock-preview small { color: var(--muted); }
+.recipe-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.recipe-opt .toggle { white-space: normal; }
+.recipe-opt .pf-hint { color: var(--muted); }
+
+.pd-recipe { border-top: 1px solid #f0ebe3; padding: 0 22px; }
+.pd-recipe summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 14px 0; cursor: pointer; list-style-position: inside; }
+.pd-recipe summary strong { color: var(--forest); font-size: .95rem; }
+.pd-recipe summary small { color: var(--muted); }
+.pd-recipe-label { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #8a5a00; }
+.pd-recipe-body { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; padding: 0 0 6px; font-size: .88rem; }
+.pd-recipe-body ul, .pd-recipe-body ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.pd-recipe-note { display: block; padding: 4px 0 14px; color: var(--muted); font-size: .76rem; }
+@media (max-width: 640px) {
+  .pd-recipe { padding: 0 18px; }
+  .pd-recipe-body { grid-template-columns: 1fr; }
+}
+.restock-tag { color: var(--leaf); font-weight: 600; }

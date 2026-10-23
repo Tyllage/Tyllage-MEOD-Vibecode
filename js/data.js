@@ -26,6 +26,9 @@
     clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
     clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
+    restockAfterDays: 7,            // a buyer is "due" this many days after they last bought an item...
+    restockWindowDays: 45,          // ...until this many days (after that they're lapsed, not due)
+    restockCooldownDays: 14,        // don't suggest the same reminder to someone again within this
     preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
     preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
     // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
@@ -441,6 +444,25 @@
       });
       s.migrations.harvestBatchesV1 = true;
     }
+    if (!s.migrations.restockSeedV1) {
+      // A little more past-order history so restock reminders have a realistic mix:
+      // several regular shiitake buyers across languages, and a second basil buyer.
+      [
+        ['C-1002', [['Shiitake Mushroom', 2], ['HK Cai Xin', 1]], 12],
+        ['C-1005', [['Shiitake Mushroom', 1], ['Sweet Basil', 2]], 16]
+      ].forEach(function (r) {
+        var items = r[1].map(function (line) {
+          var p = s.products.filter(function (x) { return x.title === line[0]; })[0];
+          return p ? { productId: p.id, title: p.title, qty: line[1], priceCents: p.priceCents } : null;
+        }).filter(Boolean);
+        s.seq += 1;
+        s.orders.push(Object.assign({
+          id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: r[0], groupEventId: null,
+          status: 'fulfilled', items: items, refundedCents: 0, createdAt: new Date(Date.now() - r[2] * 864e5).toISOString(), source: 'shopify-mock'
+        }, priceOrder(items, false)));
+      });
+      s.migrations.restockSeedV1 = true;
+    }
     return s;
   }
 
@@ -830,6 +852,50 @@
     return state.orders.filter(function (o) { return o.status !== 'cancelled' && (!customerId || o.customerId === customerId); });
   }
 
+  // Restock reminders: opted-in customers who bought an in-stock item 7–45 days ago and
+  // haven't bought it since, grouped by product. Skips items they already have on pre-order,
+  // refunded/cancelled orders, and anyone a restock campaign for that item already covered
+  // in the last 14 days. Only suggests — staff draft the message and an admin approves it.
+  function restockDue() {
+    var now = Date.now();
+    var covered = {};
+    state.campaigns.forEach(function (cp) {
+      if (cp.kind !== 'restock' || cp.status === 'rejected') return;
+      if (now - new Date(cp.createdAt).getTime() > RULES.restockCooldownDays * DAY) return;
+      cp.audience.forEach(function (cid) { covered[cp.productId + '|' + cid] = true; });
+    });
+    var groups = {};
+    state.customers.forEach(function (c) {
+      if (!c.consentMarketing) return;
+      var last = {}, onPreorder = {};
+      state.orders.forEach(function (o) {
+        if (o.customerId !== c.id || o.status === 'cancelled' || o.status === 'refunded') return;
+        o.items.forEach(function (i) {
+          if (i.preorderBatchId) { onPreorder[i.productId] = true; return; }
+          var t = new Date(o.createdAt).getTime();
+          if (!last[i.productId] || t > last[i.productId]) last[i.productId] = t;
+        });
+      });
+      Object.keys(last).forEach(function (pid) {
+        var days = Math.floor((now - last[pid]) / DAY);
+        if (days < RULES.restockAfterDays || days > RULES.restockWindowDays) return;
+        if (onPreorder[pid] || covered[pid + '|' + c.id]) return;
+        var p = byId('products', pid);
+        var s = p && stockStatus(p);
+        if (!p || p.bagOffer || !s.known || s.qty <= 0) return;
+        var g = groups[pid] || (groups[pid] = { product: p, customers: [] });
+        g.customers.push({ customer: c, days: days });
+      });
+    });
+    return Object.keys(groups).map(function (k) {
+      var g = groups[k];
+      var ds = g.customers.map(function (x) { return x.days; });
+      g.minDays = Math.min.apply(null, ds);
+      g.maxDays = Math.max.apply(null, ds);
+      return g;
+    }).sort(function (a, b) { return b.customers.length - a.customers.length || b.maxDays - a.maxDays; });
+  }
+
   function tasteProfile(customer) {
     var weights = {}, total = 0;
     liveOrders(customer.id).forEach(function (o) {
@@ -955,7 +1021,7 @@
     state: state, RULES: RULES, CATEGORIES: CATEGORIES, DEMO_PASSWORD: DEMO_PASSWORD,
     save: save, reset: reset, nextId: nextId, byId: byId,
     stockStatus: stockStatus, findProduct: findProduct, priceOrder: priceOrder,
-    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, trackingFor: trackingFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
+    ledger: ledger, ledgerEntry: ledgerEntry, recommendFor: recommendFor, restockDue: restockDue, trackingFor: trackingFor, tasteProfile: tasteProfile, CATEGORY_ART: CATEGORY_ART,
     withinHumanHours: withinHumanHours, audit: audit,
     money: money, maskName: maskName, maskPhone: maskPhone,
     DELIVERY_DAYS: DELIVERY_DAYS, nextDeliveryDay: nextDeliveryDay,

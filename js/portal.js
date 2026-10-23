@@ -272,7 +272,61 @@
     return { eligible: eligible, excluded: ids.length - eligible.length };
   }
 
+  /* ---- Restock reminders: suggested from purchase history, drafted per language ---- */
+  // {first_name} and {days} are filled in per recipient when the campaign is sent.
+  var RESTOCK_DRAFTS = {
+    en: function (p, next, tip) { return 'Hi {first_name} 🌱 It\'s been {days} days since your last ' + p.title + '. Fresh ' + p.title + ' is in stock for our next delivery (' + next + ') — reorder in one tap from your MEOD account. ' + (tip ? tip + ' ' : '') + 'Reply STOP to opt out.'; },
+    zh: function (p, next, tip) { return '{first_name} 您好 🌱 距离您上次购买 ' + p.title + ' 已经 {days} 天了。新鲜 ' + p.title + ' 现已有货，下次配送：' + next + '。在 MEOD 账户中一键回购。' + (tip || '') + '回复 STOP 取消订阅。'; },
+    ms: function (p, next, tip) { return 'Hai {first_name} 🌱 Sudah {days} hari sejak anda membeli ' + p.title + '. ' + p.title + ' segar kini ada stok untuk penghantaran seterusnya (' + next + ') — pesan semula dalam akaun MEOD anda. ' + (tip ? tip + ' ' : '') + 'Balas STOP untuk berhenti.'; }
+  };
+  var LANG_SHORT = { en: 'English', zh: '中文', ms: 'Melayu' };
+  function restockLang(c) { return RESTOCK_DRAFTS[c.language] ? c.language : 'en'; }
+  function personalise(text, c, days) {
+    var first = M.auth.can(session, 'customers.pii') ? c.name.split(' ')[0] : M.maskName(c.name).split(' ')[0];
+    return text.replace('{first_name}', first).replace('{days}', String(days));
+  }
+  function restockPanel() {
+    var groups = M.restockDue();
+    var next = M.nextDeliveryDay(new Date()).toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' });
+    function draft(g) {
+      var byLang = {};
+      g.customers.forEach(function (x) { (byLang[restockLang(x.customer)] = byLang[restockLang(x.customer)] || []).push(x.customer.id); });
+      var langs = Object.keys(byLang);
+      langs.forEach(function (lang) {
+        S().campaigns.unshift({
+          id: M.nextId('CP'), kind: 'restock', productId: g.product.id, language: lang,
+          title: g.product.title + ' — Restock reminder' + (langs.length > 1 ? ' (' + LANG_SHORT[lang] + ')' : ''),
+          message: RESTOCK_DRAFTS[lang](g.product, next, M.recipes ? M.recipes.tipLine(g.product, lang) : ''),
+          audience: byLang[lang], status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+        });
+      });
+      commit('campaign.submitted', g.product.title, langs.length + ' restock reminder draft(s) for ' + g.product.title + ' added — waiting for admin approval.');
+    }
+    var rows = table([
+      { label: 'Product', render: function (g) {
+        var x = g.customers[0];
+        var lang = restockLang(x.customer);
+        return h('div', { class: 'restock-product' }, h('strong', { text: g.product.title }),
+          h('details', { class: 'restock-preview' }, h('summary', { text: 'Preview message' }),
+            h('p', { text: personalise(RESTOCK_DRAFTS[lang](g.product, next, M.recipes ? M.recipes.tipLine(g.product, lang) : ''), x.customer, x.days) }),
+            h('small', { text: 'Example for ' + customerLabel(x.customer.id) + '. Name and days are filled in for each person when sent.' })));
+      } },
+      { label: 'Due', num: true, render: function (g) { return String(g.customers.length); } },
+      { label: 'Last bought', render: function (g) { return g.minDays === g.maxDays ? g.minDays + ' days ago' : g.minDays + '–' + g.maxDays + ' days ago'; } },
+      { label: 'Customers', render: function (g) { return h('small', { text: g.customers.map(function (x) { return customerLabel(x.customer.id); }).join(', ') }); } },
+      { label: 'Languages', render: function (g) {
+        var seen = {};
+        g.customers.forEach(function (x) { seen[LANG_SHORT[restockLang(x.customer)]] = true; });
+        return Object.keys(seen).join(', ');
+      } },
+      { label: 'Actions', render: function (g) { return mini('Draft reminder', function () { draft(g); }); } }
+    ], groups, 'Nobody is due right now — everyone who opted in has bought recently, has it on pre-order, or was reminded in the last ' + M.RULES.restockCooldownDays + ' days.');
+    return panel('Restock reminders', 'Opted-in customers who bought an item ' + M.RULES.restockAfterDays + '–' + M.RULES.restockWindowDays + ' days ago and haven\'t bought it since. Suggested from order history; drafting creates one message per language, and an admin still has to approve it.',
+      h('div', { class: 'restock-table' }, rows));
+  }
+
   function campaignsView(root) {
+    append(root, restockPanel());
     var inStock = S().products.filter(function (p) { var s = M.stockStatus(p); return s.known && s.qty > 0; });
     var form = h('form', { class: 'form-grid', novalidate: true });
     var productSel = h('select', { name: 'product', required: true }, inStock.map(function (p) { return h('option', { value: p.id, text: p.title }); }));
@@ -280,6 +334,13 @@
     var title = h('input', { name: 'title', placeholder: 'e.g. Kai Lan Weekend', maxlength: 60 });
     var msg = h('textarea', { name: 'message', rows: 4, maxlength: 500, placeholder: 'Write a message or draft one with AI' });
     var audienceBox = h('p', { class: 'callout green' });
+    var recipeToggle = h('input', { type: 'checkbox', checked: true });
+    var recipeNote = h('small', { class: 'pf-hint' });
+    function refreshRecipeNote() {
+      var r = M.recipes && M.recipes.forProduct(M.byId('products', productSel.value));
+      recipeToggle.disabled = !r;
+      recipeNote.textContent = r ? 'Adds: ' + M.recipes.tipLine(M.byId('products', productSel.value), langSel.value) : 'No recipe idea for this product yet.';
+    }
 
     function refreshAudience() {
       var a = audienceFor(productSel.value);
@@ -288,17 +349,24 @@
         (a.eligible.join(', ') || 'none') + '). ' + a.excluded + ' past buyer(s) left out because they have not given consent.';
     }
     productSel.addEventListener('change', refreshAudience);
-    if (inStock.length) refreshAudience();
+    productSel.addEventListener('change', refreshRecipeNote);
+    langSel.addEventListener('change', refreshRecipeNote);
+    if (inStock.length) { refreshAudience(); refreshRecipeNote(); }
 
     append(form,
       h('label', null, 'Promoted product', productSel),
       h('label', null, 'Language', langSel),
       h('label', null, 'Campaign title', title),
       h('label', { style: 'grid-column:1/-1' }, 'Message', msg),
+      h('div', { class: 'recipe-opt', style: 'grid-column:1/-1' },
+        h('label', { class: 'toggle' }, recipeToggle, h('span', { text: 'Add a recipe idea to the AI draft' })), recipeNote),
       h('div', { class: 'actions', style: 'grid-column:1/-1' },
         h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: '✨ Draft with AI (mock)', onclick: function () {
           var p = M.byId('products', productSel.value);
           msg.value = DRAFTS[langSel.value](p);
+          var tip = recipeToggle.checked && M.recipes ? M.recipes.tipLine(p, langSel.value) : '';
+          // Put the tip before the opt-out sentence, which always stays last.
+          if (tip) msg.value = msg.value.replace(/(Reply STOP|回复 STOP|Balas STOP)/, tip + (langSel.value === 'zh' ? '' : ' ') + '$1');
           if (!title.value) title.value = p.title + ' Fresh Pick';
         } }),
         h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Submit for approval' })));
@@ -334,7 +402,10 @@
       var rows = S().campaigns.filter(function (c) { return cState.filter === 'all' || c.status === cState.filter; });
       cList.textContent = '';
       append(cList, table([
-        { label: 'Campaign', render: function (c) { return h('span', null, h('strong', { text: c.title }), h('br'), h('small', { text: c.message.slice(0, 90) + (c.message.length > 90 ? '…' : '') })); } },
+        { label: 'Campaign', render: function (c) {
+          return h('span', null, h('strong', { text: c.title }), h('br'), h('small', { text: c.message.slice(0, 90) + (c.message.length > 90 ? '…' : '') }),
+            c.kind === 'restock' ? [h('br'), h('small', { class: 'restock-tag', text: 'Restock reminder · {first_name} and {days} are filled in per person' })] : null);
+        } },
         { label: 'Product', render: function (c) { var p = M.byId('products', c.productId); return p ? p.title : '—'; } },
         { label: 'Lang', render: function (c) { return c.language.toUpperCase(); } },
         { label: 'Audience', num: true, render: function (c) { return String(c.audience.length); } },
@@ -1639,6 +1710,18 @@
     return { items: list.slice(0, 3), fromBaskets: Object.keys(counts).length > 0 };
   }
 
+  // A short recipe idea, collapsed by default so the dialog stays compact.
+  function recipeCard(p) {
+    var r = M.recipes && M.recipes.forProduct(p);
+    if (!r) return null;
+    return h('details', { class: 'pd-recipe' },
+      h('summary', null, h('span', { class: 'pd-recipe-label', text: 'Recipe idea' }), h('strong', { text: r.name.en }), h('small', { text: r.minutes + ' min' })),
+      h('div', { class: 'pd-recipe-body' },
+        h('div', null, h('b', { text: 'You need' }), h('ul', null, r.ingredients.map(function (x) { return h('li', { text: x }); }))),
+        h('div', null, h('b', { text: 'Steps' }), h('ol', null, r.steps.map(function (x) { return h('li', { text: x }); })))),
+      h('small', { class: 'pd-recipe-note', text: 'Recipe ideas are AI-drafted samples in this prototype — MEOD would review them before they go live.' }));
+  }
+
   function openProduct(p, opts) {
     opts = opts || {};
     // Only one product dialog at a time: close and remove any others right away.
@@ -1724,6 +1807,7 @@
       h('div', { class: 'pd-extra' },
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.clock, 'soft'), h('span', null, h('strong', { text: 'Storage' }), h('small', { text: tips.store }))),
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.leaf, 'soft'), h('span', null, h('strong', { text: 'How to enjoy' }), h('small', { text: tips.cook })))),
+      recipeCard(p),
       pairs.items.length ? h('div', { class: 'pd-pairs' },
         h('strong', { text: pairs.fromBaskets ? 'Often bought together' : 'More ' + M.CATEGORIES[p.category].label.toLowerCase() }),
         h('div', { class: 'pd-pair-list' }, pairs.items.map(function (x) {

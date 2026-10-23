@@ -1779,7 +1779,7 @@
       kpi('Crops we don\'t grow', String(notGrown.length), notGrown.length ? notGrown.map(function (g) { return g.name; }).slice(0, 2).join(', ') : 'no requests')));
 
     append(root, panel(aiTitle('What people wanted and couldn\'t get'), 'Grouped per crop. "Demand is there" means the crop sold out or we didn\'t have enough — recorded sales understate how much people want it. Demand Radar shows these numbers beside each crop.',
-      ins.length ? h('div', { class: 'ops-brief aligned', style: '--rows:5' }, ins.map(function (g) {
+      ins.length ? h('div', { class: 'ops-brief aligned ld-brief', style: '--rows:5' }, ins.map(function (g) {
         var r = M.lost.REASONS[g.reason] || ['Other', 'grey'];
         var act = !g.product ? h('a', { class: 'btn btn-sm btn-outline', href: '#harvest', text: 'Plan a trial batch' })
           : g.notifyCount && M.stockStatus(g.product).qty > 0 ? h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Tell ' + g.notifyCount + ' it\'s back', onclick: function () { openLostNotify(g); } })

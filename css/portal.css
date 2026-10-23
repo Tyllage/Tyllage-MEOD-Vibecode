@@ -905,3 +905,54 @@ a.pill-btn { text-decoration: none; }
 @media (max-width: 640px) {
   .bag-fields { grid-template-columns: 1fr; }
 }
+
+/* ---- Harvest Planner (staff/admin) + pre-order by harvest date (customer shop) ---- */
+.po-bar { display: block; height: 7px; border-radius: 999px; background: #e6dfd3; overflow: hidden; }
+.po-fill { display: block; height: 100%; background: var(--gold-dark); border-radius: inherit; }
+.po-fill.full { background: var(--leaf); }
+.po-bar.grow .po-fill { background: var(--leaf); }
+.po-cell { display: grid; gap: 5px; min-width: 140px; }
+.po-cell small, .signal-cell small { color: var(--muted); }
+.signal-cell { display: grid; gap: 4px; justify-items: start; min-width: 200px; max-width: 300px; }
+.signal-cell .badge { text-transform: none; }
+.harvest-table .table-wrap .actions { flex-wrap: wrap; }
+
+.gantt { display: grid; gap: 8px; }
+.gantt-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; }
+.gantt-label strong { display: block; color: var(--forest); font-size: .9rem; }
+.gantt-label small { color: var(--muted); font-size: .78rem; }
+.gantt-track { position: relative; height: 22px; background: #f6f2e8; border-radius: 6px; }
+.gantt-axis .gantt-track { background: none; height: 18px; }
+.gantt-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.gantt-tick:first-child { transform: none; }
+.gantt-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; background: #cfe6c4; overflow: hidden; }
+.gantt-grown { display: block; height: 100%; background: var(--leaf); }
+.gantt-bar.st-planned { background: #e6dfd3; }
+.gantt-bar.st-planned .gantt-grown { background: #b9b0a2; }
+.gantt-bar.st-due .gantt-grown { background: var(--gold-dark); }
+.gantt-today { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--gold); }
+@media (max-width: 640px) {
+  .gantt-row { grid-template-columns: 92px 1fr; gap: 8px; }
+  .gantt-tick:nth-child(even) { display: none; }
+}
+
+.harvest-form { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+.harvest-form input, .harvest-form select { height: 48px; }
+@media (max-width: 900px) { .harvest-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .harvest-form { grid-template-columns: 1fr; } }
+
+.pack-day + .pack-day { margin-top: 18px; }
+.pack-day h3 { font-size: 1rem; color: var(--forest); margin: 0 0 8px; }
+.pack-day h3 small { color: var(--muted); font-weight: 500; }
+
+.preorder-strip .preorder-item { flex: 0 0 200px; border-color: #cfe6c4; }
+@media (max-width: 640px) { .preorder-strip .preorder-item { flex: 0 0 180px; } }
+.preorder-item .shop-media .badge { text-transform: none; }
+.po-line { display: grid; gap: 4px; }
+.po-line small { color: var(--muted); font-size: .78rem; }
+.po-note { display: block; color: var(--leaf); font-size: .78rem; font-weight: 600; }
+
+.pd-harvest { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #eef6e8; border: 1px solid #cfe6c4; }
+.pd-harvest > span:not(.icon-circle) { flex: 1 1 180px; min-width: 0; }
+.pd-harvest strong { display: block; font-size: .88rem; color: var(--forest); }
+.pd-harvest small { color: var(--ink); font-size: .82rem; }

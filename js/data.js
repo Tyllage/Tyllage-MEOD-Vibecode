@@ -25,7 +25,11 @@
     clearanceCutoffHour: 22,        // bag pre-orders close 10pm the day before delivery
     clearanceCandidateQty: 20,      // flag as a clearance candidate above this stock level
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
-    clearanceDefaultMinRate: 0.6    // staff default minimum price = 60% of normal price
+    clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
+    preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
+    preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
+    // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
+    growDays: { 'asian-greens': 30, lettuces: 40, fungi: 14, herbs: 45 }
   };
 
   // Demo sign-in. The password is shared by every demo account and is NOT a
@@ -261,8 +265,14 @@
       });
     }
 
-    // Paid: scheduled for the next delivery day after today.
+    // Paid: scheduled for the next delivery day after today — or, for a pre-order, its
+    // (latest) harvest day, since pre-ordered produce is picked and delivered that morning.
     day = nextDeliveryDay(Math.max(placed.getTime(), now - 864e5));
+    order.items.forEach(function (i) {
+      if (!i.harvestDate) return;
+      var hd = parseDayKey(i.harvestDate);
+      if (hd.getTime() > day.getTime()) day = hd;
+    });
     winStart = atTime(day, 14, 0);
     winEnd = atTime(day, 18, 0);
     return Object.assign(base, {
@@ -368,6 +378,68 @@
       reswap('Kai Lan', 'Shiitake Mushroom', 450, 400);
       reswap('Garden Mint', 'Veggie Crackers', 600, 550);
       s.migrations.clearancePhotosV1 = true;
+    }
+    if (!s.migrations.harvestBatchesV1) {
+      // Seed a few weeks of harvest batches plus pre-orders against them, so the Harvest
+      // Planner and the shop's "pre-order the next harvest" row have something to show.
+      var byTitle3 = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
+      s.batches = s.batches || [];
+      var batchIds = {};
+      // [title, harvest on the Nth upcoming delivery day (0 = the last one before today), expected qty, status]
+      [
+        ['Xiao Bai Cai', 0, 60, 'harvested'],
+        ['Oyster Mushroom', 2, 40],
+        ['Tuscan Kale', 2, 50],
+        ['Red Pak Choy', 3, 45],
+        ['Bayam', 4, 60],
+        ['Cos Lettuce', 5, 70],
+        ['Sweet Basil', 6, 40],
+        ['Mizuna', 8, 45]
+      ].forEach(function (r) {
+        var p = byTitle3(r[0]);
+        if (!p) return;
+        var harvest;
+        if (r[1] === 0) {
+          harvest = new Date(); harvest.setHours(0, 0, 0, 0);
+          do { harvest.setDate(harvest.getDate() - 1); } while (DELIVERY_DAYS.indexOf(harvest.getDay()) === -1);
+        } else {
+          harvest = nextDeliveryDay(new Date());
+          for (var k = 1; k < r[1]; k++) harvest = nextDeliveryDay(harvest);
+        }
+        var sow = new Date(harvest.getTime() - (RULES.growDays[p.category] || 30) * 864e5);
+        s.seq += 1;
+        var b = {
+          id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(sow), harvestDate: bagDayKey(harvest),
+          expectedQty: r[2], preorderCap: Math.round(r[2] * RULES.preorderDefaultShare), preorderPriceCents: p.priceCents,
+          status: r[3] || 'planned', createdBy: 'admin@meod.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
+        };
+        if (b.status === 'harvested') { b.actualQty = 56; b.harvestedAt = harvest.toISOString(); }
+        s.batches.push(b);
+        batchIds[r[0]] = b;
+      });
+      // [customerId, [[title, qty]], status, daysAgo]
+      [
+        ['C-1001', [['Oyster Mushroom', 2], ['Tuscan Kale', 3]], 'paid', 1],
+        ['C-1002', [['Oyster Mushroom', 3], ['Tuscan Kale', 5], ['Bayam', 1]], 'paid', 2],
+        ['C-1003', [['Oyster Mushroom', 4], ['Tuscan Kale', 4], ['Cos Lettuce', 4]], 'paid', 2],
+        ['C-1004', [['Tuscan Kale', 4], ['Red Pak Choy', 2]], 'paid', 3],
+        ['C-1005', [['Oyster Mushroom', 3], ['Tuscan Kale', 6], ['Red Pak Choy', 3], ['Cos Lettuce', 4]], 'paid', 1],
+        ['C-1006', [['Oyster Mushroom', 2], ['Tuscan Kale', 4], ['Bayam', 2]], 'pending_payment', 0]
+      ].forEach(function (r) {
+        var items = r[1].map(function (line) {
+          var b = batchIds[line[0]];
+          var p = b && s.products.filter(function (x) { return x.id === b.productId; })[0];
+          return p ? { productId: p.id, title: p.title + ' (pre-order)', qty: line[1], priceCents: b.preorderPriceCents, preorderBatchId: b.id, harvestDate: b.harvestDate } : null;
+        }).filter(Boolean);
+        if (!items.length) return;
+        s.seq += 1;
+        s.orders.push(Object.assign({
+          id: 'O-' + s.seq, ref: '#MF' + (5000 + s.orders.length + 1), customerId: r[0], groupEventId: null,
+          status: r[2], items: items, refundedCents: 0, createdAt: new Date(Date.now() - (r[3] * 24 + 3) * 36e5).toISOString(),
+          source: 'portal', hasPreorder: true
+        }, priceOrder(items, false)));
+      });
+      s.migrations.harvestBatchesV1 = true;
     }
     return s;
   }
@@ -586,6 +658,130 @@
     return { ok: true };
   }
 
+  /* ---------- Tyllage Harvest: planned batches + pre-order by harvest date ----------
+   * A batch is one sowing of one product with an expected harvest day and yield. Staff open
+   * part of that yield to pre-order (preorderCap); customers reserve against it before it is
+   * harvested. Pre-ordered counts are derived from order lines (never stored), so cancelling
+   * or refunding an order frees the spot automatically. Pre-orders don't touch product stock:
+   * when staff mark a batch harvested, only the un-reserved part of the actual yield is added
+   * to stock. Harvest days are snapped to delivery days (picked that morning, delivered same day).
+   */
+  function harvestDayOnOrAfter(from) {
+    var d = new Date(from);
+    d.setHours(0, 0, 0, 0);
+    for (var i = 0; i < 7 && DELIVERY_DAYS.indexOf(d.getDay()) === -1; i++) d.setDate(d.getDate() + 1);
+    return d;
+  }
+  var PREORDER_LIVE = ['pending_payment', 'paid', 'fulfilled'];
+  function batchLines(batchId) {
+    var lines = [];
+    state.orders.forEach(function (o) {
+      if (PREORDER_LIVE.indexOf(o.status) === -1) return;
+      o.items.forEach(function (i) { if (i.preorderBatchId === batchId) lines.push({ order: o, item: i }); });
+    });
+    return lines;
+  }
+  function batchPreordered(b) { return batchLines(b.id).reduce(function (s, l) { return s + l.item.qty; }, 0); }
+  function batchLeft(b) { return Math.max(0, b.preorderCap - batchPreordered(b)); }
+  function batchCutoff(b) {
+    return atTime(new Date(parseDayKey(b.harvestDate).getTime() - 864e5), RULES.preorderCutoffHour, 0);
+  }
+  // planned (not sown yet) → growing → due (harvest day reached, not marked yet) → harvested; or cancelled.
+  function batchStage(b) {
+    if (b.status === 'harvested' || b.status === 'cancelled') return b.status;
+    var now = Date.now();
+    if (now < parseDayKey(b.sowDate).getTime()) return 'planned';
+    if (now < parseDayKey(b.harvestDate).getTime()) return 'growing';
+    return 'due';
+  }
+  function batchOpen(b) {
+    var st = batchStage(b);
+    return (st === 'planned' || st === 'growing') && Date.now() < batchCutoff(b).getTime() && batchLeft(b) > 0;
+  }
+  function batchGrowthPct(b) {
+    var sow = parseDayKey(b.sowDate).getTime(), harvest = parseDayKey(b.harvestDate).getTime();
+    return Math.max(0, Math.min(100, Math.round((Date.now() - sow) / (harvest - sow) * 100)));
+  }
+  function batchesUpcoming() {
+    return state.batches.filter(function (b) { var st = batchStage(b); return st !== 'harvested' && st !== 'cancelled'; })
+      .sort(function (a, b) { return a.harvestDate < b.harvestDate ? -1 : a.harvestDate > b.harvestDate ? 1 : 0; });
+  }
+  function batchesOpen() { return batchesUpcoming().filter(batchOpen); }
+  function nextOpenBatch(productId) { return batchesOpen().filter(function (b) { return b.productId === productId; })[0] || null; }
+  // Regular (non pre-order) units of a product sold over the last 28 days, as a weekly average.
+  function weeklySales(productId) {
+    var cutoff = Date.now() - 28 * 864e5, sum = 0;
+    state.orders.forEach(function (o) {
+      if (o.status === 'cancelled' || new Date(o.createdAt).getTime() < cutoff) return;
+      o.items.forEach(function (i) { if (i.productId === productId && !i.preorderBatchId) sum += i.qty; });
+    });
+    return Math.round(sum / 4 * 10) / 10;
+  }
+  // Rule-based, explainable demand signal for staff. Never changes a price or a quantity.
+  function batchSignal(b) {
+    var taken = batchPreordered(b);
+    var fill = b.preorderCap ? taken / b.preorderCap : 0;
+    var daysLeft = Math.max(0, Math.ceil((batchCutoff(b).getTime() - Date.now()) / 864e5));
+    var pct = Math.round(fill * 100);
+    var dl = daysLeft + (daysLeft === 1 ? ' day' : ' days');
+    var wk = weeklySales(b.productId);
+    var usual = wk >= 1 ? ' Usually sells about ' + Math.round(wk) + ' a week.' : '';
+    var prod = byId('products', b.productId);
+    if (prod && prod.stock.qty <= 0) usual += ' Sold out in the shop now, so pre-orders are the only way to buy it.';
+    if (b.preorderCap && taken >= b.preorderCap) {
+      return { key: 'sold_out', label: 'Pre-orders full', tone: 'green', reason: 'All ' + b.preorderCap + ' pre-order spots taken. Demand is ahead of supply — consider sowing more next round.' + usual };
+    }
+    if (fill >= 0.7) {
+      return { key: 'strong', label: 'Strong demand', tone: 'green', reason: pct + '% pre-ordered with ' + dl + ' to go — likely to fill. Consider a bigger next sowing.' + usual };
+    }
+    if (fill < 0.25 && daysLeft <= 7) {
+      return { key: 'slow', label: 'Slow', tone: 'amber', reason: 'Only ' + pct + '% pre-ordered and pre-orders close in ' + dl + '. Promote it, or plan to list extra on Buy to Clear.' + usual };
+    }
+    return { key: 'steady', label: 'Steady', tone: 'blue', reason: pct + '% pre-ordered so far, ' + dl + ' until pre-orders close.' + usual };
+  }
+  function batchValidate(data) {
+    var p = byId('products', data.productId);
+    if (!p) return { ok: false, error: 'Choose a product.' };
+    if (!data.sowDate || !data.harvestDate) return { ok: false, error: 'Pick a sow date and a harvest date.' };
+    var harvest = parseDayKey(data.harvestDate);
+    if (DELIVERY_DAYS.indexOf(harvest.getDay()) === -1) return { ok: false, error: 'Harvest on a delivery day (Tue, Thu or Sat) so pre-orders go out fresh.' };
+    if (harvest.getTime() <= parseDayKey(data.sowDate).getTime()) return { ok: false, error: 'Harvest date must be after the sow date.' };
+    if (harvest.getTime() < Date.now()) return { ok: false, error: 'Pick a harvest date in the future.' };
+    if (!(data.expectedQty > 0)) return { ok: false, error: 'Expected yield must be at least 1.' };
+    if (!(data.preorderCap >= 0) || data.preorderCap > data.expectedQty) return { ok: false, error: 'Pre-order spots must be between 0 and the expected yield (' + data.expectedQty + ').' };
+    if (!(data.preorderPriceCents > 0)) return { ok: false, error: 'Enter a pre-order price.' };
+    return { ok: true };
+  }
+  function batchCreate(data, actorEmail) {
+    var v = batchValidate(data);
+    if (!v.ok) return v;
+    var id = nextId('HB');
+    state.batches.push({
+      id: id, productId: data.productId, sowDate: data.sowDate, harvestDate: data.harvestDate,
+      expectedQty: data.expectedQty, preorderCap: data.preorderCap, preorderPriceCents: data.preorderPriceCents,
+      status: 'planned', createdBy: actorEmail, createdAt: new Date().toISOString()
+    });
+    return { ok: true, id: id };
+  }
+  // Records the real yield. Pre-orders are served first; only the rest goes into stock.
+  function batchHarvest(id, actualQty) {
+    var b = byId('batches', id);
+    if (!b) return { ok: false, error: 'Batch not found.' };
+    if (!(actualQty >= 0)) return { ok: false, error: 'Enter the harvested quantity.' };
+    var reserved = batchPreordered(b);
+    var toStock = Math.max(0, actualQty - reserved);
+    var p = byId('products', b.productId);
+    if (p) p.stock.qty += toStock;
+    b.status = 'harvested';
+    b.actualQty = actualQty;
+    b.harvestedAt = new Date().toISOString();
+    return { ok: true, reserved: reserved, served: Math.min(reserved, actualQty), toStock: toStock, shortfall: Math.max(0, reserved - actualQty) };
+  }
+  function batchCancel(id) {
+    var b = byId('batches', id);
+    if (b) b.status = 'cancelled';
+  }
+
   // Commission ledger derived from orders so every figure is reproducible.
   // Basis: net merchandise (subtotal − discount), delivery excluded; accrues
   // once paid/fulfilled; refunds post a matching negative adjustment.
@@ -763,6 +959,12 @@
       nextBagCutoff: nextBagCutoff, dayKey: bagDayKey, parseDayKey: parseDayKey, bagOrdersForDay: bagOrdersForDay, bagsLeftForDay: bagsLeftForDay,
       proposeBagContents: proposeBagContents, approveBagContents: approveBagContents,
       reasonLabel: clearanceReasonLabel, reasons: CLEARANCE_REASONS, discountPct: clearanceDiscountPct
+    },
+    harvest: {
+      dayOnOrAfter: harvestDayOnOrAfter, lines: batchLines, preordered: batchPreordered, left: batchLeft,
+      cutoff: batchCutoff, stage: batchStage, isOpen: batchOpen, growthPct: batchGrowthPct,
+      upcoming: batchesUpcoming, open: batchesOpen, nextFor: nextOpenBatch, signal: batchSignal, weeklySales: weeklySales,
+      validate: batchValidate, create: batchCreate, markHarvested: batchHarvest, cancel: batchCancel
     }
   };
 })();

@@ -50,7 +50,8 @@
     pending_payment: 'amber', paid: 'blue', fulfilled: 'green', refunded: 'red', cancelled: 'grey',
     open: 'amber', resolved: 'green', new: 'amber', confirmed: 'green', declined: 'grey', closed: 'grey',
     draft: 'grey', pending_approval: 'amber', approved: 'blue', sent: 'green', rejected: 'red',
-    accrued: 'green', pending: 'amber', reversed: 'red', void: 'grey', active: 'green', ended: 'grey'
+    accrued: 'green', pending: 'amber', reversed: 'red', void: 'grey', active: 'green', ended: 'grey',
+    planned: 'grey', growing: 'blue', due: 'amber', harvested: 'green'
   };
   function statusBadge(s) { return badge(s, STATUS_TONE[s] || 'grey'); }
   function stockBadge(p) {
@@ -181,7 +182,8 @@
     if ((TRANSITIONS[o.status] || []).indexOf(next) === -1) return;
     if (next === 'refunded' && !confirm('Refund ' + o.ref + ' (' + money(o.netCents) + ' merchandise)? Any group commission will be reversed.')) return;
     if (next === 'cancelled') {
-      o.items.forEach(function (i) { var p = M.byId('products', i.productId); if (p) p.stock.qty += i.qty; });
+      // Pre-order lines never took stock (their spot frees itself once the order is cancelled).
+      o.items.forEach(function (i) { var p = M.byId('products', i.productId); if (p && !i.preorderBatchId) p.stock.qty += i.qty; });
     }
     if (next === 'refunded') o.refundedCents = o.netCents;
     o.status = next;
@@ -580,6 +582,226 @@
   function daysFromNowStr(d) { return new Date(Date.now() + d * 864e5).toISOString().slice(0, 10); }
   function weekdayLongLabel(d) { return d.toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' }); }
 
+  /* ---------------- Harvest Planner (staff + admin) ---------------- */
+  var dayKeyDate = function (key) { return M.clearance.parseDayKey(key); };
+  function daysUntil(key) { return Math.round((dayKeyDate(key).getTime() - new Date().setHours(0, 0, 0, 0)) / 864e5); }
+  function inDaysText(key) {
+    var n = daysUntil(key);
+    return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n > 0 ? 'in ' + n + ' days' : Math.abs(n) + ' days ago';
+  }
+  function cutoffText(d) {
+    var hh = d.getHours();
+    return d.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + (hh % 12 || 12) + (hh >= 12 ? 'pm' : 'am');
+  }
+  function fillBar(taken, cap) {
+    var pct = cap ? Math.min(100, Math.round(taken / cap * 100)) : 0;
+    var bar = h('span', { class: 'po-bar' }, h('span', { class: 'po-fill' + (pct >= 100 ? ' full' : '') }));
+    bar.firstChild.style.width = pct + '%';
+    return bar;
+  }
+
+  function harvestView(root) {
+    var H = M.harvest;
+    var upcoming = H.upcoming();
+    var weekKey = M.clearance.dayKey(new Date(Date.now() + 7 * 864e5));
+    var dueSoon = upcoming.filter(function (b) { return b.harvestDate <= weekKey; });
+    var preordered = 0, preorderValue = 0, capTotal = 0;
+    upcoming.forEach(function (b) {
+      var n = H.preordered(b);
+      preordered += n; preorderValue += n * b.preorderPriceCents; capTotal += b.preorderCap;
+    });
+
+    append(root, h('div', { class: 'kpis' },
+      kpi('Growing now', String(upcoming.filter(function (b) { return H.stage(b) === 'growing'; }).length), upcoming.length + ' batches planned in total'),
+      kpi('Harvests · 7 days', String(dueSoon.length), dueSoon.reduce(function (s, b) { return s + b.expectedQty; }, 0) + ' units expected'),
+      kpi('Pre-ordered', String(preordered), money(preorderValue) + ' sold before harvest'),
+      kpi('Pre-order fill', (capTotal ? Math.round(preordered / capTotal * 100) : 0) + '%', 'of ' + capTotal + ' spots opened')));
+
+    /* ---- a. Timeline: sow → harvest, with today marked ---- */
+    var winStart = new Date(); winStart.setHours(0, 0, 0, 0); winStart = new Date(winStart.getTime() - 42 * 864e5);
+    var winEnd = new Date(winStart.getTime() + 63 * 864e5);
+    var span = winEnd - winStart;
+    var pos = function (t) { return Math.max(0, Math.min(100, (t - winStart) / span * 100)); };
+    var todayPct = pos(Date.now());
+    var ticks = [];
+    for (var t = winStart.getTime(); t < winEnd.getTime(); t += 14 * 864e5) ticks.push(t);
+    var timeline = h('div', { class: 'gantt', role: 'img', 'aria-label': 'Growing timeline: each bar runs from sow date to harvest date' },
+      h('div', { class: 'gantt-row gantt-axis' }, h('span', { class: 'gantt-label' }),
+        h('div', { class: 'gantt-track' }, ticks.map(function (tk) {
+          var s = h('span', { class: 'gantt-tick', text: shortDate(new Date(tk).toISOString()) });
+          s.style.left = pos(tk) + '%';
+          return s;
+        }))),
+      upcoming.map(function (b) {
+        var p = M.byId('products', b.productId);
+        var sow = dayKeyDate(b.sowDate).getTime(), harvest = dayKeyDate(b.harvestDate).getTime();
+        var bar = h('span', { class: 'gantt-bar st-' + H.stage(b), title: p.title + ': sown ' + shortDate(new Date(sow).toISOString()) + ', harvest ' + shortDate(new Date(harvest).toISOString()) },
+          h('span', { class: 'gantt-grown' }));
+        bar.style.left = pos(sow) + '%';
+        bar.style.width = Math.max(1.5, pos(harvest) - pos(sow)) + '%';
+        bar.firstChild.style.width = H.growthPct(b) + '%';
+        var today = h('span', { class: 'gantt-today', 'aria-hidden': 'true' });
+        today.style.left = todayPct + '%';
+        return h('div', { class: 'gantt-row' },
+          h('span', { class: 'gantt-label' }, h('strong', { text: p.title }), h('small', { text: shortWeekday(dayKeyDate(b.harvestDate).toISOString()) })),
+          h('div', { class: 'gantt-track' }, bar, today));
+      }));
+    append(root, panel('Growing timeline', 'Each bar runs from sowing to harvest; the darker part has grown so far. The gold line is today.',
+      upcoming.length ? timeline : h('p', { class: 'empty', text: 'Nothing planned yet — add a batch below.' })));
+
+    /* ---- b. Upcoming batches with pre-orders and a demand signal ---- */
+    function promote(b) {
+      var p = M.byId('products', b.productId);
+      var id = M.nextId('CP');
+      S().campaigns.unshift({
+        id: id, productId: p.id, title: p.title + ' — Pre-order', language: 'en',
+        message: 'Pre-order the next harvest 🌱 Our ' + p.title + ' will be picked on ' + shortWeekday(dayKeyDate(b.harvestDate).toISOString()) +
+          ' and delivered the same day. Reserve yours by ' + cutoffText(H.cutoff(b)) + ' — only ' + H.left(b) + ' spots left. Reply STOP to opt out.',
+        audience: audienceFor(p.id).eligible, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+      });
+      commit('campaign.submitted', id, 'Pre-order promo drafted in Campaign Studio — needs admin approval before it sends.');
+    }
+    function recordHarvest(b) {
+      var p = M.byId('products', b.productId);
+      var raw = prompt('How many ' + p.title + ' did you actually harvest? (expected ' + b.expectedQty + ', ' + H.preordered(b) + ' already pre-ordered)', String(b.expectedQty));
+      if (raw === null) return;
+      var r = H.markHarvested(b.id, parseInt(raw, 10));
+      if (!r.ok) { toast(r.error); return; }
+      commit('harvest.harvested', b.id, p.title + ': ' + r.served + ' kept for pre-orders, ' + r.toStock + ' added to stock.' +
+        (r.shortfall ? ' Short by ' + r.shortfall + ' — contact the affected customers.' : ''));
+    }
+    function cancelBatch(b) {
+      var p = M.byId('products', b.productId);
+      var lines = H.lines(b.id);
+      if (!confirm('Cancel the ' + p.title + ' batch due ' + shortDate(dayKeyDate(b.harvestDate).toISOString()) + '?' +
+        (lines.length ? ' ' + lines.length + ' pre-order line(s) will need refunding in Orders.' : ''))) return;
+      H.cancel(b.id);
+      commit('harvest.cancelled', b.id, p.title + ' batch cancelled.' + (lines.length ? ' Refund ' + lines.length + ' pre-order line(s) in Orders.' : ''));
+    }
+
+    append(root, panel('Upcoming batches', 'Pre-orders reserve part of the expected yield before it is picked. The demand note is rule-based and only advises — it never changes prices or quantities.',
+      h('div', { class: 'harvest-table' }, table([
+        { label: 'Product', render: function (b) { var p = M.byId('products', b.productId); return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: b.id })); } },
+        { label: 'Harvest', render: function (b) {
+          return h('span', null, h('strong', { text: shortWeekday(dayKeyDate(b.harvestDate).toISOString()) }), h('br'),
+            h('small', { text: inDaysText(b.harvestDate) + ' · sown ' + shortDate(dayKeyDate(b.sowDate).toISOString()) }));
+        } },
+        { label: 'Stage', render: function (b) { return statusBadge(H.stage(b)); } },
+        { label: 'Expected', num: true, render: function (b) { return String(b.expectedQty); } },
+        { label: 'Pre-orders', render: function (b) {
+          var taken = H.preordered(b);
+          return h('div', { class: 'po-cell' }, fillBar(taken, b.preorderCap),
+            h('small', { text: taken + ' / ' + b.preorderCap + ' · ' + (H.isOpen(b) ? 'closes ' + cutoffText(H.cutoff(b)) : 'closed') }));
+        } },
+        { label: 'Demand', render: function (b) { var sg = H.signal(b); return h('div', { class: 'signal-cell' }, badge(sg.label, sg.tone), h('small', { text: sg.reason })); } },
+        { label: 'Actions', render: function (b) {
+          var acts = [];
+          if (H.isOpen(b)) acts.push(mini('Promote', function () { promote(b); }, { title: 'Draft a pre-order WhatsApp promo for approval' }));
+          acts.push(mini('Record harvest', function () { recordHarvest(b); }));
+          acts.push(mini('Cancel', function () { cancelBatch(b); }, { danger: true }));
+          return h('div', { class: 'actions' }, acts);
+        } }
+      ], upcoming, 'No upcoming batches.'))));
+
+    /* ---- c. Plan a new batch ---- */
+    var fresh = S().products.filter(function (p) { return p.meodGrown && !p.bagOffer; });
+    var productSel = h('select', { name: 'product' }, fresh.map(function (p) { return h('option', { value: p.id, text: p.title }); }));
+    var todayKey = M.clearance.dayKey(new Date());
+    var sowInput = h('input', { name: 'sow', type: 'date', value: todayKey });
+    var harvestInput = h('input', { name: 'harvest', type: 'date', min: todayKey });
+    var qtyInput = h('input', { name: 'qty', type: 'number', min: 1, step: 1, value: '50' });
+    var capInput = h('input', { name: 'cap', type: 'number', min: 0, step: 1 });
+    var priceInput = h('input', { name: 'price', type: 'number', min: 0, step: '0.01' });
+    var planHint = h('p', { class: 'callout green', 'aria-live': 'polite' });
+    var errorBox = h('p', { class: 'pf-error', 'aria-live': 'polite' });
+
+    function suggestHarvest() {
+      var p = M.byId('products', productSel.value);
+      var sow = sowInput.value ? dayKeyDate(sowInput.value) : new Date();
+      var grow = M.RULES.growDays[p.category] || 30;
+      harvestInput.value = M.clearance.dayKey(H.dayOnOrAfter(new Date(sow.getTime() + grow * 864e5)));
+    }
+    function refreshHint() {
+      var p = M.byId('products', productSel.value);
+      var wk = H.weeklySales(p.id);
+      var hk = harvestInput.value;
+      planHint.textContent = p.title + ' usually takes about ' + (M.RULES.growDays[p.category] || 30) + ' days to grow' +
+        (hk ? ', so it would be ready ' + shortWeekday(dayKeyDate(hk).toISOString()) : '') + '. ' +
+        (wk >= 1 ? 'Recent sales: about ' + Math.round(wk) + ' a week.' : 'Few regular sales in the last 4 weeks.') +
+        ' Pre-orders close the night before harvest.';
+    }
+    function applyDefaults() {
+      var p = M.byId('products', productSel.value);
+      priceInput.value = centsToDollars(p.priceCents);
+      capInput.value = String(Math.round((parseInt(qtyInput.value, 10) || 0) * M.RULES.preorderDefaultShare));
+      suggestHarvest();
+      refreshHint();
+    }
+    productSel.addEventListener('change', applyDefaults);
+    sowInput.addEventListener('change', function () { suggestHarvest(); refreshHint(); });
+    harvestInput.addEventListener('change', refreshHint);
+    qtyInput.addEventListener('input', function () { capInput.value = String(Math.round((parseInt(qtyInput.value, 10) || 0) * M.RULES.preorderDefaultShare)); });
+    if (fresh.length) applyDefaults();
+
+    var form = h('form', { class: 'form-grid harvest-form', novalidate: true },
+      h('label', null, 'Product', productSel),
+      h('label', null, 'Sow date', sowInput),
+      h('label', null, 'Harvest date', harvestInput),
+      h('label', null, 'Expected yield', qtyInput),
+      h('label', null, 'Pre-order spots', capInput),
+      h('label', null, 'Pre-order price (S$)', priceInput),
+      h('div', { style: 'grid-column:1/-1' }, errorBox),
+      h('div', { style: 'grid-column:1/-1' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Add batch' })));
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var data = {
+        productId: productSel.value, sowDate: sowInput.value, harvestDate: harvestInput.value,
+        expectedQty: parseInt(qtyInput.value, 10), preorderCap: parseInt(capInput.value, 10), preorderPriceCents: dollarsToCents(priceInput.value)
+      };
+      var r = H.create(data, session.email);
+      if (!r.ok) { errorBox.textContent = r.error; return; }
+      var p = M.byId('products', data.productId);
+      commit('harvest.planned', r.id, p.title + ' batch added — ' + data.preorderCap + ' spots open for pre-order.');
+    });
+    append(root, panel('Plan a new batch', 'The harvest date is suggested from typical growing time and snapped to a delivery day (Tue, Thu, Sat). Growing times are illustrative — MEOD to confirm.',
+      planHint, form));
+
+    /* ---- d. Pre-orders to pack, by harvest day ---- */
+    var byDay = {};
+    upcoming.forEach(function (b) {
+      H.lines(b.id).forEach(function (l) { (byDay[b.harvestDate] = byDay[b.harvestDate] || []).push({ batch: b, order: l.order, item: l.item }); });
+    });
+    var dayKeys = Object.keys(byDay).sort();
+    append(root, panel('Pre-orders to pack', 'Picked and packed on harvest morning, delivered the same day.',
+      dayKeys.length ? dayKeys.map(function (k) {
+        var rows = byDay[k];
+        var units = rows.reduce(function (s, r) { return s + r.item.qty; }, 0);
+        return h('div', { class: 'pack-day' },
+          h('h3', null, weekdayLongLabel(dayKeyDate(k)), h('small', { text: ' · ' + rows.length + ' line(s), ' + units + ' units' })),
+          table([
+            { label: 'Order', render: function (r) { return r.order.ref; } },
+            { label: 'Customer', render: function (r) { return customerLabel(r.order.customerId); } },
+            { label: 'Product', render: function (r) { return M.byId('products', r.batch.productId).title; } },
+            { label: 'Qty', num: true, render: function (r) { return String(r.item.qty); } },
+            { label: 'Payment', render: function (r) { return statusBadge(r.order.status); } }
+          ], rows));
+      }) : h('p', { class: 'empty', text: 'No pre-orders yet.' })));
+
+    /* ---- e. Recent harvests ---- */
+    var done = S().batches.filter(function (b) { return b.status === 'harvested'; })
+      .sort(function (a, b) { return a.harvestDate < b.harvestDate ? 1 : -1; }).slice(0, 8);
+    append(root, panel('Recent harvests', null, table([
+      { label: 'Product', render: function (b) { return M.byId('products', b.productId).title; } },
+      { label: 'Harvested', render: function (b) { return shortDate(b.harvestedAt || dayKeyDate(b.harvestDate).toISOString()); } },
+      { label: 'Expected', num: true, render: function (b) { return String(b.expectedQty); } },
+      { label: 'Actual', num: true, render: function (b) {
+        var diff = b.actualQty - b.expectedQty;
+        return h('span', null, String(b.actualQty), ' ', h('small', { class: diff < 0 ? 'bag-value-low' : 'bag-value-ok', text: (diff >= 0 ? '+' : '') + diff }));
+      } },
+      { label: 'Pre-ordered', num: true, render: function (b) { return String(H.preordered(b)); } }
+    ], done, 'No harvests recorded yet.')));
+  }
+
   function groupBuyAdminView(root) {
     var entries = M.ledger();
     function eventStats(ev) {
@@ -857,7 +1079,8 @@
     inventory: { label: 'Stock', tone: 'grey' },
     consent: { label: 'Privacy', tone: 'grey' },
     profile: { label: 'Privacy', tone: 'grey' },
-    clearance: { label: 'Buy to Clear', tone: 'amber' }
+    clearance: { label: 'Buy to Clear', tone: 'amber' },
+    harvest: { label: 'Harvest', tone: 'green' }
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
@@ -872,7 +1095,8 @@
     'user.disabled': 'Disabled a user', 'user.enabled': 'Enabled a user',
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
-    'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents'
+    'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
+    'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -1279,6 +1503,27 @@
       : 'We can\'t confirm stock right now — last sync ' + ago(p.stock.updatedAt) + '. Try again shortly.';
     var nutrients = String(p.nutrients || '').split('•').map(function (x) { return x.trim(); }).filter(Boolean);
 
+    // Next open harvest batch: lets customers reserve from it (handy when today's stock is sold out).
+    var nb = M.harvest.nextFor(p.id);
+    var harvestBox = null;
+    if (nb) {
+      var poKey = 'PO:' + nb.id;
+      var poLeft = M.harvest.left(nb) - (cart[poKey] || 0);
+      harvestBox = h('div', { class: 'pd-harvest' }, iconCircle(ICONS.leaf, 'soft'),
+        h('span', null,
+          h('strong', { text: 'Next harvest ' + shortWeekday(M.clearance.parseDayKey(nb.harvestDate).toISOString()) }),
+          h('small', { text: M.harvest.growthPct(nb) + '% grown · ' + M.harvest.left(nb) + ' pre-order spots left · order by ' + cutoffText(M.harvest.cutoff(nb)) +
+            (cart[poKey] ? ' · ' + cart[poKey] + ' reserved in your cart' : '') })),
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', disabled: poLeft <= 0, text: poLeft > 0 ? 'Pre-order · ' + money(nb.preorderPriceCents) : 'Full',
+          onclick: function () {
+            cart[poKey] = (cart[poKey] || 0) + 1;
+            saveCart();
+            if (opts.onCartChange) opts.onCartChange();
+            toast(p.title + ' pre-ordered from the ' + shortWeekday(M.clearance.parseDayKey(nb.harvestDate).toISOString()) + ' harvest.');
+            closeDialog();
+          } }));
+    }
+
     append(dlg,
       h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
       h('div', { class: 'pd-layout' },
@@ -1298,7 +1543,8 @@
           h('div', { class: 'pd-buy' },
             h('div', { class: 'qty', 'aria-label': 'Quantity' }, minus, qtyLabel, plus),
             addBtn),
-          inCart ? h('small', { class: 'pd-incart', text: inCart + ' already in your cart' }) : null)),
+          inCart ? h('small', { class: 'pd-incart', text: inCart + ' already in your cart' }) : null,
+          harvestBox)),
       h('div', { class: 'pd-extra' },
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.clock, 'soft'), h('span', null, h('strong', { text: 'Storage' }), h('small', { text: tips.store }))),
         h('div', { class: 'pd-tip' }, iconCircle(ICONS.leaf, 'soft'), h('span', null, h('strong', { text: 'How to enjoy' }), h('small', { text: tips.cook })))),
@@ -1347,6 +1593,13 @@
             bag: true, bagSizeKey: size.key, deliveryDay: bagSelection.dayKey, excludedCategory: bagSelection.excludedCategory || null
           };
         }
+        if (key.indexOf('PO:') === 0) {
+          var batch = M.byId('batches', key.slice(3));
+          var bp = batch && M.byId('products', batch.productId);
+          if (!bp) return null;
+          return { key: key, productId: bp.id, title: bp.title + ' (pre-order)', qty: cart[key], priceCents: batch.preorderPriceCents,
+            preorderBatchId: batch.id, harvestDate: batch.harvestDate };
+        }
         if (key.indexOf('CL:') === 0) {
           var listing = M.byId('clearance', key.slice(3));
           var p = listing && M.byId('products', listing.productId);
@@ -1365,9 +1618,16 @@
       drawGrid();
       drawCart();
       drawClearance();
+      drawPreorders();
     }
     // One cart line validation error, or null — checked again right before placing the order.
     function cartLineError(i) {
+      if (i.preorderBatchId) {
+        var b = M.byId('batches', i.preorderBatchId);
+        if (!b || !M.harvest.isOpen(b)) return i.title + ' is no longer open for pre-order.';
+        if (M.harvest.left(b) < i.qty) return 'Only ' + M.harvest.left(b) + ' pre-order spots left for ' + i.title.replace(' (pre-order)', '') + '.';
+        return null;
+      }
       if (i.bag) {
         if (!M.stockStatus(bagProduct).known) return 'Surprise Harvest Bag can\'t be confirmed right now — stock data is being refreshed.';
         if (M.clearance.bagsLeftForDay(i.deliveryDay) <= 0) return 'No bags left for that delivery day — pick another day in Buy to Clear.';
@@ -1403,7 +1663,7 @@
     stockToggle.addEventListener('change', function () { state.inStock = stockToggle.checked; drawGrid(); });
     var searchBox = h('label', { class: 'shop-search' }, iconCircle(ICONS.search, 'bare'), search);
 
-    var shopOpts = { onCartChange: function () { drawGrid(); drawCart(); } };
+    var shopOpts = { onCartChange: function () { drawGrid(); drawCart(); drawPreorders(); } };
     function drawGrid() {
       var list = S().products.filter(function (p) {
         if (p.bagOffer) return false;
@@ -1462,7 +1722,8 @@
           var p = M.byId('products', i.productId);
           return h('li', null,
             h('span', { class: 'cart-thumb' }, thumb(p)),
-            h('span', { class: 'cart-name' }, h('strong', { text: i.title }), h('small', { text: i.qty + ' × ' + money(i.priceCents) })),
+            h('span', { class: 'cart-name' }, h('strong', { text: i.title }), h('small', { text: i.qty + ' × ' + money(i.priceCents) +
+              (i.harvestDate ? ' · picked & delivered ' + shortWeekday(M.clearance.parseDayKey(i.harvestDate).toISOString()) : '') })),
             h('span', { class: 'cart-amt', text: money(i.qty * i.priceCents) }),
             h('button', { class: 'cart-remove', type: 'button', 'aria-label': 'Remove ' + i.title, onclick: function () { setQty(i.key, 0); } }, iconCircle(ICONS.x, 'bare')));
         })));
@@ -1502,16 +1763,18 @@
           // Re-check stock (and clearance / bag availability) at submit time: fail closed if anything changed.
           for (var i = 0; i < items.length; i++) {
             var err = cartLineError(items[i]);
-            if (err) { toast(err); drawGrid(); drawCart(); drawClearance(); return; }
+            if (err) { toast(err); drawGrid(); drawCart(); drawClearance(); drawPreorders(); return; }
           }
           items.forEach(function (i) {
             if (i.bag) return; // bag availability is tracked per delivery day, not as product stock
+            if (i.preorderBatchId) return; // reserves a spot in its batch (counted from orders), not stock
             if (i.clearanceListingId) { M.clearance.sell(i.clearanceListingId, i.qty); return; }
             M.byId('products', i.productId).stock.qty -= i.qty;
           });
           var id = M.nextId('O');
           var ref = '#MF' + (5000 + S().orders.length + 1);
           var order = Object.assign({ id: id, ref: ref, customerId: c.id, groupEventId: activeEv ? activeEv.id : null, status: 'pending_payment', items: items, refundedCents: 0, createdAt: new Date().toISOString(), source: 'portal' }, totals);
+          if (items.some(function (i) { return i.preorderBatchId; })) order.hasPreorder = true;
           var bagLine = items.filter(function (i) { return i.bag; })[0];
           if (bagLine) {
             order.bagSize = bagLine.bagSizeKey;
@@ -1636,12 +1899,57 @@
         bagCard, clearGrid);
     }
 
+    /* ---- Pre-order the next harvest: open batches, reserved before they're picked ---- */
+    var preorderBox = h('div');
+    function drawPreorders() {
+      preorderBox.textContent = '';
+      var open = M.harvest.open();
+      if (!open.length) return;
+      append(preorderBox,
+        h('div', { class: 'clearance-top-head' }, h('h2', { text: 'Pre-order the next harvest' }),
+          h('p', { class: 'hint', text: 'Still growing at our Kranji farm. Reserve now and it\'s picked on harvest morning and delivered the same day. Pre-orders help us grow only what gets eaten.' })),
+        h('div', { class: 'clearance-strip preorder-strip' }, open.map(function (b) {
+          var p = M.byId('products', b.productId);
+          var key = 'PO:' + b.id;
+          var q = cart[key] || 0;
+          var left = M.harvest.left(b);
+          var canAdd = q < left;
+          var harvestIso = M.clearance.parseDayKey(b.harvestDate).toISOString();
+          var grown = M.harvest.growthPct(b);
+          var growBar = h('span', { class: 'po-bar grow' }, h('span', { class: 'po-fill' }));
+          growBar.firstChild.style.width = grown + '%';
+          var control = q === 0
+            ? h('button', { class: 'btn btn-sm btn-forest shop-add', type: 'button', disabled: !canAdd, text: canAdd ? '+ Pre-order' : 'Full',
+                'aria-label': 'Pre-order ' + p.title, onclick: function () { setQty(key, 1); } })
+            : h('div', { class: 'qty clearance-qty' },
+                h('button', { type: 'button', 'aria-label': 'One less ' + p.title, text: '−', onclick: function () { setQty(key, q - 1); } }),
+                h('span', { text: String(q) }),
+                h('button', { type: 'button', 'aria-label': 'One more ' + p.title, disabled: !canAdd, text: '+', onclick: function () { setQty(key, q + 1); } }));
+          var card = h('article', { class: 'shop-item preorder-item clickable' + (q ? ' in-cart' : '') },
+            h('div', { class: 'shop-media' }, thumb(p), h('span', { class: 'badge b-green', text: 'Harvest ' + shortWeekday(harvestIso) })),
+            h('div', { class: 'shop-body' },
+              h('button', { type: 'button', class: 'shop-title', text: p.title, 'aria-haspopup': 'dialog', onclick: function () { openProduct(p, shopOpts); } }),
+              h('div', { class: 'po-line' }, h('small', { text: grown + '% grown · sown ' + shortDate(M.clearance.parseDayKey(b.sowDate).toISOString()) }), growBar),
+              h('div', { class: 'clearance-meta' },
+                h('span', { class: 'mini-chip', text: left + ' spots left' }),
+                h('span', { class: 'mini-chip', text: 'By ' + cutoffText(M.harvest.cutoff(b)) })),
+              h('div', { class: 'clearance-foot' },
+                h('div', { class: 'price-row' }, h('span', { class: 'shop-price', text: money(b.preorderPriceCents) })),
+                control)));
+          card.addEventListener('click', function (e) { if (!e.target.closest('button')) openProduct(p, shopOpts); });
+          return card;
+        })),
+        h('hr', { class: 'shop-divider' }));
+    }
+
     drawChips();
     drawGrid();
     drawCart();
     drawClearance();
+    drawPreorders();
     append(root, h('div', { class: 'shop-layout' },
       h('section', { class: 'panel shop-panel' },
+        preorderBox,
         clearanceBox,
         h('hr', { class: 'shop-divider' }),
         h('div', { class: 'shop-toolbar' }, searchBox, h('label', { class: 'toggle' }, stockToggle, h('span', { text: 'In stock only' }))),
@@ -1887,6 +2195,11 @@
               return h('span', { class: 'order-item bag-order-item' }, iconCircle(ICONS.bag, 'soft'),
                 h('span', null, h('span', { text: i.qty + '× ' + i.title }),
                   h('small', { text: shortWeekday(M.clearance.parseDayKey(o.deliveryDay)) + ' delivery' + (o.excludedCategory ? ' · No ' + M.CATEGORIES[o.excludedCategory].label : '') })));
+            }
+            if (i.harvestDate) {
+              return h('span', { class: 'order-item' }, p ? h('span', { class: 'cart-thumb' }, thumb(p)) : null,
+                h('span', null, h('span', { text: i.qty + '× ' + i.title }),
+                  h('small', { class: 'po-note', text: 'Picked & delivered ' + shortWeekday(M.clearance.parseDayKey(i.harvestDate).toISOString()) })));
             }
             return h('span', { class: 'order-item' }, p ? h('span', { class: 'cart-thumb' }, thumb(p)) : null, h('span', { text: i.qty + '× ' + i.title }));
           })),
@@ -2218,6 +2531,7 @@
       { id: 'orders', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'inbox', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
       { id: 'campaigns', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'harvest', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'clearance', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
       { id: 'groupbuy', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'customers', label: 'Customers', title: 'Customers', sub: 'Consent and order history.', render: customersView },

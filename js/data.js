@@ -49,6 +49,13 @@
     visitSessionsPerDay: 3,         // visit sessions the farm can host in one day (illustrative)
     radarTolerance: 0.1,            // Demand Radar: a gap within this share of demand counts as balanced
     promoLiftPer10: 0.2,            // Promotion simulator: each 10% off lifts sales by about 20% (illustrative)
+    preorderConvert: 0.3,           // Decision twin: share of extra supply pre-orders typically sell
+    // Quotation Copilot: kg per sold unit (bunch or pack), to convert buyers' kg requests. Illustrative.
+    kgPerUnit: { 'asian-greens': 0.25, lettuces: 0.2, fungi: 0.2, herbs: 0.05, 'farm-more': 0.2 },
+    // Learning-journey packages: price per guest, guests per guide, take-home bag. Illustrative.
+    visitPricePerPax: { 'School Visit': 1500, 'Farm Tour': 2000, 'Workshop': 3500 },
+    visitGuestsPerGuide: { school: 15, other: 20 },
+    visitBagCents: 800,
     visitMaxPax: 200,               // largest group the booking form accepts
     visitFundRate: 0.05,            // share of a visit group's orders paid back to the group's fund
     visitCodeDays: 7,               // a visit's farm-shop code stays open this long after the visit
@@ -890,6 +897,37 @@
           refundedCents: 0, createdAt: new Date(new Date(cp.createdAt).getTime() + 864e5).toISOString(), source: 'shopify-mock' }, priceOrder(reItems, false)));
       }
       s.migrations.pilotV1 = true;
+    }
+    if (!s.migrations.ledgerV1) {
+      // Decision ledger history: the seeded Sweet Basil price proposal, plus two past decisions
+      // with known outcomes, so the ledger shows the full loop (suggested → decided → result).
+      var dNow = Date.now();
+      var basilPP = (s.priceProposals || [])[0];
+      s.decisions = [];
+      if (basilPP) {
+        s.seq += 1;
+        s.decisions.push({ id: 'DL-' + s.seq, kind: 'price', ref: basilPP.id, feature: 'Price Advisor', title: 'Sweet Basil 20% off (S$3.00 → S$2.40)', recommendation: 'Discount',
+          inputs: [['Supply over 3 weeks', 'about 40 more than demand'], ['Trend', '−21% vs the 4 weeks before'], ['Unit cost', 'S$1.32'], ['Normal price', 'S$3.00']],
+          calc: ['Gap = supply − demand ≈ +40', 'Suggested 20% off → S$2.40', 'Margin Guard floor = S$1.82 → passes (S$1.08 margin a unit)'],
+          assumptions: ['Each 10% off lifts sales by about 20%.', 'Unit costs are illustrative.'], confidence: { level: 'medium', note: 'Weekly sales move around somewhat.' },
+          status: 'suggested', createdAt: basilPP.createdAt, createdBy: basilPP.createdBy, decidedBy: null, decidedAt: null, outcome: null });
+      }
+      s.seq += 1;
+      s.decisions.push({ id: 'DL-' + s.seq, kind: 'campaign', feature: 'Campaign Advisor', title: 'Mushroom Monday — shiitake promo to past buyers', recommendation: 'Draft promo',
+        inputs: [['Shiitake supply', 'surplus of about 18'], ['Opted-in past buyers', '2']], calc: ['Promote a surplus crop to people who bought mushrooms before'],
+        assumptions: ['Only opted-in customers are messaged.'], confidence: { level: 'medium', note: 'Small audience.' },
+        status: 'approved', createdAt: new Date(dNow - 3.2 * 864e5).toISOString(), createdBy: 'sales@meod.test', decidedBy: 'admin@meod.test', decidedAt: new Date(dNow - 3 * 864e5).toISOString(),
+        campaignId: 'CP-1001', outcome: { text: 'Sent to 2 people; 1 reorder within a day (2 × Shiitake).', at: new Date(dNow - 2 * 864e5).toISOString() } });
+      s.seq += 1;
+      s.decisions.push({ id: 'DL-' + s.seq, kind: 'price', feature: 'Price Advisor', title: 'Mesclun Mix 45% off', recommendation: 'Discount',
+        inputs: [['Unsold from harvest', '19'], ['Sell by', '2 days']], calc: ['45% off → S$3.25', 'Margin Guard floor S$3.54 → blocked'],
+        assumptions: ['Floor = 60% of normal price.'], confidence: { level: 'high', note: 'The floor is a fixed rule.' },
+        status: 'rejected', createdAt: new Date(dNow - 6 * 864e5).toISOString(), createdBy: 'sales@meod.test', decidedBy: 'Margin Guard', decidedAt: new Date(dNow - 6 * 864e5).toISOString(),
+        decisionNote: 'Blocked automatically; listed at the floor price instead', outcome: { text: 'Listed on Buy to Clear at the S$3.54 floor; offered to a trade buyer.', at: new Date(dNow - 5 * 864e5).toISOString() } });
+      s.quotes = []; s.commitments = [];
+      // Visits: which past organisers agreed to hear from MEOD again (for re-invites).
+      s.bookings.forEach(function (b) { if (b.consentFollowUp == null) b.consentFollowUp = /Sunrise|Acme/.test(b.org || ''); });
+      s.migrations.ledgerV1 = true;
     }
     if (!s.migrations.rewardsV1) {
       // Rewards store (vouchers + point redemptions). Points themselves are derived from orders.
@@ -1825,6 +1863,8 @@
     state.priceProposals.unshift({ id: id, kind: sug.kind, productId: sug.product.id, partnerId: sug.partner ? sug.partner.id : null, fromCents: sug.fullCents || sug.product.priceCents,
       toCents: sug.priceCents, qty: sug.qty || 10, untilKey: sug.untilKey || bagDayKey(new Date(Date.now() + 5 * 864e5)), reason: sug.reason, status: 'pending',
       createdBy: actor, createdAt: new Date().toISOString(), decidedBy: null });
+    ledgerLog(Object.assign({ kind: 'price', ref: id, feature: 'Price Advisor', recommendation: sug.kind === 'bundle' ? 'Bundle' : 'Discount',
+      title: sug.product.title + (sug.partner ? ' + ' + sug.partner.title + ' bundle' : '') + ' at ' + money(sug.priceCents) + (sug.pct ? ' (' + sug.pct + '% off)' : '') }, explainPrice(sug)), actor);
     return { ok: true, id: id };
   }
   // Approve or reject. An approved single-item discount becomes a Buy to Clear listing (re-checked
@@ -1833,7 +1873,7 @@
     var pp = (state.priceProposals || []).filter(function (x) { return x.id === id; })[0];
     if (!pp || pp.status !== 'pending') return { ok: false, error: 'That proposal is no longer pending.' };
     if (pp.createdBy === actor) return { ok: false, error: 'Someone other than the proposer must approve it.' };
-    if (!approve) { pp.status = 'rejected'; pp.decidedBy = actor; pp.decidedAt = new Date().toISOString(); return { ok: true, proposal: pp }; }
+    if (!approve) { pp.status = 'rejected'; pp.decidedBy = actor; pp.decidedAt = new Date().toISOString(); ledgerDecide(id, 'rejected', actor); return { ok: true, proposal: pp }; }
     if (pp.kind === 'discount') {
       var g = marginGuard(pp.productId, pp.toCents, pp.qty);
       if (!g.ok) return { ok: false, error: 'Margin Guard now blocks this price: ' + g.reasons.join('; ') + '.' };
@@ -1846,6 +1886,7 @@
       pp.qty = qty;
     }
     pp.status = 'approved'; pp.decidedBy = actor; pp.decidedAt = new Date().toISOString();
+    ledgerDecide(id, 'approved', actor);
     return { ok: true, proposal: pp };
   }
 
@@ -2235,6 +2276,7 @@
       var inWindow = b2bStore().orders.filter(function (o) { return o.status !== 'cancelled' && o.deliveryDay >= hk && o.deliveryDay < endKey; });
       var b2b = inWindow.filter(function (o) { return o.status === 'confirmed'; })
         .reduce(function (s, o) { return s + o.items.reduce(function (t, i) { return t + (i.productId === b.productId ? i.qty : 0); }, 0); }, 0);
+      b2b += commitmentUnits(b.productId, hk, endKey);
       // Plus standing orders not placed yet, from active accounts (delivered in the last 3 weeks).
       var recentCut = bagDayKey(new Date(Date.now() - 21 * 864e5));
       b2bStore().accounts.forEach(function (a) {
@@ -2489,6 +2531,381 @@
     return { ok: true, baseline: state.pilotBaselines[0] };
   }
 
+  /* ---------- Tyllage AI Decision Ledger ----------
+   * Every AI suggestion staff act on is recorded with its explanation: the data it used, the
+   * calculation, the assumptions, how confident it is (and why), who decided, and — later —
+   * what happened. Explanations are built from the same numbers the suggestion used, so they
+   * can always be traced. Follows the explainability and human-oversight principles of
+   * Singapore's Model AI Governance Framework: the AI recommends, a person decides.
+   */
+  function ledgerLog(e, actor) {
+    state.decisions = state.decisions || [];
+    var id = nextId('DL');
+    state.decisions.unshift(Object.assign({ id: id, status: 'suggested', createdAt: new Date().toISOString(), createdBy: actor || null, decidedBy: null, decidedAt: null, outcome: null }, e));
+    return id;
+  }
+  function ledgerFind(ref) { return (state.decisions || []).filter(function (d) { return d.id === ref || (d.ref && d.ref === ref); })[0] || null; }
+  function ledgerDecide(ref, status, actor, note) {
+    var d = ledgerFind(ref);
+    if (!d) return null;
+    d.status = status; d.decidedBy = actor; d.decidedAt = new Date().toISOString(); if (note) d.decisionNote = note;
+    return d;
+  }
+  function ledgerOutcome(ref, text) { var d = ledgerFind(ref); if (d) d.outcome = { text: text, at: new Date().toISOString() }; return d; }
+  // Outcomes that can be read off the records later (a listing's sales, a quote's status).
+  function ledgerRefresh() {
+    (state.decisions || []).forEach(function (d) {
+      if (d.kind === 'price' && d.status === 'approved') {
+        var pp = (state.priceProposals || []).filter(function (x) { return x.id === d.ref; })[0];
+        var l = pp && pp.listingId ? byId('clearance', pp.listingId) : null;
+        if (l) d.outcome = { text: l.qtySold + ' of ' + l.qty + ' sold at ' + money(l.clearancePriceCents) + (clearanceOpen(l) ? ' so far' : ''), at: new Date().toISOString() };
+      }
+      if (d.kind === 'campaign' && d.campaignId) {
+        var c = state.campaigns.filter(function (x) { return x.id === d.campaignId; })[0];
+        if (c) d.outcome = { text: c.status === 'sent' ? 'Sent to ' + (c.sentCount || c.audience.length) + ' people' : c.status === 'rejected' ? 'Rejected at approval' : 'Waiting for approval', at: new Date().toISOString() };
+        if (c && (c.status === 'sent' || c.status === 'approved') && d.status === 'suggested') { d.status = 'approved'; d.decidedBy = c.approvedBy; }
+        if (c && c.status === 'rejected' && d.status === 'suggested') { d.status = 'rejected'; d.decidedBy = c.approvedBy; }
+      }
+    });
+    return state.decisions || [];
+  }
+  function explainRadar(c) {
+    return {
+      inputs: [['Stock now', c.stock], ['Harvests due in ' + RADAR_WEEKS + ' weeks', c.harvest], ['Pre-orders + trade orders', c.confirmed], ['Usual weekly sales', c.weekly], ['Trend vs 4 weeks before', (c.trendPct > 0 ? '+' : '') + c.trendPct + '%']],
+      calc: ['Supply = stock ' + c.stock + ' + harvests ' + c.harvest + ' = ' + c.supply, 'Demand = confirmed ' + c.confirmed + ' + ' + c.weekly + ' a week × ' + RADAR_WEEKS + ' weeks = ' + c.demand,
+        'Gap = supply − demand = ' + (c.gap > 0 ? '+' : '') + c.gap + ' (balanced within ±' + Math.round(RULES.radarTolerance * 100) + '% of demand)'],
+      assumptions: ['Weekly sales are the average of the last 4 weeks of MEOD Fresh history.', 'Harvests come in at their expected quantity.'],
+      confidence: { level: c.confidence, note: c.confidence === 'high' ? 'Weekly sales have been steady.' : c.confidence === 'medium' ? 'Weekly sales move around somewhat.' : 'Sales vary a lot week to week, or there is little history.' }
+    };
+  }
+  function explainPrice(s) {
+    var g = s.guard, c = radarCrops().filter(function (r) { return r.product.id === s.product.id; })[0];
+    var base = c ? explainRadar(c) : { inputs: [], calc: [], assumptions: [], confidence: { level: 'medium', note: '' } };
+    return {
+      inputs: base.inputs.concat([['Normal price', money(s.fullCents || s.product.priceCents)], ['Unit cost', g.cost ? money(g.cost.totalCents) : '—']]),
+      calc: base.calc.concat(s.kind === 'hold' ? ['Short supply → keep the normal price, pause promotions.'] : [
+        'Suggested price ' + money(s.priceCents) + ' (' + s.pct + '% off)',
+        'Margin Guard floor = higher of cost + ' + Math.round(RULES.minMarginRate * 100) + '% margin and ' + Math.round(RULES.clearanceDefaultMinRate * 100) + '% of normal = ' + money(g.floorCents || 0),
+        g.ok ? 'Passes: ' + money(g.marginCents) + ' margin per unit (' + g.marginPct + '%)' : 'Blocked: ' + (g.reasons || []).join('; ')]),
+      assumptions: base.assumptions.concat(['Each 10% off lifts sales by about ' + Math.round(RULES.promoLiftPer10 * 100) + '%.', 'Unit costs are the ones in Settings (illustrative until MEOD enters real costs).']),
+      confidence: base.confidence
+    };
+  }
+
+  /* ---------- Tyllage Quotation Copilot + demand commitments ----------
+   * Paste a buyer's enquiry ("Can you supply 60kg of bok choy weekly at S$2.80/kg?"). It's read
+   * into product, quantity, unit, price, frequency and day; then 2–3 options are worked out
+   * against Margin Guard (price floor) and Harvest allocation (what's actually spare each
+   * week). An accepted quote becomes a recurring commitment that counts as confirmed demand in
+   * Demand Radar and Harvest allocation, so the uncovered gap shrinks straight away.
+   */
+  var WEEKDAYS_EN = { sunday: 0, sun: 0, monday: 1, mon: 1, tuesday: 2, tue: 2, tues: 2, wednesday: 3, wed: 3, thursday: 4, thu: 4, thur: 4, thurs: 4, friday: 5, fri: 5, saturday: 6, sat: 6 };
+  function quoteParse(text) {
+    var t = String(text || ''), low = t.toLowerCase();
+    var product = null;
+    state.products.filter(function (p) { return !p.bagOffer; }).forEach(function (p) {
+      [p.title, p.subtitle].concat(p.aliases || []).forEach(function (n) { if (n && !product && low.indexOf(String(n).toLowerCase()) > -1) product = p; });
+    });
+    var qm = low.match(/(\d+(?:\.\d+)?)\s*(kg|kilo|kilos|kilograms|g\b|grams|bunch(?:es)?|packs?|units?|boxes?|pcs)/);
+    var qty = qm ? Number(qm[1]) : null, unit = qm ? qm[2] : null;
+    if (unit) unit = /^k/.test(unit) ? 'kg' : /^g/.test(unit) ? 'g' : /^bunch/.test(unit) ? 'bunch' : /^pack|^box/.test(unit) ? 'pack' : 'unit';
+    if (unit === 'g') { qty = qty / 1000; unit = 'kg'; }
+    var pm = t.match(/s?\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/|per|a)?\s*(kg|kilo|bunch|pack|unit)?/i);
+    var price = pm ? Math.round(Number(pm[1]) * 100) : null, priceUnit = pm && pm[2] ? (/^k/i.test(pm[2]) ? 'kg' : pm[2].toLowerCase()) : unit;
+    var freq = /weekly|every week|each week|per week|a week|every (mon|tue|wed|thu|fri|sat|sun)/.test(low) ? 'weekly' : /fortnight|every two weeks|biweekly/.test(low) ? 'fortnightly' : /monthly|every month|per month/.test(low) ? 'monthly' : 'once';
+    var days = [];
+    Object.keys(WEEKDAYS_EN).forEach(function (k) { if (new RegExp('\\b' + k + '\\b').test(low) && days.indexOf(WEEKDAYS_EN[k]) < 0) days.push(WEEKDAYS_EN[k]); });
+    var weeksM = low.match(/(\d+)\s*(weeks|months)/);
+    var term = weeksM ? Number(weeksM[1]) * (weeksM[2] === 'months' ? 4 : 1) : (freq === 'once' ? 1 : 12);
+    var missing = [];
+    if (!product) missing.push('which vegetable'); if (!qty) missing.push('how much');
+    return { product: product, qty: qty, unit: unit || 'unit', price: price, priceUnit: priceUnit || unit || 'unit', freq: freq, days: days, termWeeks: term, missing: missing };
+  }
+  function kgPerUnit(p) { return (RULES.kgPerUnit && RULES.kgPerUnit[p.category]) || 0.25; }
+  // Spare units a week: unallocated harvest over the next 14 days (Harvest allocation), plus
+  // stock above two weeks of normal sales.
+  function spareWeekly(productId) {
+    var plan = allocationPlan(14).filter(function (x) { return x.product.id === productId; });
+    var unalloc = plan.reduce(function (s, x) { return s + x.unallocated; }, 0);
+    var c = radarCrops().filter(function (r) { return r.product.id === productId; })[0];
+    var spareStock = c ? Math.max(0, c.stock - Math.round(c.weekly * 2)) : 0;
+    return Math.max(0, Math.round((unalloc + spareStock) / 2));
+  }
+  function quoteOptions(q) {
+    var p = q.product;
+    if (!p) return [];
+    var kpu = kgPerUnit(p);
+    var unitsAsked = q.unit === 'kg' ? Math.round(q.qty / kpu) : Math.round(q.qty);
+    var perWeek = q.freq === 'monthly' ? unitsAsked / 4 : q.freq === 'fortnightly' ? unitsAsked / 2 : unitsAsked;
+    var spare = spareWeekly(p.id);
+    var cost = unitCost(p.id).totalCents - 22; // bulk crates: no retail packaging
+    var guard = function (unitPrice) { return marginGuard(p.id, unitPrice); };
+    var askedUnitPrice = q.price ? (q.priceUnit === 'kg' ? Math.round(q.price * kpu) : q.price) : null;
+    var trade = Math.round(p.priceCents * RULES.b2bPriceRate);
+    var floor = guard(1).floorCents;
+    var deliver = q.days.filter(function (d) { return [2, 4, 6].indexOf(d) > -1; });
+    var dayNote = q.days.length && deliver.length < q.days.length ? 'MEOD delivers Tue, Thu & Sat — offer the nearest of those.' : '';
+    function opt(key, title, unitsWk, unitPrice, why) {
+      var g = guard(unitPrice);
+      var weeklyRevenue = Math.round(unitsWk * unitPrice);
+      return { key: key, title: title, unitsWeek: Math.round(unitsWk), kgWeek: Math.round(unitsWk * kpu * 10) / 10, unitPrice: unitPrice, kgPrice: Math.round(unitPrice / kpu),
+        weeklyRevenue: weeklyRevenue, weeklyMargin: Math.round(unitsWk * (unitPrice - cost)), marginPct: unitPrice ? Math.round((unitPrice - cost) / unitPrice * 100) : 0,
+        coverage: perWeek ? Math.min(100, Math.round(Math.min(unitsWk, spare) / perWeek * 100)) : 0, supplyOk: unitsWk <= spare, guardOk: g.ok, guard: g, why: why };
+    }
+    var out = [];
+    var priceOk = askedUnitPrice != null && askedUnitPrice >= floor;
+    if (askedUnitPrice != null && priceOk && perWeek <= spare) out.push(opt('accept', 'Accept as asked', perWeek, askedUnitPrice, 'Their price clears Margin Guard and there\'s enough spare each week.'));
+    var counterPrice = Math.max(floor, askedUnitPrice != null && askedUnitPrice > trade ? askedUnitPrice : trade);
+    if (!priceOk || askedUnitPrice == null) out.push(opt('price', 'Counter on price', Math.min(perWeek, Math.max(spare, 0)) || perWeek, counterPrice,
+      askedUnitPrice == null ? 'No price given — quote the trade price.' : 'Their ' + money(q.price) + (q.priceUnit === 'kg' ? '/kg' : '') + ' is below MEOD\'s floor of ' + money(Math.round(floor / kpu)) + '/kg — counter at ' + money(Math.round(counterPrice / kpu)) + '/kg.'));
+    if (perWeek > spare) {
+      out.push(opt('volume', 'Counter on volume', spare, priceOk ? askedUnitPrice : counterPrice, 'Only about ' + spare + ' units (' + Math.round(spare * kpu * 10) / 10 + ' kg) are spare a week right now — offer that, and grow into the rest.'));
+      out.push(opt('phased', 'Start smaller, then grow', Math.round(spare * 0.8), counterPrice, 'Supply ' + Math.round(spare * 0.8 * kpu) + ' kg a week for 4 weeks while a bigger batch is sown, then step up to the full ' + q.qty + (q.unit === 'kg' ? ' kg' : '') + '.'));
+    } else if (out.length < 3) {
+      out.push(opt('longer', 'Lock in a longer term', perWeek, Math.max(floor, Math.round(counterPrice * 0.97)), 'Offer 3% off for a 12-week commitment — steady demand is worth more than the discount.'));
+    }
+    // When supply is the real limit, lead with the volume counter.
+    if (perWeek > spare) out.sort(function (a, b) { return (b.key === 'volume') - (a.key === 'volume'); });
+    return out.slice(0, 3).map(function (o) { o.dayNote = dayNote; o.unitsAsked = Math.round(perWeek); o.spare = spare; return o; });
+  }
+  function quoteCreate(q, option, buyer, actor) {
+    state.quotes = state.quotes || [];
+    var id = nextId('QT');
+    state.quotes.unshift({ id: id, productId: q.product.id, accountId: buyer.accountId || null, buyerName: buyer.name, text: q.text || '', freq: q.freq, days: q.days.length ? q.days : [2],
+      termWeeks: q.termWeeks, option: option, status: 'sent', createdBy: actor, createdAt: new Date().toISOString() });
+    ledgerLog({ kind: 'quote', ref: id, feature: 'Quotation Copilot', title: 'Quote ' + buyer.name + ': ' + option.kgWeek + ' kg/week ' + q.product.title + ' at ' + money(option.kgPrice) + '/kg',
+      inputs: [['Asked', q.qty + ' ' + q.unit + ' ' + q.freq + (q.price ? ' at ' + money(q.price) + '/' + q.priceUnit : '')], ['Spare a week', option.spare + ' units'], ['Margin Guard floor', money(option.guard.floorCents) + ' a unit'], ['Unit cost (bulk)', money(unitCost(q.product.id).totalCents - 22)]],
+      calc: ['Units a week = ' + option.unitsWeek + ' (' + option.kgWeek + ' kg at ' + kgPerUnit(q.product) + ' kg a unit)', 'Weekly revenue = ' + money(option.weeklyRevenue) + ', margin ' + money(option.weeklyMargin) + ' (' + option.marginPct + '%)', 'Covers ' + option.coverage + '% of what they asked'],
+      assumptions: ['Spare supply = unallocated harvest over 14 days plus stock above 2 weeks of sales, ÷ 2.', 'Weight per unit is illustrative (Settings).', 'Bulk crates skip retail packaging.'],
+      confidence: { level: option.supplyOk ? 'medium' : 'low', note: option.supplyOk ? 'Within spare supply for the next 2 weeks; later weeks depend on future sowing.' : 'More than is spare right now.' },
+      recommendation: option.title }, actor);
+    return { ok: true, id: id };
+  }
+  function quoteDecide(id, accepted, actor) {
+    var qt = (state.quotes || []).filter(function (x) { return x.id === id; })[0];
+    if (!qt || qt.status !== 'sent') return { ok: false, error: 'That quote isn\'t waiting for an answer.' };
+    qt.status = accepted ? 'accepted' : 'declined'; qt.decidedAt = new Date().toISOString();
+    ledgerDecide(id, accepted ? 'approved' : 'rejected', actor, accepted ? 'Buyer accepted' : 'Buyer declined');
+    if (!accepted) { ledgerOutcome(id, 'Buyer declined the quote.'); return { ok: true }; }
+    var before = radarCrops().filter(function (r) { return r.product.id === qt.productId; })[0];
+    state.commitments = state.commitments || [];
+    var cid = nextId('CM');
+    state.commitments.unshift({ id: cid, quoteId: id, productId: qt.productId, accountId: qt.accountId, buyerName: qt.buyerName, unitsPerDelivery: Math.max(1, Math.round(qt.option.unitsWeek / qt.days.length)),
+      days: qt.days, priceCents: qt.option.unitPrice, startKey: nextDeliveryKey(), weeks: qt.termWeeks, status: 'active', createdAt: new Date().toISOString(), by: actor });
+    var after = radarCrops().filter(function (r) { return r.product.id === qt.productId; })[0];
+    var pt = byId('products', qt.productId).title;
+    var txt = 'Commitment ' + cid + ' started. ' + pt + ': confirmed demand ' + before.confirmed + ' → ' + after.confirmed + ' over 3 weeks; ' +
+      (before.gap > 0 ? 'supply with no buyer ' + before.gap + ' → ' + Math.max(0, after.gap) : 'shortfall ' + (-before.gap) + ' → ' + (-after.gap) + ' (sow more to cover it)') + '.';
+    ledgerOutcome(id, txt);
+    return { ok: true, commitmentId: cid, before: before, after: after, text: txt };
+  }
+  function nextDeliveryKey() { var d = new Date(); d.setHours(0, 0, 0, 0); for (var i = 1; i < 8; i++) { var x = new Date(d.getTime() + i * 864e5); if ([2, 4, 6].indexOf(x.getDay()) > -1) return bagDayKey(x); } return bagDayKey(d); }
+  // Units a product's active commitments need between two day keys (inclusive start, exclusive end).
+  function commitmentUnits(productId, fromKey, toKey) {
+    return (state.commitments || []).filter(function (c) { return c.status === 'active' && c.productId === productId; }).reduce(function (s, c) {
+      var endKey = bagDayKey(new Date(parseDayKey(c.startKey).getTime() + c.weeks * 7 * 864e5));
+      var n = 0;
+      for (var d = parseDayKey(fromKey > c.startKey ? fromKey : c.startKey); bagDayKey(d) < toKey && bagDayKey(d) < endKey; d = new Date(d.getTime() + 864e5)) if (c.days.indexOf(d.getDay()) > -1) n += c.unitsPerDelivery;
+      return s + n;
+    }, 0);
+  }
+
+  /* ---------- Tyllage Farm Decision Twin ----------
+   * A model of MEOD's commercial position for one crop over the next 2 weeks — not the
+   * greenhouse. Change the harvest, demand, lose a trade buyer or a batch, and compare what
+   * each response (do nothing, pre-orders, bulk trade offer, promotion, process) would earn.
+   */
+  function twinSimulate(productId, sc) {
+    sc = sc || {};
+    var p = byId('products', productId);
+    var c = radarCrops().filter(function (r) { return r.product.id === productId; })[0];
+    if (!p || !c) return null;
+    var weeks = 2, share = weeks / RADAR_WEEKS;
+    var harvest = Math.round(c.harvest * share * (1 + (sc.harvestPct || 0) / 100));
+    var cancelled = 0;
+    if (sc.cancelBatch && c.batches[0]) { cancelled = Math.round(c.batches[0].expectedQty * (1 + (sc.harvestPct || 0) / 100)); harvest = Math.max(0, harvest - cancelled); }
+    var supply = c.stock + harvest;
+    var lostBuyer = 0, buyer = null;
+    if (sc.loseAccountId) {
+      buyer = b2bStore().accounts.filter(function (a) { return a.id === sc.loseAccountId; })[0];
+      var u = buyer && (buyer.usual || []).filter(function (x) { return x.productId === productId; })[0];
+      lostBuyer = u ? u.qty * (buyer.standingDays || []).length * weeks : 0;
+      lostBuyer += (state.commitments || []).filter(function (m) { return m.status === 'active' && m.accountId === sc.loseAccountId && m.productId === productId; }).reduce(function (s, m) { return s + m.unitsPerDelivery * m.days.length * weeks; }, 0);
+    }
+    // A lost buyer's volume comes off confirmed orders first, then off the sales history it was part of.
+    var confirmedBase = Math.round(c.confirmed * share);
+    var confirmed = Math.max(0, confirmedBase - lostBuyer);
+    var leftover = lostBuyer - (confirmedBase - confirmed);
+    var shop = Math.max(0, Math.round(c.weekly * weeks * (1 + (sc.demandPct || 0) / 100)) - leftover);
+    var demand = confirmed + shop;
+    var surplus = supply - demand;
+    var price = p.priceCents, cost = unitCost(productId).totalCents;
+    var sold = Math.min(supply, demand);
+    var base = { revenue: sold * price, margin: sold * (price - cost), unsold: Math.max(0, surplus) };
+    var opts = [];
+    var add = function (key, title, extraSold, extraRevenue, extraMargin, note) {
+      var unsold = Math.max(0, surplus - extraSold);
+      opts.push({ key: key, title: title, revenue: base.revenue + extraRevenue, margin: base.margin + extraMargin, unsold: unsold, wasteCents: unsold * price, note: note });
+    };
+    add('none', 'Do nothing', 0, 0, 0, surplus > 0 ? surplus + ' unit(s) left to rescue or compost.' : 'Everything sells.');
+    if (surplus > 0) {
+      var pre = Math.round(surplus * RULES.preorderConvert);
+      add('preorder', 'Open pre-orders', pre, pre * price, pre * (price - cost), 'About ' + Math.round(RULES.preorderConvert * 100) + '% of the extra sells ahead at full price.');
+      var bulk = Math.round(surplus * 0.6), trade = Math.round(price * RULES.b2bPriceRate);
+      add('bulk', 'Bulk trade offer', bulk, bulk * trade, bulk * (trade - cost + 22), bulk + ' to a trade buyer at ' + money(trade) + ' (no retail packaging).');
+      var promoPrice = Math.round(price * 0.85), lift = Math.min(surplus, Math.round(c.weekly * weeks * RULES.promoLiftPer10 * 1.5));
+      var g = marginGuard(productId, promoPrice);
+      add('promo', '15% off promotion', lift, lift * promoPrice - sold * 0, lift * (promoPrice - cost), g.ok ? lift + ' more sold at ' + money(promoPrice) + '.' : 'Blocked by Margin Guard.');
+      if (!g.ok) opts[opts.length - 1].blocked = true;
+      var proc = surplus;
+      add('process', 'Process into ' + (p.category === 'herbs' ? 'pesto' : 'vege powder'), proc, Math.round(proc * price * 0.5), Math.round(proc * price * 0.5) - proc * cost, 'Kitchen value about 50% of the fresh price.');
+    } else if (surplus < 0) {
+      opts[0].note = 'Short by ' + (-surplus) + ': ' + money(-surplus * price) + ' of sales missed.';
+      add('priority', 'Serve trade + pre-orders first', 0, 0, 0, 'Confirmed orders are covered; shop customers see "Notify me" instead.');
+      opts[1].unsold = 0; opts[1].wasteCents = 0;
+    }
+    var best = surplus < 0 ? opts[1] : opts.filter(function (o) { return !o.blocked; }).sort(function (a, b) { return b.margin - a.margin || a.unsold - b.unsold; })[0];
+    opts.forEach(function (o) { o.best = o === best; });
+    return { product: p, weeks: weeks, supply: supply, harvest: harvest, cancelled: cancelled, stock: c.stock, demand: demand, confirmed: confirmed, shop: shop, lostBuyer: lostBuyer, buyer: buyer,
+      surplus: surplus, options: opts, best: best,
+      assumptions: ['Next ' + weeks + ' weeks: stock plus ' + Math.round(share * 100) + '% of the harvests Demand Radar expects in 3 weeks.', 'Shop demand = ' + c.weekly + ' a week × ' + weeks + (sc.demandPct ? ' × ' + (100 + sc.demandPct) + '%' : '') + '.',
+        'Pre-orders sell ' + Math.round(RULES.preorderConvert * 100) + '% of the extra; a bulk buyer takes 60% at the trade price; a 15% promotion lifts sales by ' + Math.round(RULES.promoLiftPer10 * 150) + '%.', 'Margin = revenue − unit cost (Settings).'] };
+  }
+
+  /* ---------- Tyllage Ops Copilot ----------
+   * Answers staff questions in English or 中文 from the portal's own records: every answer is
+   * a table of real rows, a line on how it was worked out, and links to the pages behind it.
+   * Questions it can't answer from the data get "I can't answer that yet" — never a guess.
+   */
+  var COPILOT_INTENTS = [
+    { key: 'slow', re: /slow|selling slower|not selling|weak demand|卖得慢|滞销|卖不动|销量下降/ },
+    { key: 'unanswered', re: /unanswer|not replied|haven.?t (been )?(answered|replied)|no reply|pending enquir|open enquir|未回复|没回复|还没回|待回复|询问/ },
+    { key: 'short', re: /short|run(ning)? out|sold out|out of stock|not enough|缺货|不够|卖完|短缺/ },
+    { key: 'surplus', re: /surplus|too much|waste|at risk|sell.?by|expir|过剩|浪费|过期|太多/ },
+    { key: 'top', re: /best|top|fastest|popular|selling well|畅销|卖得最好|最受欢迎/ },
+    { key: 'approvals', re: /approv|waiting for|pending|待批准|审批|等批/ },
+    { key: 'sales', re: /revenue|sales this week|how much (did )?we sell|takings|销售额|营业额|卖了多少/ },
+    { key: 'harvest', re: /harvest|pick this week|收成|采收|收割/ },
+    { key: 'feedback', re: /complain|feedback|review|unhappy|投诉|反馈|评价/ },
+    { key: 'trade', re: /trade|b2b|restaurant|caf[eé]|wholesale|standing order|餐厅|商家|批发/ }
+  ];
+  function copilotProduct(q) {
+    var low = q.toLowerCase();
+    return state.products.filter(function (p) { return !p.bagOffer; }).filter(function (p) {
+      return [p.title, p.subtitle].concat(p.aliases || []).some(function (n) { return n && String(n).length > 1 && low.indexOf(String(n).toLowerCase()) > -1; });
+    })[0] || null;
+  }
+  function copilotAsk(question) {
+    var q = String(question || '').trim();
+    var zh = /[一-鿿]/.test(q);
+    var L = function (en, cn) { return zh ? cn : en; };
+    var intent = COPILOT_INTENTS.filter(function (i) { return i.re.test(q.toLowerCase()); })[0];
+    var prod = copilotProduct(q);
+    var crops = radarCrops();
+    var weekAgo = Date.now() - 7 * 864e5;
+    var res = { zh: zh, question: q };
+    if (!q) return Object.assign(res, { ok: false, answer: L('Ask me about sales, stock, harvests, enquiries or approvals.', '可以问我销售、库存、采收、询问或待批准事项。') });
+    if (prod && (!intent || intent.key === 'slow' || intent.key === 'top')) intent = { key: 'product' };
+    if (!intent) return Object.assign(res, { ok: false, answer: L('I can\'t answer that from the farm\'s records yet. Try: "Which vegetables are selling slower this week?", "What enquiries haven\'t been answered?", "What\'s at risk of going to waste?"', '我暂时无法用农场的记录回答这个问题。可以试试：「哪些蔬菜这周卖得慢？」「哪些询问还没回复？」「哪些可能浪费？」') });
+    var r = { ok: true, intent: intent.key, rows: [], cols: [], links: [] };
+    if (intent.key === 'slow') {
+      var slow = crops.filter(function (c) { return c.trendPct < 0 || c.status === 'surplus'; }).sort(function (a, b) { return a.trendPct - b.trendPct; }).slice(0, 6);
+      r.answer = slow.length ? L(slow.length + ' crops are selling slower than the previous 4 weeks or have more supply than demand. Slowest: ' + slow[0].product.title + ' (' + slow[0].trendPct + '%).', '有 ' + slow.length + ' 种蔬菜比前4周卖得慢或供过于求。最慢的是 ' + slow[0].product.title + '（' + slow[0].trendPct + '%）。') : L('Nothing is selling slower than usual.', '没有比平时卖得慢的蔬菜。');
+      r.cols = [L('Crop', '蔬菜'), L('Weekly sales', '每周销量'), L('Trend', '趋势'), L('Supply vs demand', '供需差')];
+      r.rows = slow.map(function (c) { return [c.product.title, String(c.weekly), (c.trendPct > 0 ? '+' : '') + c.trendPct + '%', (c.gap > 0 ? '+' : '') + c.gap]; });
+      r.how = L('Average of the last 4 weeks vs the 4 before (MEOD Fresh history), and Demand Radar\'s 3-week supply minus demand.', '比较最近4周与之前4周的平均销量（MEOD Fresh 记录），以及需求雷达未来3周的供需差。');
+      r.links = [['Demand Radar', '#radar'], ['Price Advisor', '#pricing']];
+    } else if (intent.key === 'unanswered') {
+      var tickets = state.tickets.filter(function (t) { return t.status === 'open'; });
+      var bookings = state.bookings.filter(function (b) { return b.status === 'new'; });
+      var asks = (state.lostDemand || []).filter(function (x) { return x.status === 'open' && x.source !== 'soldout'; });
+      r.answer = L((tickets.length + bookings.length) + ' enquiries are waiting for a reply: ' + tickets.length + ' support ticket(s) and ' + bookings.length + ' visit request(s). ' + asks.length + ' product request(s) we couldn\'t fill are still open.',
+        '有 ' + (tickets.length + bookings.length) + ' 个询问等待回复：' + tickets.length + ' 个客服工单，' + bookings.length + ' 个参观申请。另有 ' + asks.length + ' 个未能满足的产品需求仍未处理。');
+      r.cols = [L('Type', '类型'), L('Ref', '编号'), L('Summary', '内容'), L('Waiting', '等待')];
+      var agoTxt = function (iso) { var hrs = Math.round((Date.now() - new Date(iso)) / 36e5); return hrs < 24 ? hrs + 'h' : Math.round(hrs / 24) + 'd'; };
+      r.rows = tickets.map(function (t) { return [L('Ticket', '工单'), t.id, t.summary, agoTxt(t.createdAt)]; })
+        .concat(bookings.map(function (b) { return [L('Visit', '参观'), b.id, (b.org || b.name) + ' · ' + b.pax + ' pax', agoTxt(b.createdAt)]; }))
+        .concat(asks.slice(0, 4).map(function (x) { return [L('Request', '需求'), x.id, x.qty + ' × ' + x.cropName, agoTxt(x.at)]; }));
+      r.how = L('Open support tickets, new visit bookings and open lost-demand requests.', '未关闭的客服工单、新的参观预约和未处理的需求记录。');
+      r.links = [['Inbox', '#inbox'], ['Lost demand', '#lost']];
+    } else if (intent.key === 'short') {
+      var sh = crops.filter(function (c) { return c.status === 'short' || (c.stockKnown && c.stock === 0); });
+      r.answer = sh.length ? L(sh.length + ' crop(s) are short or sold out.', '有 ' + sh.length + ' 种蔬菜缺货或供不应求。') : L('Nothing is short right now.', '目前没有缺货。');
+      r.cols = [L('Crop', '蔬菜'), L('Stock', '库存'), L('Short by', '缺口'), L('Asked for, not sold', '未满足需求')];
+      r.rows = sh.map(function (c) { return [c.product.title, String(c.stock), c.gap < 0 ? String(-c.gap) : '—', String(lostUnitsFor(c.product.id))]; });
+      r.how = L('Demand Radar supply minus demand over 3 weeks, plus Lost demand requests in the last 28 days.', '需求雷达3周供需差，加上过去28天的未满足需求。');
+      r.links = [['Demand Radar', '#radar'], ['Lost demand', '#lost']];
+    } else if (intent.key === 'surplus') {
+      var risk = rescueBatches().filter(function (x) { return x.level !== 'ok'; });
+      var sur = crops.filter(function (c) { return c.status === 'surplus'; });
+      r.answer = L(risk.length + ' harvested batch(es) are near or past their sell-by date, and ' + sur.length + ' crop(s) have more supply than demand.', '有 ' + risk.length + ' 批收成接近或已过最佳售卖日期，' + sur.length + ' 种蔬菜供过于求。');
+      r.cols = [L('Crop', '蔬菜'), L('Why', '原因'), L('Units', '数量'), L('Value', '价值')];
+      r.rows = risk.map(function (x) { return [x.product.title, L('Sell by ', '售卖截止 ') + x.batch.sellBy, String(x.unsold), money(x.valueCents)]; })
+        .concat(sur.map(function (c) { return [c.product.title, L('Surplus', '过剩'), String(c.gap), money(c.gap * c.product.priceCents)]; }));
+      r.how = L('Harvest Rescue (unsold units vs shelf life) and Demand Radar surplus.', '收成救援（未售数量与保鲜期）和需求雷达过剩数据。');
+      r.links = [['Harvest Rescue', '#rescue'], ['Harvest allocation', '#allocation']];
+    } else if (intent.key === 'top') {
+      var top = crops.slice().sort(function (a, b) { return b.weekly - a.weekly; }).slice(0, 5);
+      r.answer = L('Best sellers by weekly units: ' + top.map(function (c) { return c.product.title; }).slice(0, 3).join(', ') + '.', '每周销量最高：' + top.map(function (c) { return c.product.title; }).slice(0, 3).join('、') + '。');
+      r.cols = [L('Crop', '蔬菜'), L('Weekly sales', '每周销量'), L('Trend', '趋势')];
+      r.rows = top.map(function (c) { return [c.product.title, String(c.weekly), (c.trendPct > 0 ? '+' : '') + c.trendPct + '%']; });
+      r.how = L('Average weekly units over the last 4 weeks.', '最近4周平均每周销量。');
+      r.links = [['Demand Radar', '#radar']];
+    } else if (intent.key === 'approvals') {
+      var pp = (state.priceProposals || []).filter(function (x) { return x.status === 'pending'; });
+      var cps = state.campaigns.filter(function (c) { return c.status === 'pending_approval'; });
+      var posts = (state.contentPlan || []).filter(function (c) { return c.status === 'pending'; });
+      r.answer = L((pp.length + cps.length + posts.length) + ' item(s) are waiting for approval.', '有 ' + (pp.length + cps.length + posts.length) + ' 项等待批准。');
+      r.cols = [L('Type', '类型'), L('Item', '事项'), L('By', '提交人')];
+      r.rows = pp.map(function (x) { return [L('Price', '价格'), byId('products', x.productId).title + ' ' + money(x.toCents), x.createdBy]; })
+        .concat(cps.map(function (c) { return [L('Campaign', '推广'), c.title, c.createdBy]; })).concat(posts.map(function (c) { return [L('Social post', '社媒'), c.title, c.createdBy]; }));
+      r.how = L('Pending price proposals, campaigns and social posts.', '待批准的价格、推广和社媒帖子。');
+      r.links = [['Price Advisor', '#pricing'], ['Campaigns', '#campaigns'], ['Content studio', '#content']];
+    } else if (intent.key === 'sales') {
+      var orders = state.orders.filter(function (o) { return new Date(o.createdAt).getTime() > weekAgo && o.status !== 'cancelled' && o.status !== 'refunded'; });
+      var tot = orders.reduce(function (s, o) { return s + (o.netCents || 0); }, 0);
+      var b2bWeek = b2bStore().orders.filter(function (o) { return o.status === 'delivered' && parseDayKey(o.deliveryDay).getTime() > weekAgo; });
+      var b2bTot = b2bWeek.reduce(function (s, o) { return s + o.totalCents; }, 0);
+      r.answer = L('Last 7 days: ' + money(tot + b2bTot) + ' — ' + money(tot) + ' from ' + orders.length + ' shop order(s) and ' + money(b2bTot) + ' from ' + b2bWeek.length + ' trade delivery(ies).', '过去7天：' + money(tot + b2bTot) + '——' + orders.length + ' 笔网店订单 ' + money(tot) + '，' + b2bWeek.length + ' 笔商家订单 ' + money(b2bTot) + '。');
+      r.cols = [L('Channel', '渠道'), L('Orders', '订单'), L('Net sales', '净销售额')];
+      r.rows = [[L('Shop (MEOD Fresh)', '网店'), String(orders.length), money(tot)], [L('Trade', '商家'), String(b2bWeek.length), money(b2bTot)]];
+      r.how = L('Shop orders (not cancelled or refunded) created in the last 7 days, plus trade orders delivered.', '过去7天的网店订单（不含取消或退款）加上已送达的商家订单。');
+      r.links = [['Orders', '#orders'], ['B2B buyers', '#b2b']];
+    } else if (intent.key === 'harvest') {
+      var soon = batchesUpcoming().filter(function (b) { return parseDayKey(b.harvestDate).getTime() < Date.now() + 7 * 864e5; });
+      r.answer = L(soon.length + ' batch(es) are due in the next 7 days.', '未来7天有 ' + soon.length + ' 批待采收。');
+      r.cols = [L('Crop', '蔬菜'), L('Harvest', '采收日'), L('Expected', '预计'), L('Pre-ordered', '已预订')];
+      r.rows = soon.map(function (b) { return [byId('products', b.productId).title, b.harvestDate, String(b.expectedQty), String(batchPreordered(b))]; });
+      r.how = L('Harvest Planner batches not yet harvested.', '采收计划中尚未采收的批次。');
+      r.links = [['Harvest Planner', '#harvest'], ['Harvest allocation', '#allocation']];
+    } else if (intent.key === 'feedback') {
+      var cl = feedbackClusters(14).filter(function (g) { return !g.resolved; });
+      r.answer = L(cl.filter(function (g) { return g.pattern; }).length + ' pattern(s) and ' + cl.filter(function (g) { return !g.pattern; }).length + ' one-off issue(s) in the last 14 days.', '过去14天有 ' + cl.filter(function (g) { return g.pattern; }).length + ' 个重复问题和 ' + cl.filter(function (g) { return !g.pattern; }).length + ' 个单独问题。');
+      r.cols = [L('Issue', '问题'), L('Reports', '次数'), L('Likely cause', '可能原因')];
+      r.rows = cl.map(function (g) { return [g.title, String(g.items.length), g.cause.split('. ')[0] + '.']; });
+      r.how = L('Feedback from ratings, chats, tickets and reviews, grouped by theme and batch.', '来自评分、聊天、工单和评价的反馈，按主题和批次归类。');
+      r.links = [['Feedback', '#feedback']];
+    } else if (intent.key === 'trade') {
+      var ins = b2bInsights();
+      r.answer = L(ins.length + ' trade account(s) or lead(s) need attention.', '有 ' + ins.length + ' 个商家客户或潜在客户需要跟进。');
+      r.cols = [L('Account', '客户'), L('What', '情况')];
+      r.rows = ins.map(function (x) { return [(x.account || x.lead).name, x.title]; });
+      r.how = L('B2B buyers: missing standing orders, declining or lapsed accounts, and leads due.', '商家买家：缺少的固定订单、下降或流失的客户，以及待跟进的潜在客户。');
+      r.links = [['B2B buyers', '#b2b'], ['Quotations', '#quotes']];
+    } else if (intent.key === 'product') {
+      var c = crops.filter(function (x) { return x.product.id === prod.id; })[0];
+      var st = reviewStats(prod.id);
+      r.answer = c ? L(prod.title + ': ' + c.stock + ' in stock, selling ' + c.weekly + ' a week (' + (c.trendPct > 0 ? '+' : '') + c.trendPct + '%), Demand Radar says ' + c.status + '.', prod.title + '：库存 ' + c.stock + '，每周卖 ' + c.weekly + '（' + (c.trendPct > 0 ? '+' : '') + c.trendPct + '%），需求雷达显示：' + ({ short: '缺货', surplus: '过剩', balanced: '平衡' }[c.status] || c.status) + '。')
+        : L(prod.title + ': ' + prod.stock.qty + ' in stock.', prod.title + '：库存 ' + prod.stock.qty + '。');
+      r.cols = [L('Measure', '指标'), L('Value', '数值')];
+      r.rows = [[L('Stock', '库存'), String(prod.stock.qty)], [L('Weekly sales', '每周销量'), c ? String(c.weekly) : '—'], [L('Next 3 weeks supply − demand', '未来3周供需差'), c ? (c.gap > 0 ? '+' : '') + c.gap : '—'],
+        [L('Asked for, not sold', '未满足需求'), String(lostUnitsFor(prod.id))], [L('Rating', '评分'), st.count ? st.avg + ' ★ (' + st.count + ')' : '—']];
+      r.how = L('Stock sync, Demand Radar, Lost demand and reviews for this product.', '该产品的库存、需求雷达、未满足需求和评价。');
+      r.links = [['Demand Radar', '#radar'], ['Stock', '#inventory']];
+    }
+    return Object.assign(res, r);
+  }
+
   /* ---------- Tyllage Harvest Rescue: sell-by deadlines per harvested batch ----------
    * Each recorded harvest gets a sell-by date (harvest day + the category's shelf days). Unsold
    * units are estimated first-in-first-out: what went into stock, minus regular sales of that
@@ -2713,6 +3130,8 @@
         if (o.status !== 'confirmed' || parseDayKey(o.deliveryDay).getTime() > until) return s;
         return s + o.items.reduce(function (t, i) { return t + (i.productId === p.id ? i.qty : 0); }, 0);
       }, 0);
+      // Recurring commitments from accepted quotes are confirmed demand as well.
+      b2bUnits += commitmentUnits(p.id, bagDayKey(new Date()), bagDayKey(new Date(until)));
       var confirmed = preordered + b2bUnits;
       // Weekly sales history (MEOD Fresh / Shopify mock): last 4 weeks set the pace, the 4
       // before give the trend, and week-to-week wobble sets the confidence.
@@ -3026,6 +3445,10 @@
     promo: { simulate: promoSimulate },
     importer: { KINDS: IMPORT_KINDS, parseCsv: parseCsv, preview: importPreview, apply: importApply, template: importTemplate },
     pilot: { metrics: pilotMetrics, recordBaseline: pilotRecordBaseline, DRAFT_MINUTES: DRAFT_MINUTES },
+    decisions: { log: ledgerLog, decide: ledgerDecide, outcome: ledgerOutcome, list: ledgerRefresh, find: ledgerFind, explainRadar: explainRadar, explainPrice: explainPrice },
+    quotes: { parse: quoteParse, options: quoteOptions, create: quoteCreate, decide: quoteDecide, spare: spareWeekly, kgPerUnit: kgPerUnit, commitmentUnits: commitmentUnits },
+    twin: { simulate: twinSimulate },
+    copilot: { ask: copilotAsk },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },
     rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },

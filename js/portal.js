@@ -376,6 +376,7 @@
           if (b.status !== 'new') return '—';
           return h('div', { class: 'actions stack' },
             mini('✨ Draft reply', function () { openReplyDialog(b); }),
+            mini(b.proposal ? '✓ Package ' + money(b.proposal.totalCents) : '✨ Package', function () { openVisitPackage(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
         } }
@@ -489,7 +490,7 @@
         return h('article', { class: 'ops-card' + (x.hold ? ' adv-hold' : x.source === 'rescue' || x.source === 'radar' || x.source === 'preorder' ? ' farm' : '') + (x.done ? ' adv-done' : '') },
           h('div', { class: 'ops-card-head' },
             x.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(x.product)) : iconCircle(ICONS.users, 'soft'),
-            h('span', { class: 'badge b-' + src[1], text: (x.hold ? '' : (todo.indexOf(x) + 1 || '✓') + ' · ') + src[0] })),
+            h('span', { class: 'why-wrap' }, whyBtn(x.title, function () { return explainAdvice(x); }), h('span', { class: 'badge b-' + src[1], text: (x.hold ? '' : (todo.indexOf(x) + 1 || '✓') + ' · ') + src[0] }))),
           h('strong', { class: 'ops-title', text: x.title }),
           h('p', { text: x.why }),
           h('div', { class: 'ops-foot' },
@@ -497,7 +498,14 @@
             x.hold ? h('a', { class: 'mini', href: '#radar', text: 'Demand Radar' })
               : x.done ? h('small', { class: 'pending-note', text: 'Drafted ' + ago(x.done.createdAt) })
               : !x.audience ? h('small', { class: 'hint', text: 'Nobody opted in yet' })
-              : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: x.label, onclick: x.run })));
+              : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: x.label, onclick: function () {
+                  var n0 = S().campaigns.length;
+                  x.run();
+                  if (S().campaigns.length > n0) {
+                    M.decisions.log(Object.assign({ kind: 'campaign', feature: 'Campaign Advisor', title: x.title, recommendation: x.label, campaignId: S().campaigns[0].id }, explainAdvice(x)), session.email);
+                    M.save();
+                  }
+                } })));
     })); };
     return h('div', null, grid(first),
       rest.length ? h('details', { class: 'adv-more' }, h('summary', { text: rest.length + ' more idea' + (rest.length === 1 ? '' : 's') + ' (lower priority or already drafted)' }), grid(rest)) : null);
@@ -1321,7 +1329,7 @@
           : !s.guard.ok ? h('a', { class: 'pa-act btn btn-sm btn-outline', href: '#rescue', text: 'See rescue options' })
           : h('button', { class: 'pa-act btn btn-sm btn-forest', type: 'button', text: 'Send for approval', onclick: function () { sendForApproval(s); } });
         return h('article', { class: 'ops-card pa-card' + (s.kind === 'hold' ? '' : s.guard.ok ? ' farm' : ' blocked') },
-          h('div', { class: 'ops-card-head' }, h('span', { class: 'rw-tier-cell' }, thumbMini(s.product), s.partner ? thumbMini(s.partner) : null), badge(k[0], k[1])),
+          h('div', { class: 'ops-card-head' }, h('span', { class: 'rw-tier-cell' }, thumbMini(s.product), s.partner ? thumbMini(s.partner) : null), h('span', { class: 'why-wrap' }, whyBtn(s.product.title + ' price', function () { return M.decisions.explainPrice(s); }, pendingFor ? pendingFor.id : null), badge(k[0], k[1]))),
           h('strong', { class: 'ops-title', text: s.kind === 'bundle' ? s.product.title + ' + ' + s.partner.title + ' bundle' : s.product.title }),
           priceLine,
           h('p', { text: s.reason }),
@@ -1781,7 +1789,7 @@
             h('span', { class: 'fb-tags' }, badge(r[0], r[1]), badge(g.verdict, g.product ? 'green' : 'grey'))),
           h('strong', { class: 'ops-title', text: (g.product ? g.product.title : g.name) + ' · ' + g.units + ' unit(s) asked for' }),
           h('p', { text: g.why }),
-          h('small', { class: 'ops-est', text: g.requests + ' request(s) from ' + g.peopleCount + ' ' + (g.peopleCount === 1 ? 'person' : 'people') + (g.valueCents ? ' · ' + money(g.valueCents) + ' at normal price' : '') }),
+          h('small', { class: 'ops-est', text: g.requests + ' request(s) from ' + g.peopleCount + ' ' + (g.peopleCount === 1 ? 'person' : 'people') + (g.valueCents ? ' · ' + money(g.valueCents) + ' at normal price' : '') + (substituteFor(g) ? ' · Offer instead: ' + substituteFor(g).title + ' (' + substituteFor(g).stock.qty + ' in stock)' : '') }),
           h('div', { class: 'ops-foot' }, h('small', { text: g.notifyCount ? g.notifyCount + ' want to be told' : '' }), act));
       })) : h('p', { class: 'empty', text: 'No unmet requests in the last 30 days.' })));
 
@@ -1855,7 +1863,7 @@
           h('div', { class: 'al-head' },
             h('span', { class: 'rw-tier-cell' }, thumbMini(x.product), h('span', null, h('strong', { text: x.product.title }), h('br'),
               h('small', { text: 'Harvest ' + shortWeekday(M.clearance.parseDayKey(x.batch.harvestDate).toISOString()) + ' · ' + x.supply + ' expected · covers ' + x.coverDays + ' days' }))),
-            status),
+            h('span', { class: 'why-wrap' }, whyBtn(x.product.title + ' allocation', function () { return explainAlloc(x); }), status)),
           bar,
           h('ul', { class: 'al-nums' }, ALLOC_SEGS.map(function (s) {
             return h('li', null, h('span', { class: 'al-dot ' + s[2] }), h('small', { text: s[1] }), h('strong', { text: String(x.wanted[s[0]]) + (x.wanted[s[0]] > x.alloc[s[0]] ? ' (' + x.alloc[s[0]] + ' covered)' : '') }));
@@ -2074,6 +2082,382 @@
     commit('lost.notify_me', p.id, 'We\'ll let you know when ' + p.title + ' is back.');
     if (after) after();
   }
+  /* ---------------- "Why?" panels + AI Decision Ledger ----------------
+   * Every AI suggestion can show its working: data used, calculation, assumptions, confidence,
+   * and — once acted on — who decided and what happened. The ledger lists all of them. */
+  var CONF_TONE = { high: 'green', medium: 'amber', low: 'red' };
+  function openWhy(title, ex, entry) {
+    document.querySelectorAll('.why-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog why-dialog', 'aria-labelledby': 'why-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var conf = ex.confidence || { level: 'medium', note: '' };
+    var sec = function (label, body) { return h('section', { class: 'why-sec' }, h('h3', { text: label }), body); };
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body why-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'why-title', text: 'Why: ' + title }), aiPill()),
+        h('p', { class: 'why-lead', text: 'Worked out from MEOD\'s own records with fixed rules — no hidden model. A person decides; the AI only recommends.' }),
+        sec('Data used', h('ul', { class: 'why-data' }, (ex.inputs || []).map(function (r) { return h('li', null, h('span', { text: r[0] }), h('strong', { text: String(r[1]) })); }))),
+        sec('Calculation', h('ol', { class: 'why-calc' }, (ex.calc || []).map(function (c) { return h('li', { text: c }); }))),
+        sec('Assumptions', h('ul', { class: 'why-list' }, (ex.assumptions || []).map(function (a) { return h('li', { text: a }); }))),
+        sec('Confidence', h('p', { class: 'why-conf' }, badge(conf.level.charAt(0).toUpperCase() + conf.level.slice(1), CONF_TONE[conf.level] || 'grey'), h('span', { text: ' ' + (conf.note || '') }))),
+        sec('Human decision', entry ? h('p', { text: entry.status === 'suggested' ? 'Waiting for a decision (suggested by ' + (entry.createdBy || 'AI') + ', ' + shortDate(entry.createdAt) + ').'
+            : (entry.status === 'approved' ? 'Approved' : 'Rejected') + ' by ' + (entry.decidedBy || '—') + (entry.decidedAt ? ', ' + shortDate(entry.decidedAt) : '') + (entry.decisionNote ? ' — ' + entry.decisionNote : '') + '.' })
+          : h('p', { class: 'hint', text: 'Not acted on yet. Nothing changes until a person approves it.' })),
+        entry ? sec('What happened', h('p', { text: entry.outcome ? entry.outcome.text : 'No result recorded yet.' })) : null),
+      h('div', { class: 'r-actions' },
+        h('a', { class: 'btn btn-sm btn-outline', href: '#ledger', onclick: closeDialog, text: 'Open the decision ledger' }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Close', onclick: closeDialog })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+  function whyBtn(title, makeEx, ref) {
+    return h('button', { type: 'button', class: 'why-btn', 'aria-label': 'Why this suggestion?', text: 'Why?', onclick: function (e) {
+      e.stopPropagation();
+      openWhy(title, makeEx(), ref ? M.decisions.find(ref) : null);
+    } });
+  }
+  function explainAdvice(x) {
+    var p = x.product, c = p ? M.radar.crops().filter(function (r) { return r.product.id === p.id; })[0] : null;
+    var base = c ? M.decisions.explainRadar(c) : { inputs: [], calc: [], assumptions: [], confidence: { level: 'medium', note: 'Based on member history.' } };
+    return { inputs: base.inputs.concat([['Opted-in people to message', x.audience]]),
+      calc: base.calc.concat(['Ranked ' + ADVISOR_SOURCE[x.source][0] + ': ' + x.why]),
+      assumptions: base.assumptions.concat(['Only people who opted in to messages are included.', 'Food at risk of waste ranks above sales nudges.']),
+      confidence: base.confidence };
+  }
+  function explainAlloc(x) {
+    return { inputs: [['Expected harvest', x.supply + ' on ' + x.batch.harvestDate], ['Trade orders (confirmed + standing)', x.wanted.b2b], ['Pre-orders', x.wanted.preorder], ['Group buys (est.)', x.wanted.group], ['Shop sales (est.)', x.wanted.shop], ['Lost demand', x.lost]],
+      calc: ['Covers ' + x.coverDays + ' days until the next harvest', 'Allocated in priority order: trade → pre-orders → group → shop', 'Unallocated = ' + x.supply + ' − ' + (x.wanted.b2b + x.wanted.preorder + x.wanted.group + x.wanted.shop) + ' = ' + (x.supply - x.wanted.b2b - x.wanted.preorder - x.wanted.group - x.wanted.shop)],
+      assumptions: ['Group and shop figures are 4-week averages, scaled to the cover period.', 'The harvest comes in at its expected quantity.'],
+      confidence: { level: x.weekly ? 'medium' : 'low', note: 'Trade and pre-order numbers are firm; group and shop numbers are estimates.' } };
+  }
+
+  function ledgerView(root) {
+    var list = M.decisions.list();
+    var decided = list.filter(function (d) { return d.status !== 'suggested'; });
+    var approved = list.filter(function (d) { return d.status === 'approved'; });
+    append(root, h('div', { class: 'kpis' },
+      kpi('AI suggestions acted on', String(list.length), 'each with its data, calculation and assumptions'),
+      kpi('Approved', String(approved.length), decided.length ? Math.round(approved.length / decided.length * 100) + '% of decided' : 'none decided yet'),
+      kpi('Waiting for a person', String(list.length - decided.length), 'nothing changes until someone decides'),
+      kpi('Outcomes tracked', String(list.filter(function (d) { return d.outcome; }).length), 'what happened afterwards')));
+    append(root, h('p', { class: 'callout green', text: 'How Tyllage keeps AI accountable: every suggestion is explainable (data, calculation, assumptions, confidence), a person approves before anything changes, and the result is recorded. These follow the explainability and human-oversight principles of Singapore\'s Model AI Governance Framework.' }));
+    append(root, panel('Decision ledger', 'Newest first. Open "Why?" to see exactly how a suggestion was worked out.', table([
+      { label: 'When', render: function (d) { return h('span', null, shortDate(d.createdAt), h('br'), h('small', { text: d.feature })); } },
+      { label: 'Suggestion', render: function (d) { return h('span', null, h('strong', { text: d.title }), d.recommendation ? [h('br'), h('small', { text: d.recommendation })] : null); } },
+      { label: 'Confidence', render: function (d) { var c = (d.confidence || {}).level || 'medium'; return badge(c.charAt(0).toUpperCase() + c.slice(1), CONF_TONE[c] || 'grey'); } },
+      { label: 'Decision', render: function (d) { return h('span', null, statusBadge(d.status === 'suggested' ? 'pending' : d.status), d.decidedBy ? [h('br'), h('small', { text: d.decidedBy })] : null); } },
+      { label: 'Outcome', render: function (d) { return d.outcome ? d.outcome.text : h('small', { class: 'hint', text: 'Not yet' }); } },
+      { label: '', render: function (d) { return h('button', { type: 'button', class: 'mini', text: 'Why?', onclick: function () { openWhy(d.title, d, d); } }); } }
+    ], list, 'No AI suggestions acted on yet.')));
+  }
+
+  /* ---------------- Quotation Copilot + commitments (staff + admin) ---------------- */
+  function quotesView(root) {
+    var st = quotesView.state || (quotesView.state = { text: 'Hi, can you supply 20kg of bayam weekly at S$6/kg? Delivery every Thursday for the next 3 months.', buyer: '', parsed: null });
+    var accounts = M.b2b.store().accounts;
+    var quotes = S().quotes || [], commits = (S().commitments || []).filter(function (c) { return c.status === 'active'; });
+    append(root, h('div', { class: 'kpis' },
+      kpi('Quotes waiting', String(quotes.filter(function (q) { return q.status === 'sent'; }).length), 'sent, no answer yet'),
+      kpi('Accepted', String(quotes.filter(function (q) { return q.status === 'accepted'; }).length), 'became recurring commitments'),
+      kpi('Committed a week', commits.reduce(function (s, c) { return s + c.unitsPerDelivery * c.days.length; }, 0) + ' units', commits.length + ' active commitment(s)'),
+      kpi('Committed revenue', money(commits.reduce(function (s, c) { return s + c.unitsPerDelivery * c.days.length * c.priceCents * c.weeks; }, 0)), 'over the agreed terms')));
+
+    var ta = h('textarea', { rows: 3, maxlength: 600, 'aria-label': 'Buyer\'s enquiry' }); ta.value = st.text;
+    var buyerSel = h('select', { 'aria-label': 'Buyer' }, h('option', { value: '', text: 'New buyer…' }), accounts.map(function (a) { return h('option', { value: a.id, text: a.name }); }));
+    buyerSel.value = st.buyer;
+    var newName = h('input', { placeholder: 'Buyer name', 'aria-label': 'New buyer name', maxlength: 60 }); newName.value = st.newName || '';
+    var newLabel = h('label', null, 'Buyer name', newName);
+    var syncBuyer = function () { newLabel.style.display = buyerSel.value ? 'none' : ''; };
+    buyerSel.addEventListener('change', syncBuyer); syncBuyer();
+    var out = h('div', { class: 'qt-out' });
+    function draw() {
+      out.textContent = '';
+      var q = M.quotes.parse(ta.value); q.text = ta.value;
+      if (q.missing.length) { append(out, h('p', { class: 'callout', text: 'I couldn\'t find ' + q.missing.join(' or ') + ' in the enquiry. Try something like "60kg of bok choy weekly at S$2.80/kg".' })); return; }
+      var kpu = M.quotes.kgPerUnit(q.product);
+      var opts = M.quotes.options(q);
+      var days = q.days.map(function (d) { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]; }).join(', ');
+      append(out,
+        h('div', { class: 'qt-read' }, aiPill(), h('strong', { text: 'I read this as:' }),
+          h('span', { class: 'im-chip ok', text: q.product.title }), h('span', { class: 'im-chip ok', text: q.qty + ' ' + q.unit + ' ' + q.freq }),
+          q.price ? h('span', { class: 'im-chip ok', text: money(q.price) + '/' + q.priceUnit }) : h('span', { class: 'im-chip bad', text: 'no price given' }),
+          days ? h('span', { class: 'im-chip ok', text: days }) : null, h('span', { class: 'im-chip ok', text: q.termWeeks + ' week(s)' })),
+        h('small', { class: 'hint', text: '1 unit of ' + q.product.title + ' ≈ ' + kpu + ' kg (Settings). Spare supply right now: about ' + (opts[0] ? opts[0].spare : 0) + ' units (' + Math.round((opts[0] ? opts[0].spare : 0) * kpu * 10) / 10 + ' kg) a week, from Harvest allocation.' + (opts[0] && opts[0].dayNote ? ' ' + opts[0].dayNote : '') }),
+        h('div', { class: 'sim-grid qt-grid' }, opts.map(function (o, i) {
+          return h('article', { class: 'sim-card' + (i === 0 ? ' best' : '') + (!o.guardOk ? ' blocked' : '') },
+            h('div', { class: 'sim-head' }, h('strong', { text: o.title }), i === 0 ? badge('Recommended', 'green') : h('span')),
+            h('div', { class: 'sim-price' }, h('strong', { text: money(o.kgPrice) + '/kg' }), h('small', { text: money(o.unitPrice) + ' a unit' })),
+            h('ul', { class: 'sim-nums' },
+              h('li', null, h('small', { text: 'Per week' }), h('strong', { text: o.kgWeek + ' kg' })),
+              h('li', null, h('small', { text: 'Covers' }), h('strong', { text: o.coverage + '% of ask' })),
+              h('li', null, h('small', { text: 'Revenue / week' }), h('strong', { text: money(o.weeklyRevenue) })),
+              h('li', { class: 'sim-margin' }, h('small', { text: 'Margin / week' }), h('strong', { text: money(o.weeklyMargin) + ' (' + o.marginPct + '%)' }))),
+            h('div', { class: 'qt-checks' },
+              h('ul', { class: 'cs-checks' }, h('li', { class: o.guardOk ? 'ok' : 'bad', text: (o.guardOk ? '✓' : '✗') + ' Margin Guard' }), h('li', { class: o.supplyOk ? 'ok' : 'warn', text: (o.supplyOk ? '✓ Supply covered' : '! More than is spare') }))),
+            h('small', { class: 'sim-note', text: o.why }),
+            h('button', { class: 'pa-act btn btn-sm ' + (i === 0 ? 'btn-forest' : 'btn-outline'), type: 'button', disabled: !o.guardOk, text: 'Draft this quote', onclick: function () { openQuoteDraft(q, o); } }));
+        })));
+    }
+    function openQuoteDraft(q, o) {
+      var acc = accounts.filter(function (a) { return a.id === buyerSel.value; })[0];
+      var name = acc ? acc.name : (newName.value.trim() || 'New buyer');
+      document.querySelectorAll('.qt-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+      var body = h('textarea', { rows: 11, 'aria-label': 'Quote' });
+      var first = acc ? firstName(acc.contact) : 'there';
+      body.value = 'Hi ' + first + ',\n\nThanks for your enquiry about ' + q.product.title + '. Here\'s what we can offer:\n\n' +
+        '• ' + o.kgWeek + ' kg a week' + (o.coverage < 100 ? ' (to start — we can grow into the full ' + q.qty + ' ' + q.unit + ')' : '') + '\n' +
+        '• ' + money(o.kgPrice) + ' per kg, delivered ' + (q.days.filter(function (d) { return [2, 4, 6].indexOf(d) > -1; }).length ? q.days.map(function (d) { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]; }).join(' & ') : 'Tue, Thu or Sat') + '\n' +
+        '• Harvested the same morning in Kranji, pesticide-free\n• ' + q.termWeeks + '-week agreement, payment Net 14\n\nShall we put it in place from next week?\n\n— MEOD Farm (trade sales)';
+      var dlg = h('dialog', { class: 'receipt-dialog reply-dialog qt-dialog', 'aria-labelledby': 'qt-title' });
+      function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+      append(dlg,
+        h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+        h('div', { class: 'rd-body' },
+          h('div', { class: 'rd-head' }, h('h2', { id: 'qt-title', text: 'Quote for ' + name }), aiPill(), h('small', { class: 'ai-note', text: 'You review and send' })),
+          h('div', { class: 'rd-form' }, h('label', null, 'Message', body))),
+        h('div', { class: 'r-actions' },
+          h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+          h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send quote (simulated)', onclick: function () {
+            var r = M.quotes.create(q, o, { accountId: acc ? acc.id : null, name: name }, session.email);
+            closeDialog();
+            commit('quote.sent', r.id, 'Quote ' + r.id + ' sent to ' + name + ' (simulated).');
+          } })));
+      dlg.addEventListener('close', function () { dlg.remove(); });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    }
+    ta.addEventListener('input', function () { st.text = ta.value; draw(); });
+    buyerSel.addEventListener('change', function () { st.buyer = buyerSel.value; });
+    newName.addEventListener('input', function () { st.newName = newName.value; });
+    draw();
+    append(root, panel(aiTitle('Quotation Copilot'), 'Paste a buyer\'s message. It\'s read into product, quantity, price and days, then checked against Margin Guard and what\'s actually spare each week (Harvest allocation).',
+      h('div', { class: 'form-grid qt-form' }, h('label', { class: 'qt-text' }, 'Buyer\'s enquiry', ta), h('label', null, 'Buyer', buyerSel), newLabel),
+      out));
+
+    append(root, panel('Quotes sent', 'When the buyer answers, record it. An accepted quote becomes a recurring commitment that Demand Radar and Harvest allocation count as confirmed demand.', table([
+      { label: 'Quote', render: function (q) { var p = M.byId('products', q.productId); return h('span', null, h('strong', { text: q.id + ' · ' + q.buyerName }), h('br'), h('small', { text: q.option.kgWeek + ' kg/week ' + p.title + ' at ' + money(q.option.kgPrice) + '/kg · ' + q.termWeeks + ' weeks' })); } },
+      { label: 'Option', render: function (q) { return q.option.title; } },
+      { label: 'Status', render: function (q) { return statusBadge(q.status === 'sent' ? 'pending' : q.status === 'accepted' ? 'approved' : 'rejected'); } },
+      { label: 'Actions', render: function (q) {
+        if (q.status !== 'sent') return h('span', { class: 'nowrap' }, h('button', { type: 'button', class: 'mini', text: 'Why?', onclick: function () { var d = M.decisions.find(q.id); if (d) openWhy(d.title, d, d); } }));
+        return h('div', { class: 'actions stack' },
+          mini('Buyer accepted', function () { var r = M.quotes.decide(q.id, true, session.email); if (!r.ok) { toast(r.error); return; } commit('quote.accepted', q.id, r.text); }),
+          mini('Declined', function () { var r = M.quotes.decide(q.id, false, session.email); if (!r.ok) { toast(r.error); return; } commit('quote.declined', q.id, 'Quote marked as declined.'); }, { danger: true }),
+          mini('Why?', function () { var d = M.decisions.find(q.id); if (d) openWhy(d.title, d, d); }));
+      } }
+    ], quotes, 'No quotes yet — paste an enquiry above.')));
+
+    append(root, panel('Recurring commitments', 'Confirmed weekly volumes from accepted quotes. They\'re included in Demand Radar\'s confirmed demand and in Harvest allocation\'s trade orders.', table([
+      { label: 'Buyer', render: function (c) { return h('strong', { text: c.buyerName }); } },
+      { label: 'Product', render: function (c) { return M.byId('products', c.productId).title; } },
+      { label: 'Per delivery', num: true, render: function (c) { return c.unitsPerDelivery + ' units (' + Math.round(c.unitsPerDelivery * M.quotes.kgPerUnit(M.byId('products', c.productId)) * 10) / 10 + ' kg)'; } },
+      { label: 'Days', render: function (c) { return c.days.map(function (d) { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]; }).join(', '); } },
+      { label: 'From', render: function (c) { return shortDate(M.clearance.parseDayKey(c.startKey).toISOString()) + ' · ' + c.weeks + ' wks'; } },
+      { label: 'Price', num: true, render: function (c) { return money(c.priceCents) + '/unit'; } }
+    ], commits, 'No commitments yet — they appear here when a buyer accepts a quote.')));
+  }
+
+  /* ---------------- Farm Decision Twin (staff + admin) ----------------
+   * A what-if model of the next 2 weeks for one crop. Change the harvest or demand, lose a
+   * trade buyer or a batch, and compare responses side by side — numbers update as you move. */
+  function twinView(root) {
+    var crops = M.radar.crops();
+    var st = twinView.state || (twinView.state = { productId: (crops.filter(function (c) { return c.status === 'surplus'; })[0] || crops[0]).product.id, harvestPct: 0, demandPct: 0, lose: '', cancel: false });
+    var sel = h('select', { 'aria-label': 'Crop' }, crops.map(function (c) { return h('option', { value: c.product.id, text: c.product.title }); })); sel.value = st.productId;
+    var mkRange = function (min, max, val, label) { var r = h('input', { type: 'range', min: min, max: max, step: 5, 'aria-label': label }); r.value = String(val); return r; };
+    var hr = mkRange(-60, 100, st.harvestPct, 'Harvest change'), dr = mkRange(-50, 50, st.demandPct, 'Demand change');
+    var hrOut = h('strong'), drOut = h('strong');
+    var lose = h('select', { 'aria-label': 'Lose a trade buyer' }, h('option', { value: '', text: 'No — keep all buyers' }), M.b2b.store().accounts.map(function (a) { return h('option', { value: a.id, text: a.name }); })); lose.value = st.lose;
+    var cancel = h('input', { type: 'checkbox' }); cancel.checked = st.cancel;
+    var out = h('div', { class: 'tw-out', 'aria-live': 'polite' });
+    function draw() {
+      st.productId = sel.value; st.harvestPct = Number(hr.value); st.demandPct = Number(dr.value); st.lose = lose.value; st.cancel = cancel.checked;
+      hrOut.textContent = (st.harvestPct > 0 ? '+' : '') + st.harvestPct + '%'; drOut.textContent = (st.demandPct > 0 ? '+' : '') + st.demandPct + '%';
+      var r = M.twin.simulate(st.productId, { harvestPct: st.harvestPct, demandPct: st.demandPct, loseAccountId: st.lose || null, cancelBatch: st.cancel });
+      out.textContent = '';
+      if (!r) return;
+      var maxM = Math.max.apply(null, r.options.map(function (o) { return Math.abs(o.margin); }).concat([1]));
+      append(out,
+        h('div', { class: 'kpis tw-kpis' },
+          kpi('Supply · 2 weeks', String(r.supply), r.stock + ' stock + ' + r.harvest + ' harvest' + (r.cancelled ? ' (' + r.cancelled + ' lost)' : '')),
+          kpi('Demand · 2 weeks', String(r.demand), r.confirmed + ' confirmed + ' + r.shop + ' shop' + (r.lostBuyer ? ' · −' + r.lostBuyer + ' from ' + r.buyer.name.replace(/\s*\(demo\)/, '') : '')),
+          kpi(r.surplus >= 0 ? 'Surplus' : 'Short', String(Math.abs(r.surplus)), r.surplus >= 0 ? money(r.surplus * r.product.priceCents) + ' at risk' : money(-r.surplus * r.product.priceCents) + ' of sales missed'),
+          kpi('Best response', r.best ? r.best.title : '—', r.best ? money(r.best.margin) + ' margin' : '')),
+        h('div', { class: 'tw-opts' }, r.options.map(function (o) {
+          var bar = h('span', { class: 'sim-bar' + (o.margin < 0 ? ' neg' : '') }, h('span')); bar.firstChild.style.width = Math.round(Math.abs(o.margin) / maxM * 100) + '%';
+          return h('article', { class: 'tw-opt' + (o.best ? ' best' : '') + (o.blocked ? ' blocked' : '') },
+            h('div', { class: 'sim-head' }, h('strong', { text: o.title }), o.best ? badge('Best', 'green') : o.blocked ? badge('Blocked', 'red') : h('span')),
+            h('ul', { class: 'sim-nums' },
+              h('li', null, h('small', { text: 'Revenue' }), h('strong', { text: money(o.revenue) })),
+              h('li', { class: 'sim-margin' }, h('small', { text: 'Margin' }), h('strong', { text: money(o.margin) })),
+              h('li', { class: o.unsold ? 'sim-left' : '' }, h('small', { text: 'Left unsold' }), h('strong', { text: String(o.unsold) })),
+              h('li', null, h('small', { text: 'Waste value' }), h('strong', { text: money(o.wasteCents) }))),
+            bar, h('small', { class: 'sim-note', text: o.note }));
+        })),
+        h('details', { class: 'sim-assume' }, h('summary', { text: 'Assumptions behind these numbers' }), h('ul', null, r.assumptions.map(function (a) { return h('li', { text: a }); }))));
+    }
+    var presets = [['Demand drops 20%', { demandPct: -20 }], ['Bumper harvest +50%', { harvestPct: 50 }], ['Batch fails', { cancel: true }], ['Lose biggest buyer', { lose: true }], ['Reset', {}]];
+    var presetBar = h('div', { class: 'tw-presets' }, h('small', { text: 'Stress tests:' }), presets.map(function (pr) {
+      return h('button', { type: 'button', class: 'chip', text: pr[0], onclick: function () {
+        var v = pr[1];
+        hr.value = String(v.harvestPct || 0); dr.value = String(v.demandPct || 0); cancel.checked = !!v.cancel;
+        if (v.lose) {
+          var big = M.b2b.store().accounts.map(function (a) { var u = (a.usual || []).filter(function (x) { return x.productId === sel.value; })[0]; return { a: a, n: u ? u.qty * (a.standingDays || []).length : 0 }; }).sort(function (a, b) { return b.n - a.n; })[0];
+          if (!big || !big.n) { toast('No trade buyer takes ' + M.byId('products', sel.value).title + ' — try a crop like Xiao Bai Cai or Kangkong.'); return; }
+          lose.value = big.a.id;
+        } else lose.value = '';
+        draw();
+      } });
+    }));
+    [sel, lose, cancel].forEach(function (el) { el.addEventListener('change', draw); });
+    [hr, dr].forEach(function (el) { el.addEventListener('input', draw); });
+    draw();
+    append(root, panel(aiTitle('Farm Decision Twin'), 'A model of the next 2 weeks for one crop — MEOD\'s orders, harvests and buyers, not the greenhouse. Move the sliders or run a stress test, and compare what each response would earn.',
+      h('div', { class: 'tw-controls' },
+        h('label', null, 'Crop', sel),
+        h('label', { class: 'tw-range' }, h('span', null, 'Harvest ', hrOut), hr),
+        h('label', { class: 'tw-range' }, h('span', null, 'Demand ', drOut), dr),
+        h('label', null, 'Lose a trade buyer', lose),
+        h('label', { class: 'toggle tw-cancel' }, cancel, h('span', { text: 'Next batch fails' }))),
+      presetBar, out));
+  }
+
+  /* ---------------- Ask Tyllage: Ops Copilot (staff + admin) ----------------
+   * Questions in English or 中文, typed or spoken. Answers are tables of real records, with how
+   * they were worked out and links to the pages behind them — or "I can't answer that yet". */
+  var COPILOT_EXAMPLES = ['Which vegetables are selling slower this week?', 'What enquiries haven\'t been answered?', 'What\'s at risk of going to waste?', 'What is waiting for approval?', '哪些询问还没回复？', '哪些蔬菜卖得慢？', 'How is Kai Lan doing?'];
+  function copilotView(root) {
+    var st = copilotView.state || (copilotView.state = { history: [] });
+    var input = h('input', { type: 'search', class: 'user-search ai-ask', placeholder: 'Ask about sales, stock, harvests, enquiries… (English or 中文)', 'aria-label': 'Ask Tyllage', maxlength: 200 });
+    var lang = h('select', { 'aria-label': 'Voice language' }, h('option', { value: 'en-SG', text: 'English' }), h('option', { value: 'zh-CN', text: '中文' }));
+    var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var mic = h('button', { type: 'button', class: 'btn btn-sm btn-outline cp-mic', 'aria-label': 'Ask by voice', text: '🎤 Speak', disabled: !Rec, title: Rec ? 'Ask by voice' : 'Voice needs Chrome or Edge' });
+    var list = h('div', { class: 'cp-list', 'aria-live': 'polite' });
+    function ask(q) {
+      if (!String(q).trim()) return;
+      st.history.unshift({ q: q, r: M.copilot.ask(q), at: new Date().toISOString() });
+      st.history = st.history.slice(0, 8);
+      input.value = '';
+      drawList();
+    }
+    function drawList() {
+      list.textContent = '';
+      if (!st.history.length) { append(list, h('p', { class: 'hint', text: 'Try one of the examples above, or press 🎤 and ask out loud.' })); return; }
+      st.history.forEach(function (x, i) {
+        var r = x.r;
+        append(list, h('article', { class: 'cp-item' + (i === 0 ? ' latest' : '') },
+          h('div', { class: 'cp-q' }, iconCircle(ICONS.chat, 'soft'), h('strong', { text: x.q })),
+          h('div', { class: 'cp-a' + (r.ok ? '' : ' cant') },
+            h('div', { class: 'rw-head' }, h('strong', { text: r.zh ? 'Tyllage 回答' : 'Tyllage' }), aiPill()),
+            h('p', { text: r.answer }),
+            r.ok && r.rows.length ? h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, h('tr', null, r.cols.map(function (c) { return h('th', { text: c }); }))),
+              h('tbody', null, r.rows.map(function (row) { return h('tr', null, row.map(function (c, ci) { return h('td', { 'data-label': r.cols[ci], text: c }); })); })))) : null,
+            r.ok ? h('small', { class: 'cp-how', text: (r.zh ? '计算方法：' : 'How I worked this out: ') + r.how }) : null,
+            r.ok && r.links.length ? h('div', { class: 'cp-links' }, r.links.map(function (l) { return h('a', { class: 'mini', href: l[1], text: l[0] + ' →' }); })) : null)));
+      });
+    }
+    var form = h('form', { class: 'ai-ask-form cp-form', onsubmit: function (e) { e.preventDefault(); ask(input.value); } },
+      iconCircle(ICONS.search, 'bare'), input, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Ask' }));
+    mic.addEventListener('click', function () {
+      if (!Rec) return;
+      var rec = new Rec(); rec.lang = lang.value; rec.interimResults = false; rec.maxAlternatives = 1;
+      mic.textContent = '● Listening…'; mic.disabled = true;
+      rec.onresult = function (e) { var said = e.results[0][0].transcript; input.value = said; ask(said); };
+      rec.onerror = function (e) { toast(e.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Didn\'t catch that — try again.'); };
+      rec.onend = function () { mic.textContent = '🎤 Speak'; mic.disabled = false; };
+      rec.start();
+    });
+    append(root, panel(aiTitle('Ask Tyllage'), 'Ask about the farm in English or 中文 — typed or spoken. Every answer comes from MEOD\'s records, shows how it was worked out, and links to the page behind it. If the records can\'t answer, it says so instead of guessing.',
+      form,
+      h('div', { class: 'cp-voice' }, mic, h('label', { class: 'cp-lang' }, h('small', { text: 'Voice language' }), lang), h('small', { class: 'hint', text: Rec ? 'Uses your browser\'s speech recognition.' : 'Voice needs Chrome or Edge; typing works everywhere.' })),
+      h('div', { class: 'ai-examples' }, h('small', { text: 'Try:' }), COPILOT_EXAMPLES.map(function (ex) { return h('button', { type: 'button', class: 'chip', text: ex, onclick: function () { ask(ex); } }); })),
+      list));
+    drawList();
+  }
+
+  /* ---- Small add-ons: substitutes, learning-journey packages, re-invites ---- */
+  var SUBSTITUTES = { 'nai bai': 'Xiao Bai Cai', 'baby spinach': 'Bayam', 'spinach': 'Bayam', 'choy sum': 'HK Cai Xin', 'romaine': 'Cos Lettuce', 'rocket': 'Mesclun Mix', 'arugula': 'Mesclun Mix', 'kale': 'Tuscan Kale', 'button mushroom': 'Shiitake Mushroom', 'mint': 'Garden Mint', 'basil': 'Sweet Basil' };
+  function substituteFor(g) {
+    var name = (g.product ? g.product.title : g.name).toLowerCase();
+    var mapped = SUBSTITUTES[name] && S().products.filter(function (p) { return p.title === SUBSTITUTES[name]; })[0];
+    var inStock = function (p) { var s = M.stockStatus(p); return s.known && s.qty > 0; };
+    if (mapped && inStock(mapped) && (!g.product || mapped.id !== g.product.id)) return mapped;
+    if (!g.product) return null;
+    return S().products.filter(function (p) { return p.id !== g.product.id && p.category === g.product.category && !p.bagOffer && inStock(p); })
+      .sort(function (a, b) { return b.stock.qty - a.stock.qty; })[0] || null;
+  }
+  function visitPackage(b) {
+    var R = M.RULES, type = b.groupType === 'school' ? 'school' : 'other';
+    var sessions = M.visits.sessions(b.pax);
+    var guides = Math.max(1, Math.ceil(Math.min(b.pax, R.visitSessionMax) / R.visitGuestsPerGuide[type]));
+    var per = R.visitPricePerPax[b.experience] || 2000;
+    var fit = M.visits.fits(b);
+    return { sessions: sessions, guides: guides, per: per, total: per * b.pax, bag: R.visitBagCents, bagTotal: R.visitBagCents * b.pax, fits: fit.fits, free: fit.fits ? [] : M.visits.freeDays(b, 2).map(function (k) { return shortWeekday(M.clearance.parseDayKey(k).toISOString()); }),
+      programme: b.groupType === 'school' ? ['Welcome & food-security talk (Singapore imports over 90% of its food)', 'Greenhouse walk: how greens grow without pesticides', 'Hands-on harvest — each child picks a bunch', 'Tasting & Q&A'] :
+        b.experience === 'Workshop' ? ['Farm intro', 'Hands-on workshop', 'Harvest & tasting', 'Team photo'] : ['Farm intro', 'Greenhouse tour', 'Harvest your own greens', 'Tasting'] };
+  }
+  function openVisitPackage(b) {
+    document.querySelectorAll('.vp-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var pk = visitPackage(b), bag = h('input', { type: 'checkbox' }); bag.checked = true;
+    var totalLine = h('strong');
+    var upd = function () { totalLine.textContent = money(pk.total + (bag.checked ? pk.bagTotal : 0)) + ' total'; };
+    bag.addEventListener('change', upd); upd();
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog vp-dialog', 'aria-labelledby': 'vp-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'vp-title', text: 'Proposed package · ' + (b.org || b.name) }), aiPill(), h('small', { class: 'ai-note', text: 'Staff check before sending' })),
+        h('ul', { class: 'why-data' },
+          h('li', null, h('span', { text: 'Experience' }), h('strong', { text: b.experience + ' · ' + b.pax + ' guests' })),
+          h('li', null, h('span', { text: 'Sessions' }), h('strong', { text: pk.sessions + ' of up to ' + M.RULES.visitSessionMax })),
+          h('li', null, h('span', { text: 'Staff needed' }), h('strong', { text: pk.guides + ' guide(s) per session' })),
+          h('li', null, h('span', { text: 'Price' }), h('strong', { text: money(pk.per) + ' a guest = ' + money(pk.total) })),
+          h('li', null, h('span', { text: 'Date' }), h('strong', { text: pk.fits ? 'Available' : 'Full — offer ' + pk.free.join(' or ') }))),
+        h('section', { class: 'why-sec' }, h('h3', { text: 'Programme' }), h('ol', { class: 'why-calc' }, pk.programme.map(function (s) { return h('li', { text: s }); }))),
+        h('label', { class: 'toggle' }, bag, h('span', { text: 'Add a take-home harvest bag (' + money(pk.bag) + ' a guest, ' + money(pk.bagTotal) + ')' })),
+        h('p', { class: 'vp-total' }, totalLine, h('small', { text: ' · prices are illustrative (Settings)' }))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Save proposal', onclick: function () {
+          b.proposal = { sessions: pk.sessions, guides: pk.guides, totalCents: pk.total + (bag.checked ? pk.bagTotal : 0), bag: bag.checked, at: new Date().toISOString(), by: session.email };
+          M.decisions.log({ kind: 'visit', ref: b.id, feature: 'Learning journeys', title: 'Package for ' + (b.org || b.name) + ': ' + money(b.proposal.totalCents), recommendation: b.experience,
+            inputs: [['Guests', b.pax], ['Group type', b.groupType || 'other'], ['Sessions', pk.sessions]], calc: [pk.sessions + ' session(s) of up to ' + M.RULES.visitSessionMax, pk.guides + ' guide(s) at 1 per ' + M.RULES.visitGuestsPerGuide[b.groupType === 'school' ? 'school' : 'other'] + ' guests', money(pk.per) + ' × ' + b.pax + (bag.checked ? ' + bags ' + money(pk.bagTotal) : '')],
+            assumptions: ['Prices and staffing ratios are illustrative.'], confidence: { level: 'high', note: 'Fixed rules.' } }, session.email);
+          closeDialog();
+          commit('booking.package', b.id, 'Proposal saved for ' + (b.org || b.name) + ' — ' + money(b.proposal.totalCents) + '.');
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+  }
+  function reinvitePanel() {
+    var now = Date.now();
+    var past = S().bookings.filter(function (b) { return b.status === 'confirmed' && M.clearance.parseDayKey(String(b.date).slice(0, 10)).getTime() < now - 7 * 864e5; });
+    var upcomingOrgs = S().bookings.filter(function (b) { return b.status !== 'declined' && M.clearance.parseDayKey(String(b.date).slice(0, 10)).getTime() >= now; }).map(function (b) { return b.org; });
+    var cands = past.filter(function (b) { return upcomingOrgs.indexOf(b.org) < 0; });
+    var invited = S().visitInvites || [];
+    return panel(aiTitle('Invite past groups back'), 'Organisations that visited before and have nothing booked. Only those who agreed to hear from MEOD again can be invited.',
+      cands.length ? table([
+        { label: 'Organisation', render: function (b) { return h('span', null, h('strong', { text: b.org || b.name }), h('br'), h('small', { text: b.experience + ' · ' + b.pax + ' guests' })); } },
+        { label: 'Last visit', render: function (b) { return shortDate(M.clearance.parseDayKey(String(b.date).slice(0, 10)).toISOString()); } },
+        { label: 'Suggestion', render: function (b) { return b.groupType === 'school' ? 'Invite the next class or year group next term' : b.groupType === 'company' ? 'Suggest a team-building workshop next quarter' : 'Invite back for a seasonal harvest day'; } },
+        { label: 'Permission', render: function (b) { return b.consentFollowUp ? badge('Agreed to follow-up', 'green') : badge('No permission', 'grey'); } },
+        { label: 'Actions', render: function (b) {
+          if (!b.consentFollowUp) return h('small', { class: 'hint', text: 'Can\'t contact' });
+          if (invited.some(function (x) { return x.bookingId === b.id; })) return h('small', { class: 'pending-note', text: 'Invited' });
+          return mini('Draft invite', function () {
+            var msg = prompt('Invite message (simulated send):', 'Hi ' + firstName(b.name) + ', thank you for visiting MEOD Farm with ' + (b.org || 'your group') + '! We\'d love to host ' + (b.groupType === 'school' ? 'another class' : 'you') + ' again — new this season: a hands-on harvest session. Reply to pick a date.');
+            if (msg === null) return;
+            S().visitInvites = invited.concat([{ bookingId: b.id, at: new Date().toISOString(), by: session.email, message: msg }]);
+            commit('booking.reinvite', b.id, 'Invite sent to ' + (b.org || b.name) + ' (simulated).');
+          });
+        } }
+      ], cands, '') : h('p', { class: 'empty', text: 'No past groups to invite right now.' }));
+  }
+
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
@@ -2671,7 +3055,7 @@
             h('p', { text: adv.text }),
             adv.actions.length ? h('div', { class: 'actions' }, adv.actions.map(function (a) {
               return a.promo ? mini(a.label, function () { radarPromo(c); }) : h('a', { class: 'mini', href: a.href, text: a.label });
-            })) : null)));
+            }).concat([whyBtn(c.product.title, function () { return M.decisions.explainRadar(c); })])) : h('div', { class: 'actions' }, whyBtn(c.product.title, function () { return M.decisions.explainRadar(c); })))));
       });
     }
     draw();
@@ -2868,10 +3252,12 @@
         { label: 'Actions', render: function (b) {
           return h('div', { class: 'actions stack' },
             mini('✨ Draft reply', function () { openReplyDialog(b); }),
+            mini(b.proposal ? '✓ Package ' + money(b.proposal.totalCents) : '✨ Package', function () { openVisitPackage(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
         } }
       ], pending, 'No enquiries waiting.')));
+    append(root, reinvitePanel());
   }
 
   /* ---------------- Rewards (staff + admin): AI for farm ops ----------------
@@ -3577,6 +3963,7 @@
     pricing: { label: 'Pricing', tone: 'amber' },
     feedback: { label: 'Feedback', tone: 'blue' },
     lost: { label: 'Lost demand', tone: 'amber' },
+    quote: { label: 'Quotations', tone: 'blue' },
     import: { label: 'Import', tone: 'grey' },
     pilot: { label: 'Pilot', tone: 'green' },
     content: { label: 'Content', tone: 'green' },
@@ -3596,7 +3983,7 @@
     'inventory.synced': 'Synced stock from Shopify', 'profile.language': 'Changed language', 'profile.updated': 'Updated profile', 'profile.photo': 'Changed profile photo',
     'clearance.listed': 'Listed a product for clearance', 'clearance.ended': 'Ended a clearance listing early',
     'clearance.bag_approved': 'Approved a Surprise Harvest Bag’s contents',
-    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'lost.logged': 'Logged an unmet request', 'lost.notify_me': 'Asked to be told when a product is back', 'lost.notified': 'Told customers a product is back', 'lost.fulfilled': 'Fulfilled an unmet request', 'lost.closed': 'Closed an unmet request', 'import.done': 'Imported a spreadsheet', 'pilot.baseline': 'Recorded a pilot baseline', 'settings.changed': 'Changed an AI assumption', 'review.posted': 'Posted a product review', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
+    'rewards.redeemed': 'Swapped points for a voucher', 'briefing.sent': 'Sent the weekly summary', 'b2b.contacted': 'Messaged a trade buyer', 'pricing.proposed': 'Proposed a price change', 'feedback.logged': 'Logged customer feedback', 'lost.logged': 'Logged an unmet request', 'lost.notify_me': 'Asked to be told when a product is back', 'lost.notified': 'Told customers a product is back', 'lost.fulfilled': 'Fulfilled an unmet request', 'lost.closed': 'Closed an unmet request', 'import.done': 'Imported a spreadsheet', 'pilot.baseline': 'Recorded a pilot baseline', 'settings.changed': 'Changed an AI assumption', 'quote.sent': 'Sent a quotation', 'quote.accepted': 'Recorded an accepted quote', 'quote.declined': 'Recorded a declined quote', 'booking.package': 'Saved a learning-journey package', 'booking.reinvite': 'Invited a past visit group back', 'review.posted': 'Posted a product review', 'groupbuy.invited': 'Invited a customer to lead a group buy', 'settings.reset': 'Reset AI assumptions', 'settings.cost': 'Changed a unit cost', 'content.planned': 'Planned a social post', 'content.edited': 'Edited a social post', 'content.approved': 'Approved a social post', 'content.posted': 'Marked a social post as posted', 'content.removed': 'Removed a social post', 'feedback.flagged': 'Flagged a batch for a quality check', 'feedback.apology': 'Messaged customers about an issue', 'feedback.resolved': 'Resolved a feedback issue', 'feedback.reopened': 'Reopened a feedback issue', 'pricing.approved': 'Approved a price change', 'pricing.rejected': 'Rejected a price change', 'rescue.clear': 'Listed at-risk produce on Buy to Clear', 'rescue.alert': 'Drafted a harvest rescue alert', 'rescue.process': 'Processed at-risk produce', 'rescue.donate': 'Donated at-risk produce', 'rescue.compost': 'Composted at-risk produce', 'b2b.order': 'Confirmed a trade order', 'b2b.lead': 'Updated a trade lead', 'harvest.planned': 'Planned a harvest batch', 'harvest.harvested': 'Marked a batch harvested', 'harvest.cancelled': 'Cancelled a harvest batch'
   };
   function auditCat(event) { return AUDIT_CATS[String(event).split('.')[0]] || { label: 'Other', tone: 'grey' }; }
   function auditLabel(event) {
@@ -5424,17 +5811,21 @@
   var NAV = {
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
+      { id: 'copilot', group: 'Today', label: 'Ask Tyllage', perm: 'copilot', title: 'Ask Tyllage', sub: 'Questions about the farm in English or 中文 — answered from MEOD\'s records.', render: copilotView },
       { id: 'briefing', group: 'Today', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
       { id: 'pilot', group: 'Today', label: 'Pilot metrics', perm: 'pilot', title: 'Pilot metrics', sub: 'What a pilot with MEOD would measure, compared with a recorded baseline.', render: pilotView },
+      { id: 'ledger', group: 'Today', label: 'AI decision ledger', perm: 'ledger', title: 'AI decision ledger', sub: 'Every AI suggestion acted on: its data, calculation, who decided and what happened.', render: ledgerView },
       { id: 'lost', group: 'Farm ops', label: 'Lost demand', perm: 'lost', title: 'Lost demand', sub: 'What people asked for and couldn\'t get — so a sold-out crop isn\'t mistaken for weak demand.', render: lostDemandView },
       { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
+      { id: 'twin', group: 'Farm ops', label: 'Decision twin', perm: 'allocation', title: 'Farm Decision Twin', sub: 'What if the harvest, demand or buyers change? Compare responses before deciding.', render: twinView },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
       { id: 'orders', group: 'Sales', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
       { id: 'content', group: 'Sales', label: 'Content studio', perm: 'content', title: 'Content studio', sub: 'Weekly social and WhatsApp posts from what the farm has right now — staff edit, someone else approves.', render: contentView, count: function () { return (S().contentPlan || []).filter(function (c) { return c.status === 'pending'; }).length; } },
       { id: 'b2b', group: 'Sales', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
+      { id: 'quotes', group: 'Sales', label: 'Quotations', perm: 'quotes', title: 'Quotations', sub: 'Turn a buyer\'s enquiry into a checked counter-offer — and an accepted one into recurring demand.', render: quotesView },
       { id: 'campaigns', group: 'Sales', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
       { id: 'pricing', group: 'Sales', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },
       { id: 'clearance', group: 'Sales', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },

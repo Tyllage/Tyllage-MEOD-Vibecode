@@ -223,6 +223,107 @@
     commit('booking.confirmed', b.id, b.id + ' confirmed (WhatsApp mock). Farm-shop code ' + r.event.code + ' is ready in Visits.');
   }
 
+  /* ---- AI-drafted reply to a visit enquiry (js/replies.js). Staff edit, then Send. ----
+   * Sending is simulated: the reply is logged on the booking and in the audit log. A
+   * "Confirm" reply also confirms the booking and fills in the new farm-shop code. */
+  var REPLY_KINDS = [['confirm', 'Confirm the visit'], ['details', 'Ask for more details'], ['alternative', 'Offer other dates']];
+  var REPLY_LABEL = { confirm: 'Confirmed', details: 'Asked for details', alternative: 'Offered other dates' };
+  function openReplyDialog(b) {
+    document.querySelectorAll('.reply-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var kind = b.status === 'confirmed' ? 'details' : 'confirm', tone = 'warm', edited = false;
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog', 'aria-labelledby': 'rd-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var kindSel = h('select', { 'aria-label': 'Type of reply' }, REPLY_KINDS.map(function (k) {
+      return h('option', { value: k[0], text: k[1], selected: k[0] === kind, disabled: k[0] === 'confirm' && b.status === 'confirmed' });
+    }));
+    var toneSel = h('select', { 'aria-label': 'Tone' }, h('option', { value: 'warm', text: 'Warm' }), h('option', { value: 'formal', text: 'Formal' }));
+    var subject = h('input', { 'aria-label': 'Subject', maxlength: 140 });
+    var body = h('textarea', { rows: 18, 'aria-label': 'Email body' });
+    var notes = h('aside', { class: 'rd-notes', 'aria-label': 'What the AI picked up' });
+    var tokenNote = h('small', { class: 'pf-hint' });
+    var errorBox = h('p', { class: 'pf-error', 'aria-live': 'polite' });
+    body.addEventListener('input', function () { edited = true; drawTokenNote(); });
+    subject.addEventListener('input', function () { edited = true; });
+
+    function drawNotes(info) {
+      notes.textContent = '';
+      append(notes,
+        h('h3', { text: 'What the AI picked up' }),
+        h('ul', { class: 'rd-facts' }, info.facts.map(function (f) { return h('li', { text: f }); })),
+        info.flags.length ? [h('h3', { text: 'Check before sending' }), h('ul', { class: 'rd-flags' }, info.flags.map(function (f) { return h('li', { text: f }); }))] : null,
+        b.message ? [h('h3', { text: 'Their message' }), h('blockquote', { text: b.message })] : null,
+        h('small', { class: 'rd-disclaimer', text: 'Prototype: drafted by rules from the enquiry. The live version would use a language model. Always check before sending.' }));
+    }
+    function drawTokenNote() {
+      tokenNote.textContent = body.value.indexOf(M.replies.CODE_TOKEN) > -1 ? M.replies.CODE_TOKEN + ' is filled in with the group\'s new code when you send.' : '';
+    }
+    function generate() {
+      var d = M.replies.draft(b, { kind: kind, tone: tone });
+      subject.value = d.subject;
+      body.value = d.body;
+      edited = false;
+      drawNotes(d.info);
+      drawTokenNote();
+    }
+    function regenerate() {
+      if (edited && !confirm('Replace your edits with a fresh draft?')) { kindSel.value = kind; toneSel.value = tone; return; }
+      kind = kindSel.value; tone = toneSel.value;
+      generate();
+    }
+    kindSel.addEventListener('change', regenerate);
+    toneSel.addEventListener('change', regenerate);
+
+    function send() {
+      if (!subject.value.trim() || !body.value.trim()) { errorBox.textContent = 'Add a subject and a message.'; return; }
+      var text = body.value, msg;
+      if (kind === 'confirm') {
+        var r = M.visits.confirm(b.id);
+        if (!r.ok) { errorBox.textContent = r.error; return; }
+        text = text.split(M.replies.CODE_TOKEN).join(r.event.code + ' (' + visitShopUrl(r.event.code) + ')');
+        msg = 'Reply sent to ' + b.email + ' (simulated) and ' + b.id + ' confirmed. Farm-shop code ' + r.event.code + ' is ready in Visits.';
+      } else {
+        msg = 'Reply sent to ' + b.email + ' (simulated).';
+      }
+      b.replies = b.replies || [];
+      b.replies.push({ at: new Date().toISOString(), by: session.email, kind: kind, to: b.email, subject: subject.value.trim(), body: text });
+      closeDialog();
+      commit('booking.replied', b.id, msg);
+    }
+
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' },
+          h('h2', { id: 'rd-title', text: 'Reply to ' + (b.org || b.name) }),
+          h('span', { class: 'badge b-blue', text: 'AI draft · you review and send' })),
+        h('div', { class: 'rd-layout' },
+          notes,
+          h('div', { class: 'rd-form' },
+            h('div', { class: 'rd-controls' }, h('label', null, 'Reply type', kindSel), h('label', null, 'Tone', toneSel)),
+            h('label', null, 'To', h('input', { value: b.email, readonly: true, 'aria-readonly': 'true' })),
+            h('label', null, 'Subject', subject),
+            h('label', null, 'Message', body),
+            tokenNote,
+            errorBox))),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Copy', onclick: function () {
+          var all = 'Subject: ' + subject.value + '\n\n' + body.value;
+          (navigator.clipboard ? navigator.clipboard.writeText(all) : Promise.reject()).then(function () { toast('Draft copied.'); }, function () { toast('Copy not available here — select the text instead.'); });
+        } }),
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Send (simulated)', onclick: send })));
+
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    generate();
+    dlg.showModal();
+  }
+  function lastReplyCell(b) {
+    var rs = b.replies || [];
+    var last = rs[rs.length - 1];
+    return last ? h('span', null, REPLY_LABEL[last.kind] || 'Replied', h('br'), h('small', { text: ago(last.at) + ' · ' + last.by })) : h('small', { text: 'Not replied yet' });
+  }
+
   function inboxView(root) {
     var tickets = S().tickets.slice().sort(function (a, b) { return (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1); });
     append(root, panel('Support tickets', 'Created when the assistant hands over. During human hours (Mon–Sat 9am–6pm) customers are told someone will reply soon; outside them, that the team is offline.',
@@ -252,6 +353,7 @@
         { label: 'Actions', render: function (b) {
           if (b.status !== 'new') return '—';
           return h('div', { class: 'actions' },
+            mini('✨ Draft reply', function () { openReplyDialog(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
         } }
@@ -1160,8 +1262,10 @@
         { label: 'Date', render: function (b) { return shortWeekday(M.clearance.parseDayKey(b.date).toISOString()); } },
         { label: 'Pax', num: true, render: function (b) { return String(b.pax) + (M.visits.sessions(b.pax) > 1 ? ' (' + M.visits.sessions(b.pax) + ' sessions)' : ''); } },
         { label: 'Message', render: function (b) { return b.message || '—'; } },
+        { label: 'Last reply', render: lastReplyCell },
         { label: 'Actions', render: function (b) {
           return h('div', { class: 'actions' },
+            mini('✨ Draft reply', function () { openReplyDialog(b); }),
             mini('Confirm', function () { confirmVisit(b); }),
             mini('Decline', function () { b.status = 'declined'; commit('booking.declined', b.id, b.id + ' declined.'); }, { danger: true }));
         } }
@@ -1455,7 +1559,7 @@
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
     'campaign.rejected': 'Rejected a campaign', 'campaign.sent': 'Sent a campaign',
     'ticket.created': 'Opened a support ticket', 'ticket.assigned': 'Took a ticket', 'ticket.resolved': 'Resolved a ticket',
-    'booking.created': 'New farm-visit booking', 'booking.confirmed': 'Confirmed a booking', 'booking.declined': 'Declined a booking',
+    'booking.created': 'New farm-visit booking', 'booking.confirmed': 'Confirmed a booking', 'booking.declined': 'Declined a booking', 'booking.replied': 'Replied to a booking',
     'groupbuy.created': 'Created a group buy', 'groupbuy.open': 'Reopened a group buy', 'groupbuy.closed': 'Closed a group buy',
     'groupbuy.joined': 'Joined a group buy', 'groupbuy.left': 'Left a group buy',
     'user.disabled': 'Disabled a user', 'user.enabled': 'Enabled a user',

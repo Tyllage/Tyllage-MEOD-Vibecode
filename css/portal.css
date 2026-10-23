@@ -1058,3 +1058,28 @@ a.pill-btn { text-decoration: none; }
 .vq-steps { color: var(--muted); font-size: .88rem; max-width: 300px; }
 .vq-url { color: var(--muted); font-size: .74rem; word-break: break-all; max-width: 320px; }
 .visit-qr-dialog .r-actions { flex-wrap: wrap; justify-content: center; }
+/* Visit codes are at most 22 characters; give every box the same width so the QR buttons line up. */
+.visits-table .code-box { display: inline-block; box-sizing: border-box; width: 27ch; text-align: center; }
+
+/* ---- AI-drafted enquiry reply dialog ---- */
+.reply-dialog { width: min(980px, calc(100vw - 24px)); }
+.rd-body { padding: 24px 26px 4px; display: grid; gap: 16px; }
+.rd-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-right: 40px; }
+.rd-head h2 { margin: 0; color: var(--forest); font-size: 1.25rem; }
+.rd-head .badge { text-transform: none; }
+.rd-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+.rd-notes { background: #f6f2e8; border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; font-size: .86rem; }
+.rd-notes h3 { margin: 4px 0 0; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.rd-notes ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.rd-flags li { color: #8a5a00; font-weight: 600; }
+.rd-notes blockquote { margin: 0; padding: 8px 10px; border-left: 3px solid var(--gold); background: var(--white); border-radius: 6px; font-style: italic; }
+.rd-disclaimer { color: var(--muted); font-size: .76rem; margin-top: 4px; }
+.rd-form { display: grid; gap: 12px; }
+.rd-form label { display: grid; gap: 4px; font-weight: 600; font-size: .86rem; }
+.rd-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rd-form textarea { font: 400 .9rem/1.5 var(--font-body); resize: vertical; min-height: 280px; }
+.rd-form input[readonly] { background: #f3f1ec; color: var(--muted); }
+@media (max-width: 760px) {
+  .rd-layout { grid-template-columns: 1fr; }
+  .rd-body { padding: 22px 18px 4px; }
+}

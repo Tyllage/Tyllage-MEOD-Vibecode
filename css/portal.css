@@ -1275,6 +1275,8 @@ a.pill-btn { text-decoration: none; }
 .ai-note { color: var(--muted); font-size: .8rem; }
 .picks-head .rw-head { margin: 6px 0 4px; }
 .picks-head .rw-head h2 { margin: 0; }
-.chat-title { display: inline-flex; align-items: center; gap: 8px; }
+/* Ask MEOD: name and status stacked on the left, AI pill at the right end of the green header. */
+.chat-head-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.chat-header .ai-pill { margin-left: auto; align-self: center; padding: 5px 12px; }
 .pd-recipe summary .ai-pill { margin-left: auto; }
 .panel > .rw-head { margin-bottom: 4px; }

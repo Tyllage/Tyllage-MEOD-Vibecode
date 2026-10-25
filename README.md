@@ -106,10 +106,14 @@ Every AI-assisted feature carries the same **AI-assisted** pill. All of them are
 - **Harvest Planner** (with **photo grading** of harvest photos into Grade A / Cosmetic / Check) and **Harvest Rescue** (sell-by deadlines per batch and ranked rescue options).
 - **Price Advisor with Margin Guard** and a **Promotion simulator**: discount, bundle or bulk-trade suggestions checked against a price floor; no surge pricing.
 - **Campaign Studio**: a ranked list of recommended campaigns, AI-drafted messages per language, and **restock reminders**.
+- **Promotion Intelligence** (inside Campaign Studio): every recommendation names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
+  - **Harvest Drops.** Each harvest in the next 2 weeks shows expected, committed, usual sales and uncommitted quantities. Tyllage compares a normal-price pre-order, a bundle and a small discount, showing contribution per unit and the potential revenue if everything sells. Approving opens pre-order spots for the uncommitted amount.
+  - **Results by promotion type.** Each sent campaign shows what it led to: orders, sales, margin, vouchers used and drop spots taken. A table compares the promotion types and marks which ones have enough campaigns to judge.
 - **Content studio**: weekly social and WhatsApp post ideas with caption checks.
 - **B2B buyers** insights and **Quotation Copilot** (reads a buyer's enquiry, checks a counter-offer against Margin Guard and spare supply; accepted quotes become recurring demand).
 - **Feedback intelligence**: ratings, reviews, chats, tickets, trade buyers and visits, grouped by theme and traced to a harvest batch or delivery round.
-- **Visits**: AI-drafted enquiry replies, daily session capacity, learning-journey packages and re-invites.
+- **Visits**: AI-drafted enquiry replies, daily session capacity, learning-journey packages, re-invites and **learning-journey vouchers** (a thank-you voucher for visitors who opted in, issued when the campaign is sent).
+- **Group-buy goals**: a volume goal about 25% above a group's usual volume that unlocks a voucher for everyone who ordered. It's suggested only when the extra margin covers the vouchers. Leaders and members see progress, and an admin issues the vouchers once the goal is reached.
 - **Rewards** ops brief, member search in plain English and a nudge composer; customer **Smart tips**.
 - **Smart picks**, **recipe ideas** and **review summaries** for customers.
 
@@ -144,6 +148,8 @@ All of these live in `RULES` in `js/data.js`. Admins can change the AI assumptio
 - **Buy to Clear.** A clearance price can never be below its minimum price (default 60% of normal). Clearance stock is a discounted slice of a product's own stock, so a sale decrements both. Bag pre-orders close 10pm the day before each delivery.
 - **Harvest pre-orders** close 10pm the night before harvest. 60% of a batch's expected yield opens to pre-order by default. A cancel or refund frees the spot.
 - **Margin Guard:** no price may go below max(unit cost + 15% margin, the minimum price). Short crops get "hold price", never a surge.
+- **Promotions (`RULES.promo`):** a Harvest Drop stays at the normal price when 25% or less of the harvest is uncommitted or pre-orders are filling fast. Between 25% and 50% it suggests a bundle (10% off the pair). Above 50%, with slow pre-orders, it suggests 10% off the drop spots only. A drop's price is checked by Margin Guard again at approval, and the approval fails if it doesn't pass. Group goals pay S$3 per member, visit vouchers are S$5, and results count orders by recipients within 7 days of sending.
+- **Who does what:** MEOD owns the produce, sets and approves prices and offers, sends from MEOD Fresh and owns its customer relationships. Tyllage analyses, recommends, drafts and reports. It never buys or resells produce.
 - **Harvest Rescue:** sell-by dates come from a shelf life per category (4–7 days).
 - **Rewards:** 1 point per S$1; 100 points = S$5 voucher (S$20 minimum on full-price items, valid 90 days); 2× points on anti-waste lines; four tiers (Seedling, Sprout, Harvester, Farm Friend). Points come from orders, so refunds reverse them.
 - **Visits:** up to 200 guests, 40 per session, 3 sessions a day; 5% of a visit group's orders goes to its fund; the farm-shop code stays open 7 days.

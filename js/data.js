@@ -49,6 +49,17 @@
     visitSessionsPerDay: 3,         // visit sessions the farm can host in one day (illustrative)
     radarTolerance: 0.1,            // Demand Radar: a gap within this share of demand counts as balanced
     promoLiftPer10: 0.2,            // Promotion simulator: each 10% off lifts sales by about 20% (illustrative)
+    // Promotion Intelligence: when a harvest needs an incentive, and how big it is. Illustrative.
+    promo: {
+      dropBundleShare: 0.25,        // uncommitted above this share of a harvest → suggest a bundle
+      dropDiscountShare: 0.5,       // ...above this (and selling slowly) → a small pre-order discount
+      dropDiscountPct: 10,          // the Harvest Drop discount, always checked by Margin Guard
+      milestoneVoucherCents: 300,   // per member when a group buy reaches its goal
+      milestoneLift: 0.25,          // group-buy goal = usual volume + 25%
+      milestoneDays: 14,
+      visitVoucherCents: 500,       // thank-you voucher for visitors who opted in
+      resultDays: 7                 // orders within this many days of sending count towards a campaign
+    },
     preorderConvert: 0.3,           // Decision twin: share of extra supply pre-orders typically sell
     // Quotation Copilot: kg per sold unit (bunch or pack), to convert buyers' kg requests. Illustrative.
     kgPerUnit: { 'asian-greens': 0.25, lettuces: 0.2, fungi: 0.2, herbs: 0.05, 'farm-more': 0.2 },
@@ -2378,6 +2389,236 @@
       ] };
   }
 
+  /* ---------- Promotion Intelligence ----------
+   * Tyllage is MEOD's commercial partner, not a reseller: it works out *whether* a promotion
+   * is worth running, which kind fits the problem, and how much of a harvest to offer. MEOD
+   * approves every offer, sells through its own channels and keeps its prices and customers.
+   * 1. Harvest Drops: per upcoming batch, expected vs committed vs uncommitted, and three
+   *    options (normal-price pre-order, bundle, small discount) with the maths shown.
+   * 2. Group-buy milestones: a volume goal that unlocks a voucher, only if the extra margin
+   *    covers the vouchers.
+   * 3. Learning-journey vouchers: a thank-you voucher for visitors who opted in.
+   * 4. Results: what each sent campaign led to, and a summary per promotion type.
+   * PROTOTYPE: rules, not a trained model. Results start the history a model would need. */
+  var PROMO_TYPES = {
+    drop: { label: 'Harvest Drop', tone: 'green', when: 'A harvest has supply nobody has committed to yet. Offer it as a pre-order before it\'s picked.' },
+    bundle: { label: 'Smart bundle', tone: 'green', when: 'One crop is slow and another sells well. A pair at a small saving moves the slow one without cutting its own price.' },
+    rescue: { label: 'Rescue offer', tone: 'red', when: 'Produce that\'s already harvested is near its sell-by date. Alert past buyers first, and only then list it on Buy to Clear.' },
+    group: { label: 'Group-buy milestone', tone: 'blue', when: 'A group buy orders regularly. A volume goal combines orders into one drop-off, and the reward has to cost less than the extra margin.' },
+    visit: { label: 'Learning-journey voucher', tone: 'blue', when: 'A group visited recently and some visitors opted in. A thank-you voucher turns a visit into produce orders.' },
+    repeat: { label: 'Repeat-buyer reward', tone: 'amber', when: 'Members are close to a tier or have points they haven\'t used. Use the rewards they already have; no new discount.' },
+    reactivate: { label: 'Reactivation', tone: 'amber', when: 'Past buyers who opted in haven\'t ordered for 30+ days. Tell them what\'s fresh this week.' },
+    normal: { label: 'Normal-price promo', tone: 'blue', when: 'Demand just needs a reminder: a restock nudge or a surplus crop at its usual price.' },
+    none: { label: 'No promotion needed', tone: 'grey', when: 'Demand already covers the harvest, or the crop is short. A promotion would only give margin away or disappoint people.' }
+  };
+  var CAMPAIGN_TYPE = { 'harvest-drop': 'drop', 'rewards-preorder': 'drop', 'rescue-alert': 'rescue', 'rewards-surplus': 'rescue', 'clear-alert': 'rescue',
+    'preorder-push': 'drop', 'group-milestone': 'group', 'visit-voucher': 'visit', 'rewards-tier': 'repeat', 'rewards-points': 'repeat', 'tier-nudge': 'repeat', 'rewards-winback': 'reactivate', bundle: 'bundle' };
+  function campaignType(c) { return CAMPAIGN_TYPE[c.kind] || (c.drop && 'drop') || 'normal'; }
+
+  // Anything left in a batch that can still take pre-orders: before the cutoff, not yet harvested.
+  function dropOpenable(b) {
+    var st = batchStage(b);
+    return (st === 'planned' || st === 'growing') && Date.now() < batchCutoff(b).getTime();
+  }
+  // A partner for a bundle: an in-stock crop that isn't in surplus, rising demand first.
+  function bundlePartner(productId) {
+    return radarCrops().filter(function (c) { return c.product.id !== productId && c.status !== 'surplus' && c.product.meodGrown && stockStatus(c.product).qty > 0; })
+      .sort(function (a, b) { return b.trendPct - a.trendPct; }).map(function (c) { return c.product; })[0] || null;
+  }
+  function dropOptions(p, qty) {
+    var P = RULES.promo, cost = unitCost(p.id).totalCents, out = [];
+    function opt(key, label, priceCents, unitMarginCents, extra) {
+      return Object.assign({ key: key, label: label, priceCents: priceCents, contributionCents: unitMarginCents,
+        potentialRevenueCents: priceCents * qty, potentialContributionCents: unitMarginCents * qty }, extra);
+    }
+    out.push(opt('normal', 'Normal-price pre-order', p.priceCents, p.priceCents - cost, { guard: marginGuard(p.id, p.priceCents, qty), note: 'Keeps the normal price. Pre-orders already earn 2× reward points.' }));
+    var partner = bundlePartner(p.id);
+    if (partner) {
+      var pair = Math.round((p.priceCents + partner.priceCents) * 0.9);
+      // The partner sells at full price inside the bundle, so the whole saving comes off this crop.
+      var eff = pair - partner.priceCents, g = marginGuard(p.id, eff, qty);
+      out.push(opt('bundle', 'Bundle with ' + partner.title, eff, eff - cost, { partner: partner, bundlePriceCents: pair, guard: g,
+        note: p.title + ' + ' + partner.title + ' for ' + money(pair) + ' (10% off the pair). ' + partner.title + ' keeps its full price.' }));
+    }
+    var dPrice = Math.round(p.priceCents * (1 - P.dropDiscountPct / 100)), dg = marginGuard(p.id, dPrice, qty);
+    out.push(opt('discount', P.dropDiscountPct + '% off pre-orders', dPrice, dPrice - cost, { pct: P.dropDiscountPct, guard: dg,
+      note: 'Only for the ' + qty + ' Harvest Drop spots and only until pre-orders close. The shop price doesn\'t change.' }));
+    return out;
+  }
+  // One card per upcoming batch (next 14 days): what's committed, what isn't, and what to do.
+  function harvestDrops() {
+    var P = RULES.promo;
+    return allocationPlan(14).map(function (x) {
+      var b = x.batch, p = x.product;
+      var committed = x.wanted.b2b + x.wanted.preorder, expected = x.wanted.group + x.wanted.shop;
+      var qty = x.unallocated, share = x.supply ? qty / x.supply : 0;
+      var sg = batchSignal(b), openable = dropOpenable(b);
+      var live = (state.campaigns || []).filter(function (c) { return c.drop && c.drop.batchId === b.id && c.status !== 'rejected'; })[0] || null;
+      var options = qty > 0 ? dropOptions(p, qty) : [];
+      var rec, reason;
+      if (x.shortBy > 0) { rec = 'none'; reason = 'Demand is already ' + x.shortBy + ' more than this harvest. Keep the normal price and don\'t promote it.'; }
+      else if (!qty) { rec = 'none'; reason = 'Trade orders, pre-orders and usual sales already cover the harvest. A promotion would only give margin away.'; }
+      else if (!openable) { rec = 'none'; reason = 'Pre-orders for this harvest have closed. Use Harvest Rescue after picking if any is left.'; }
+      else if (sg.key === 'strong' || sg.key === 'sold_out' || share <= P.dropBundleShare) { rec = 'normal'; reason = 'Only ' + Math.round(share * 100) + '% of the harvest is uncommitted' + (sg.key === 'strong' ? ' and pre-orders are filling fast' : '') + ', so a normal-price pre-order should be enough. No discount needed.'; }
+      else {
+        var bun = options.filter(function (o) { return o.key === 'bundle' && o.guard.ok; })[0], dis = options.filter(function (o) { return o.key === 'discount' && o.guard.ok; })[0];
+        if (share > P.dropDiscountShare && sg.key === 'slow' && dis) { rec = 'discount'; reason = Math.round(share * 100) + '% uncommitted and pre-orders are slow. A small discount on the drop spots only, inside Margin Guard. It gives up ' + money(p.priceCents - dis.priceCents) + ' a unit, so it only pays if it sells noticeably more than the normal price would.'; }
+        else if (bun) { rec = 'bundle'; reason = Math.round(share * 100) + '% uncommitted. A bundle with a crop that sells well moves it without a general price cut.'; }
+        else { rec = 'normal'; reason = 'No bundle or discount passes Margin Guard, so offer it at the normal price.'; }
+      }
+      options.forEach(function (o) { o.recommended = o.key === rec; });
+      return { batch: b, product: p, supply: x.supply, committed: committed, b2b: x.wanted.b2b, preordered: x.wanted.preorder, expectedSales: expected,
+        uncommitted: qty, shortBy: x.shortBy, sharePct: Math.round(share * 100), kg: Math.round(qty * kgPerUnit(p) * 10) / 10, signal: sg,
+        openable: openable, options: options, recommended: rec, reason: reason, campaign: live };
+    });
+  }
+  // Approving a Harvest Drop opens enough pre-order spots for it and, for a discount, sets the
+  // drop price on the batch (checked by Margin Guard again at that moment). Fails closed.
+  function dropApply(c) {
+    var d = c.drop, b = d && byId('batches', d.batchId);
+    if (!b || !dropOpenable(b)) return { ok: false, error: 'That harvest no longer takes pre-orders.' };
+    if (d.option === 'discount' || d.option === 'bundle') {
+      var g = marginGuard(b.productId, d.priceCents, d.qty);
+      if (!g.ok) return { ok: false, error: 'Margin Guard blocked it: ' + g.reasons.join('; ') + '.' };
+    }
+    var need = Math.max(0, d.qty - batchLeft(b));
+    b.preorderCap = Math.min(b.expectedQty, b.preorderCap + need);
+    b.drop = { campaignId: c.id, option: d.option, qty: d.qty, normalPriceCents: b.drop ? b.drop.normalPriceCents : b.preorderPriceCents,
+      partnerId: d.partnerId || null, bundlePriceCents: d.bundlePriceCents || null, takenAtStart: batchPreordered(b), startedAt: new Date().toISOString() };
+    if (d.option === 'discount') b.preorderPriceCents = d.priceCents;
+    return { ok: true, batch: b };
+  }
+
+  // Group-buy milestones: usual weekly volume (last 4 weeks) → a goal 25% above it.
+  function groupUnits(evId, sinceMs, untilMs) {
+    var units = 0, buyers = {};
+    state.orders.forEach(function (o) {
+      var t = new Date(o.createdAt).getTime();
+      if (o.groupEventId !== evId || o.status === 'cancelled' || o.status === 'refunded' || t < sinceMs || (untilMs && t > untilMs)) return;
+      buyers[o.customerId] = true;
+      o.items.forEach(function (i) { units += i.qty; });
+    });
+    return { units: units, buyers: Object.keys(buyers) };
+  }
+  function groupMembers(ev) {
+    var ids = {};
+    state.customers.forEach(function (c) { if (c.groupCode === ev.code) ids[c.id] = true; });
+    state.orders.forEach(function (o) { if (o.groupEventId === ev.id) ids[o.customerId] = true; });
+    return Object.keys(ids);
+  }
+  function milestoneIdea(ev) {
+    // The goal ends when the group buy closes, if that's sooner; under 3 days isn't worth starting.
+    var P = RULES.promo, now = Date.now();
+    var days = Math.min(P.milestoneDays, Math.floor((new Date(ev.endsAt).getTime() - now) / 864e5));
+    var hist = groupUnits(ev.id, now - 28 * 864e5);
+    var margin = 0, units = 0;
+    state.orders.forEach(function (o) {
+      if (o.groupEventId !== ev.id || o.status === 'cancelled') return;
+      o.items.forEach(function (i) { units += i.qty; margin += i.qty * (Math.round(i.priceCents * (1 - RULES.groupDiscountRate)) - unitCost(i.productId).totalCents); });
+    });
+    var unitMargin = units ? Math.round(margin / units) : 100;
+    var baseline = Math.round(hist.units / 4 * days / 7);
+    var target = Math.max(baseline + 5, Math.ceil(baseline * (1 + P.milestoneLift) / 5) * 5);
+    var members = groupMembers(ev);
+    var expectBuyers = Math.max(1, hist.buyers.length, Math.round(members.length / 2));
+    var rewardCost = expectBuyers * P.milestoneVoucherCents, extra = (target - baseline) * unitMargin;
+    return { event: ev, days: days, baseline: baseline, target: target, unitMarginCents: unitMargin, members: members, expectBuyers: expectBuyers,
+      voucherCents: P.milestoneVoucherCents, rewardCostCents: rewardCost, extraMarginCents: extra, worth: extra >= rewardCost && ev.status === 'open' && days >= 3 };
+  }
+  function milestoneProgress(ev) {
+    var m = ev.milestone;
+    if (!m) return null;
+    var start = new Date(m.startedAt).getTime(), end = start + m.days * 864e5;
+    var g = groupUnits(ev.id, start, end);
+    var state2 = m.status === 'rewarded' ? 'rewarded' : g.units >= m.target ? 'reached' : Date.now() > end ? 'missed' : 'active';
+    return { target: m.target, units: g.units, buyers: g.buyers, pct: Math.min(100, Math.round(g.units / m.target * 100)), endsAt: new Date(end).toISOString(), status: state2, voucherCents: m.voucherCents };
+  }
+  function milestoneApply(c) {
+    var ev = byId('events', c.milestone.eventId);
+    if (!ev || ev.status !== 'open') return { ok: false, error: 'That group buy is closed.' };
+    ev.milestone = { campaignId: c.id, target: c.milestone.target, days: c.milestone.days, voucherCents: c.milestone.voucherCents, startedAt: new Date().toISOString(), status: 'active' };
+    return { ok: true };
+  }
+  function milestoneReward(evId) {
+    var ev = byId('events', evId), pr = ev && milestoneProgress(ev);
+    if (!pr || pr.status !== 'reached') return { ok: false, error: 'The goal hasn\'t been reached yet.' };
+    pr.buyers.forEach(function (cid) { issueVoucher(cid, pr.voucherCents, 'campaign:' + ev.milestone.campaignId, 'Group goal reached: ' + ev.title); });
+    ev.milestone.status = 'rewarded';
+    ev.milestone.rewardedAt = new Date().toISOString();
+    return { ok: true, count: pr.buyers.length };
+  }
+
+  // Learning-journey vouchers: recent visits (last 30 days) with visitors who opted in.
+  function visitVoucherIdeas() {
+    var now = Date.now();
+    return state.bookings.filter(function (b) {
+      var t = parseDayKey(b.date).getTime();
+      return b.status === 'confirmed' && t <= now && t > now - 30 * 864e5 &&
+        !(state.campaigns || []).some(function (c) { return c.kind === 'visit-voucher' && c.bookingId === b.id && c.status !== 'rejected'; });
+    }).map(function (b) {
+      return { booking: b, audience: state.customers.filter(function (c) { return c.bookingId === b.id && c.consentMarketing; }).map(function (c) { return c.id; }), voucherCents: RULES.promo.visitVoucherCents };
+    }).filter(function (x) { return x.audience.length; });
+  }
+
+  // Approve and send hooks for the promotion kinds that change something besides a message.
+  function promoOnApprove(c) {
+    if (c.kind === 'harvest-drop') return dropApply(c);
+    if (c.kind === 'group-milestone') return milestoneApply(c);
+    return { ok: true };
+  }
+  function promoOnSend(c, recipients) {
+    c.sentAt = new Date().toISOString();
+    c.recipients = recipients.slice();
+    if (c.kind === 'visit-voucher') recipients.forEach(function (id) { issueVoucher(id, c.voucherCents, 'campaign:' + c.id, 'Thanks for visiting MEOD'); });
+  }
+
+  // What a sent campaign led to: orders by its recipients within RULES.promo.resultDays.
+  // Product campaigns count the promoted product; group, visit and win-back ones count any order.
+  function campaignResult(c) {
+    if (c.status !== 'sent') return null;
+    var t0 = new Date(c.sentAt || c.createdAt).getTime(), t1 = t0 + RULES.promo.resultDays * 864e5;
+    var type = campaignType(c), anyProduct = !c.productId || type === 'group' || type === 'visit' || type === 'reactivate';
+    var who = c.recipients || c.audience || [], set = {};
+    who.forEach(function (id) { set[id] = true; });
+    var buyers = {}, orders = 0, units = 0, revenue = 0, margin = 0;
+    state.orders.forEach(function (o) {
+      var t = new Date(o.createdAt).getTime();
+      if (t < t0 || t > t1 || !set[o.customerId] || o.status === 'cancelled') return;
+      var hit = false;
+      o.items.forEach(function (i) {
+        if (!anyProduct && i.productId !== c.productId) return;
+        hit = true; units += i.qty; revenue += i.qty * i.priceCents; margin += i.qty * (i.priceCents - unitCost(i.productId).totalCents);
+      });
+      if (hit) { orders++; buyers[o.customerId] = true; }
+    });
+    var vouchers = state.rewardsStore.vouchers.filter(function (v) { return v.source === 'campaign:' + c.id; });
+    var used = vouchers.filter(function (v) { return v.status === 'used'; });
+    var r = { type: type, recipients: who.length, buyers: Object.keys(buyers).length, orders: orders, units: units, revenueCents: revenue, marginCents: margin,
+      conversionPct: who.length ? Math.round(Object.keys(buyers).length / who.length * 100) : 0, vouchersIssued: vouchers.length, vouchersUsed: used.length,
+      voucherCostCents: used.reduce(function (s, v) { return s + v.valueCents; }, 0), open: Date.now() < t1 };
+    if (c.drop) {
+      var b = byId('batches', c.drop.batchId);
+      if (b) { r.dropTaken = Math.max(0, batchPreordered(b) - (b.drop && b.drop.campaignId === c.id ? b.drop.takenAtStart : 0)); r.dropQty = c.drop.qty; }
+    }
+    return r;
+  }
+  function promoResultsByType() {
+    var by = {};
+    state.campaigns.forEach(function (c) {
+      var r = campaignResult(c);
+      if (!r) return;
+      var x = by[r.type] || (by[r.type] = { type: r.type, campaigns: 0, recipients: 0, buyers: 0, revenueCents: 0, marginCents: 0, voucherCostCents: 0 });
+      x.campaigns++; x.recipients += r.recipients; x.buyers += r.buyers; x.revenueCents += r.revenueCents; x.marginCents += r.marginCents; x.voucherCostCents += r.voucherCostCents;
+    });
+    return Object.keys(by).map(function (k) {
+      var x = by[k];
+      x.conversionPct = x.recipients ? Math.round(x.buyers / x.recipients * 100) : 0;
+      x.netCents = x.marginCents - x.voucherCostCents;
+      x.enough = x.campaigns >= 3;
+      return x;
+    }).sort(function (a, b) { return b.netCents - a.netCents; });
+  }
+
   /* ---------- Data import (Excel / CSV) ----------
    * MEOD keeps sales and harvest records in spreadsheets. Staff upload one (CSV, or .xlsx
    * read in the browser), the columns are matched by name ("Item", "Product", "SKU" →
@@ -3443,7 +3684,11 @@
     reviews: { list: reviewsFor, stats: reviewStats, summary: reviewSummary, canWrite: reviewCanWrite, add: reviewAdd, name: reviewerName },
     lost: { SOURCES: LOST_SOURCES, REASONS: LOST_REASONS, list: lostList, add: lostAdd, resolve: lostResolve, insights: lostInsights, unitsFor: lostUnitsFor },
     allocation: { plan: allocationPlan },
-    promo: { simulate: promoSimulate },
+    promo: {
+      simulate: promoSimulate, TYPES: PROMO_TYPES, typeOf: campaignType, drops: harvestDrops, onApprove: promoOnApprove, onSend: promoOnSend,
+      milestoneIdea: milestoneIdea, milestoneProgress: milestoneProgress, milestoneReward: milestoneReward, groupMembers: groupMembers,
+      visitIdeas: visitVoucherIdeas, result: campaignResult, resultsByType: promoResultsByType
+    },
     importer: { KINDS: IMPORT_KINDS, parseCsv: parseCsv, preview: importPreview, apply: importApply, template: importTemplate },
     pilot: { metrics: pilotMetrics, recordBaseline: pilotRecordBaseline, DRAFT_MINUTES: DRAFT_MINUTES },
     decisions: { log: ledgerLog, decide: ledgerDecide, outcome: ledgerOutcome, list: ledgerRefresh, find: ledgerFind, explainRadar: explainRadar, explainPrice: explainPrice },

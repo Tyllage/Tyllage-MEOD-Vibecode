@@ -2057,6 +2057,15 @@ a.pill-btn { text-decoration: none; }
 .hm-dot { width: 8px; height: 8px; border-radius: 50%; background: #cfc8bb; }
 .hm-dot.hm-healthy { background: #4f9e3c; } .hm-dot.hm-monitor { background: #e0a526; } .hm-dot.hm-review { background: #c8513a; }
 .hm-empty { opacity: .8; }
+.hm-trend { font-weight: 800; margin-left: 2px; }
+.hm-t-improving { color: #2f7a2a; } .hm-t-stable { color: #2a4f86; } .hm-t-worsening { color: #a93b26; }
+.hist-trend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hist-trend small { color: var(--muted); }
+.cond-cell { display: grid; gap: 4px; min-width: 200px; }
+.cond-cell .hint { font-size: .72rem; }
+.gh-reading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gh-reading label { display: grid; gap: 4px; font-size: .82rem; font-weight: 600; }
+.gh-reading input { min-height: 44px; font-size: 1rem; }
 /* Learning panel */
 .lr-kpis { margin-top: 12px; }
 .lr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 20px; margin-top: 8px; }

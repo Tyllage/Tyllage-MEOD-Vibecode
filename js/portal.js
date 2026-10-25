@@ -6208,6 +6208,9 @@
     var qtyNote = h('small', { class: 'qty-note', 'aria-live': 'polite' });
     var notes = h('textarea', { rows: 2, maxlength: 280, placeholder: 'Anything the manager should know (optional)', 'aria-label': 'Notes' });
     notes.value = prev ? prev.notes : '';
+    var inTemp = h('input', { type: 'number', min: 10, max: 50, step: 0.1, inputmode: 'decimal', placeholder: 'e.g. 31.5', 'aria-label': 'Temperature inside the greenhouse' });
+    var inHum = h('input', { type: 'number', min: 1, max: 100, step: 1, inputmode: 'numeric', placeholder: 'e.g. 78', 'aria-label': 'Humidity inside the greenhouse' });
+    if (prev && prev.indoor) { inTemp.value = prev.indoor.tempC == null ? '' : String(prev.indoor.tempC); inHum.value = prev.indoor.humidity == null ? '' : String(prev.indoor.humidity); }
     var err = h('p', { class: 'pf-error', 'aria-live': 'polite' });
     var file = h('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'visually-hidden', 'aria-label': 'Take a photo' });
 
@@ -6285,7 +6288,11 @@
         h('section', { class: 'insp-step' }, h('h3', { text: '2. Condition' }), condBox),
         h('section', { class: 'insp-step' }, h('h3', { text: '3. Estimated harvest' }),
           h('div', { class: 'qty-step' }, step(-5), step(-1), qty, step(1), step(5)), qtyNote, learnNote),
-        h('section', { class: 'insp-step' }, h('h3', { text: '4. Notes' }),
+        h('section', { class: 'insp-step' }, h('h3', { text: '4. Greenhouse reading (optional)' }),
+          h('div', { class: 'gh-reading' },
+            h('label', null, 'Temperature inside (°C)', inTemp), h('label', null, 'Humidity inside (%)', inHum)),
+          h('small', { class: 'hint', text: 'From the thermometer in ' + row.greenhouse + ', if there is one. Saved separately from NEA\'s outdoor forecast, which is attached automatically' + (weatherNow ? ' (' + (weatherNow.source === 'live' ? 'live' : 'demo') + ': ' + weatherNow.day.text.toLowerCase() + ', ' + weatherNow.day.low + '–' + weatherNow.day.high + '°C).' : '.') })),
+        h('section', { class: 'insp-step' }, h('h3', { text: '5. Notes' }),
           h('div', { class: 'filters note-chips' }, NOTE_CHIPS.map(function (t) {
             return h('button', { type: 'button', class: 'chip', text: t, onclick: function () { notes.value = (notes.value ? notes.value.replace(/\s*$/, '') + ', ' : '') + t.toLowerCase(); } });
           })), notes),
@@ -6295,7 +6302,8 @@
         h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Save & next', onclick: function () {
           if (!st.condition) { err.textContent = 'Choose the condition first.'; return; }
           var r = M.inspect.save({ batchId: b.id, condition: st.condition, estQty: qty.value, notes: notes.value,
-            photo: st.photo ? { url: st.photo.url, grade: st.photo.grade, reason: st.photo.reason, simulated: st.photo.simulated } : null }, session.email);
+            photo: st.photo ? { url: st.photo.url, grade: st.photo.grade, reason: st.photo.reason, simulated: st.photo.simulated } : null,
+            indoor: { tempC: inTemp.value, humidity: inHum.value }, weather: weatherNow }, session.email);
           if (!r.ok) { err.textContent = r.error; return; }
           closeDialog();
           M.audit(session.email, 'inspect.saved', b.id);
@@ -6542,6 +6550,16 @@
         } }
       ], open.concat(done), 'No follow-ups. Every confirmed order is covered by its harvest estimate.'));
   }
+  var TREND_ICON = { improving: '↗', stable: '→', worsening: '↘', insufficient: '·' };
+  // Outdoor forecast (NEA or demo) and the worker's indoor reading, kept visibly apart.
+  function conditionsCell(i) {
+    var w = i.weather, r = i.indoor;
+    if (!w && !r) return h('small', { class: 'hint', text: 'Not recorded' });
+    return h('span', { class: 'cond-cell' },
+      w ? h('small', null, h('strong', { text: 'Outside (forecast): ' }), (w.now ? w.now + ' · ' : '') + w.lowC + '–' + w.highC + '°C, humidity up to ' + w.humidityHigh + '%',
+        h('br'), h('span', { class: 'hint', text: w.source + (w.issuedAt ? ', issued ' + new Date(w.issuedAt).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }) : '') + ' · ' + w.area })) : null,
+      r ? h('small', null, h('strong', { text: 'Inside (thermometer): ' }), [r.tempC != null ? r.tempC + '°C' : null, r.humidity != null ? r.humidity + '% humidity' : null].filter(Boolean).join(', ')) : null);
+  }
   // One batch's evidence: latest vs previous photo side by side, every inspection exactly as
   // the worker sent it, the manager's decisions and every change to the estimate.
   function openBatchHistory(b) {
@@ -6561,12 +6579,17 @@
       h('div', { class: 'rd-body' },
         h('div', { class: 'rd-head' }, h('h2', { id: 'hi-title', text: p.title + ' · ' + M.inspect.greenhouse(b) }), badge('Batch ' + b.id, 'grey')),
         h('small', { class: 'hint', text: 'Harvest ' + harvestInText(b) + ' · plan now ' + b.expectedQty + ' · ' + hist.inspections.length + ' inspection(s). Inspections are kept exactly as the worker sent them; decisions are added beside them.' }),
+        (function () {
+          var t = M.inspect.trend(b.id);
+          return h('div', { class: 'hist-trend' }, h('span', { class: 'ptype' }, badge(TREND_ICON[t.key] + ' ' + t.label, t.tone)), h('small', { text: t.note + ' Based on what workers confirmed, not the photo check.' }));
+        })(),
         withPhoto.length ? h('div', { class: 'hist-compare' }, withPhoto[1] ? fig(withPhoto[1], 'Previous') : h('div', { class: 'hist-none' }, h('small', { text: 'No earlier photo yet.' })), fig(withPhoto[0], 'Latest')) : null,
         h('h3', { class: 'hist-h', text: 'Inspections' }),
         table([
           { label: 'When', render: function (x) { return h('span', null, h('strong', { text: shortWeekday(x.inspection.at) }), h('br'), h('small', { text: x.inspection.by })); } },
           { label: 'Photo', render: function (x) { return x.inspection.photo ? h('img', { class: 'gh-thumb', src: x.inspection.photo.url, alt: '' }) : h('small', { text: 'None' }); } },
           { label: 'Condition', render: function (x) { return h('span', null, conditionBadge(x.inspection.condition), x.inspection.photo && x.inspection.photo.reason ? [h('br'), h('small', { text: 'Photo check: ' + x.inspection.photo.reason })] : null, x.inspection.notes ? [h('br'), h('small', { text: '“' + x.inspection.notes + '”' })] : null); } },
+          { label: 'Conditions at the time', render: function (x) { return conditionsCell(x.inspection); } },
           { label: 'Estimate', num: true, render: function (x) { return x.inspection.expectedBefore + ' → ' + x.inspection.estQty; } },
           { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(x.status[0], x.status[1])); } },
           { label: 'Decision', render: function (x) { var it = x.item; return it && it.reviewedBy ? h('small', { text: it.reviewedBy + ', ' + shortDate(it.reviewedAt) + (it.decisionReason ? ': “' + it.decisionReason + '”' : '') }) : '—'; } }
@@ -6621,7 +6644,7 @@
       });
   }
   function weatherIcon(text) { return /thunder/i.test(text) ? '⛈️' : /rain|shower/i.test(text) ? '🌧️' : /cloud|overcast/i.test(text) ? '⛅' : /haz/i.test(text) ? '🌫️' : '☀️'; }
-  var ADVICE_ICON = { heat: '🌡️', rain: '☔', humid: '💧', fair: '✅' };
+  var ADVICE_ICON = { heat: '🌡️', rain: '☔', humid: '💧', fair: '✅', visit: '🧑‍🌾' };
   function fillWeather(el) {
     el.textContent = '';
     var w = weatherNow;
@@ -6631,7 +6654,7 @@
       h('div', { class: 'wx-now' },
         h('span', { class: 'wx-icon', 'aria-hidden': 'true', text: weatherIcon(w.now ? w.now.text : w.day.text) }),
         h('span', { class: 'wx-main' },
-          h('small', { text: 'Today at the farm · ' + w.area }),
+          h('small', { text: 'Outdoor forecast · ' + w.area }),
           h('strong', { text: w.now ? w.now.text + ' now' : w.day.text }),
           h('span', { class: 'wx-temps', text: w.day.low + '–' + w.day.high + '°C · humidity up to ' + w.day.humHigh + '% · ' + w.day.text.toLowerCase() + ' later' })),
         h('span', { class: 'ptype wx-src' }, badge(w.source === 'live' ? 'Live · NEA' : 'Demo weather', w.source === 'live' ? 'green' : 'grey'))),
@@ -6640,8 +6663,8 @@
           h('span', null, h('strong', { text: a.title }), h('small', { text: a.text })));
       })),
       h('small', { class: 'wx-foot', text: w.source === 'live'
-        ? 'Forecast from NEA via data.gov.sg (west region), updated ' + new Date(w.updated).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }) + '. The advice is rules, not a prediction.'
-        : 'data.gov.sg couldn\'t be reached, so this is demo weather. The advice rules are the same.' }));
+        ? 'Outdoor forecast from NEA via data.gov.sg (west region), issued ' + new Date(w.updated).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }) + '. It isn\'t a reading inside the greenhouses or an official warning; staff follow NEA\'s guidance and decide. The advice is rules, not a prediction.'
+        : 'data.gov.sg couldn\'t be reached, so this is simulated demo weather. The advice rules are the same.' }));
   }
   function weatherCard() {
     var el = h('section', { class: 'wx-card', 'data-weather': '', 'aria-label': 'Today\'s weather and advice' });
@@ -6664,7 +6687,9 @@
           h('small', { class: 'hm-when', text: t.lastAt ? 'Checked ' + ago(t.lastAt) + (t.unchecked ? ' · ' + t.unchecked + ' not checked' : '') : 'Never checked' }),
           t.rows.length ? h('div', { class: 'hm-crops' }, t.rows.map(function (r) {
             var c = r.inspection ? r.inspection.condition : 'none';
-            return h('button', { type: 'button', class: 'hm-crop', title: 'History for ' + r.product.title, onclick: function () { openBatchHistory(r.batch); } }, h('i', { class: 'hm-dot hm-' + c }), r.product.title);
+            var t = M.inspect.trend(r.batch.id);
+            return h('button', { type: 'button', class: 'hm-crop', title: 'History for ' + r.product.title + ' · ' + t.label, onclick: function () { openBatchHistory(r.batch); } }, h('i', { class: 'hm-dot hm-' + c }), r.product.title,
+              t.key !== 'insufficient' ? h('span', { class: 'hm-trend hm-t-' + t.key, 'aria-label': t.label, text: TREND_ICON[t.key] }) : null);
           })) : h('small', { class: 'hm-empty', text: 'Nothing growing' }));
       })));
   }

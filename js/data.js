@@ -2803,9 +2803,18 @@
     state.inspections = state.inspections || []; state.rounds = state.rounds || [];
     var round = openRound();
     if (!round) { round = { id: nextId('GR'), dayKey: bagDayKey(new Date()), status: 'open', startedAt: new Date().toISOString(), startedBy: actor }; state.rounds.unshift(round); }
+    // Optional reading from a thermometer inside the greenhouse: kept apart from NEA's outdoor forecast.
+    var indoor = null;
+    if (data.indoor && (data.indoor.tempC !== '' && data.indoor.tempC != null || data.indoor.humidity !== '' && data.indoor.humidity != null)) {
+      var tc = data.indoor.tempC === '' || data.indoor.tempC == null ? null : Number(data.indoor.tempC);
+      var hu = data.indoor.humidity === '' || data.indoor.humidity == null ? null : Number(data.indoor.humidity);
+      if (tc != null && !(tc >= 10 && tc <= 50)) return { ok: false, error: 'Greenhouse temperature should be between 10 and 50°C.' };
+      if (hu != null && !(hu >= 1 && hu <= 100)) return { ok: false, error: 'Greenhouse humidity should be between 1 and 100%.' };
+      indoor = { tempC: tc == null ? null : Math.round(tc * 10) / 10, humidity: hu == null ? null : Math.round(hu), source: 'Worker reading (greenhouse thermometer)' };
+    }
     var rec = { id: nextId('IN'), roundId: round.id, batchId: b.id, greenhouse: batchGreenhouse(b), at: new Date().toISOString(), by: actor,
       condition: data.condition, estQty: est, expectedBefore: b.expectedQty, notes: String(data.notes || '').trim().slice(0, 280),
-      photo: data.photo || null };
+      photo: data.photo || null, indoor: indoor, weather: weatherSnapshot(data.weather) };
     state.inspections.push(rec);
     var st = roundStatus(round);
     // The last batch checked sends the whole round.
@@ -2814,6 +2823,30 @@
   }
   // Every change to a batch's estimate is logged (worker inspections themselves are never
   // edited). A confirmed shortfall creates follow-up tasks for sales; a recovery closes them.
+  // The outdoor forecast in force when the inspection was saved: what it said, for where,
+  // when NEA issued it, and whether it was live or demo weather. A forecast, not a reading.
+  function weatherSnapshot(w) {
+    if (!w || !w.day) return null;
+    return { kind: 'Outdoor forecast', source: w.source === 'live' ? 'NEA via data.gov.sg' : 'Demo weather (simulated)', live: w.source === 'live', area: w.area,
+      issuedAt: w.updated || null, capturedAt: new Date().toISOString(), now: w.now ? w.now.text : null, nowValid: w.now ? w.now.until : null,
+      forecast: w.day.text, lowC: w.day.low, highC: w.day.high, humidityHigh: w.day.humHigh };
+  }
+  // Is a batch getting better or worse? Worker-confirmed conditions only (never the photo's
+  // suggestion), one per round, last 21 days. Fewer than 2 rounds → "Insufficient history".
+  function batchTrend(batchId) {
+    var since = Date.now() - 21 * 864e5, perRound = {};
+    (state.inspections || []).forEach(function (i) {
+      if (i.batchId !== batchId || new Date(i.at).getTime() < since) return;
+      if (!perRound[i.roundId] || perRound[i.roundId].at < i.at) perRound[i.roundId] = i;
+    });
+    var list = Object.keys(perRound).map(function (k) { return perRound[k]; }).sort(function (a, b) { return a.at < b.at ? -1 : 1; });
+    if (list.length < 2) return { key: 'insufficient', label: 'Insufficient history', tone: 'grey', points: list, note: list.length ? 'Only one round has checked this batch so far.' : 'Not inspected yet.' };
+    var last = CONDITION_RANK[list[list.length - 1].condition], prev = CONDITION_RANK[list[list.length - 2].condition];
+    var key = last < prev ? 'improving' : last > prev ? 'worsening' : 'stable';
+    var LBL = { improving: ['Improving', 'green'], stable: ['Stable', 'blue'], worsening: ['Worsening', 'red'] };
+    return { key: key, label: LBL[key][0], tone: LBL[key][1], points: list,
+      note: 'Worker-confirmed condition over the last ' + list.length + ' rounds: ' + list.map(function (i) { return CONDITIONS[i.condition].label; }).join(' → ') + '.' };
+  }
   function applyEstimate(b, qty, meta) {
     var pre = batchPreordered(b), from = b.expectedQty;
     b.expectedQty = qty;
@@ -3023,24 +3056,31 @@
     var fungi = greenhouseHealth().filter(function (g) { return g.rows.some(function (r) { return r.product.category === 'fungi' || r.product.category === 'lettuces'; }); });
     var wet = /shower|rain|thunder/i, thunder = /thunder/i;
     var rainy = (w.periods || []).filter(function (p) { return wet.test(p.text); });
+    // Everything below is a forecast risk, never a report that it's happening at the farm.
     if (w.day && w.day.high >= 33) {
-      out.push({ key: 'heat', tone: 'amber', title: 'Hot day: up to ' + w.day.high + '°C',
-        text: 'Check the leafy greens in ' + leafy.slice(0, 3).map(function (g) { return g.name; }).join(', ') + ' first for wilting, ideally before noon.', greenhouses: leafy.slice(0, 3).map(function (g) { return g.name; }) });
+      out.push({ key: 'heat', tone: 'amber', title: 'Forecast: hot, up to ' + w.day.high + '°C outdoors',
+        text: 'Check the leafy greens in ' + leafy.slice(0, 3).map(function (g) { return g.name; }).join(', ') + ' first for wilting, ideally before noon. Inside the greenhouses can differ; a thermometer reading tells you.', greenhouses: leafy.slice(0, 3).map(function (g) { return g.name; }) });
     }
     if (rainy.length) {
-      var first = rainy[0], days = [];
+      var first = rainy[0], days = [], visits = [];
       rainy.forEach(function (p) {
         for (var d = new Date(p.start); d < new Date(p.end); d = new Date(d.getTime() + 3600e3)) {
           var key = bagDayKey(d);
           if (DELIVERY_DAYS.indexOf(d.getDay()) > -1 && d.getHours() >= 8 && d.getHours() < 20 && days.indexOf(key) < 0) days.push(key);
+          // Learning journeys run in the daytime (9am–5pm) and are partly outdoors.
+          if (d.getHours() >= 9 && d.getHours() < 17) state.bookings.forEach(function (b) { if (b.status === 'confirmed' && b.date === key && visits.indexOf(b) < 0) visits.push(b); });
         }
       });
-      out.push({ key: 'rain', tone: 'blue', title: first.text.charAt(0) + first.text.slice(1).toLowerCase() + ', ' + first.label.charAt(0).toLowerCase() + first.label.slice(1),
-        text: (thunder.test(first.text) ? 'Move between greenhouses before it starts, and stay out of open ground while there\'s thunder. ' : 'Plan outdoor work around it. ') +
+      out.push({ key: 'rain', tone: 'blue', title: 'Forecast: ' + first.text.toLowerCase() + ', ' + first.label.charAt(0).toLowerCase() + first.label.slice(1),
+        text: (thunder.test(first.text) ? 'Plan moves between greenhouses around it. If you hear thunder or NEA issues a warning, follow official safety guidance and stay out of open ground. ' : 'Plan outdoor work around it. ') +
           (days.length ? days.map(function (k) { return shortDayLabel(k); }).join(' and ') + ' deliveries may run late: pack early and warn the drivers.' : 'No delivery runs fall in that window.') });
+      visits.forEach(function (b) {
+        out.push({ key: 'visit', tone: 'amber', title: 'Farm visit in the forecast window: ' + (b.org || b.name),
+          text: shortDayLabel(b.date) + ', ' + b.pax + ' guests (' + b.experience + '). Review the outdoor parts of the route and have an indoor alternative ready. The farm manager decides on the day.', bookingId: b.id });
+      });
     }
     if (w.day && w.day.humHigh >= 90 && rainy.length) {
-      out.push({ key: 'humid', tone: 'amber', title: 'Very humid: up to ' + w.day.humHigh + '%',
+      out.push({ key: 'humid', tone: 'amber', title: 'Forecast: very humid, up to ' + w.day.humHigh + '%',
         text: 'Look for mould or soft rot on mushrooms and lettuces in ' + fungi.slice(0, 3).map(function (g) { return g.name; }).join(', ') + '.' });
     }
     if (!out.length) out.push({ key: 'fair', tone: 'green', title: w.day ? w.day.text + ', ' + w.day.low + '–' + w.day.high + '°C' : 'Fair weather', text: 'Nothing unusual. A normal round.' });
@@ -4243,7 +4283,7 @@
       CONDITIONS: CONDITIONS, GRADE_CONDITION: GRADE_CONDITION, greenhouse: batchGreenhouse, batches: inspectableBatches, openRound: openRound,
       status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates,
       risk: commitmentRisk, risks: commitmentRisks, pending: pendingEstimate, closeTask: taskClose, history: batchHistory, STATUS: INSPECTION_STATUS,
-      health: greenhouseHealth, weatherAdvice: weatherAdvice, learning: learningStats, bias: estimateBias, corrected: correctedEstimate
+      health: greenhouseHealth, weatherAdvice: weatherAdvice, trend: batchTrend, learning: learningStats, bias: estimateBias, corrected: correctedEstimate
     },
     seasons: {
       FESTIVALS: FESTIVALS, WINDOW_DAYS: FESTIVE_WINDOW_DAYS, outlook: festiveOutlook, STORES: MARKET_STORES, addPrice: marketPriceAdd, compare: marketCompare

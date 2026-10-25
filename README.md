@@ -127,11 +127,20 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
     - Once approved, it becomes a **confirmed shortfall**, with the affected orders listed (trade orders first, then pre-orders oldest first).
   - **Sales follow-ups.** A confirmed shortfall creates one internal task per affected order. Tyllage never contacts customers itself. Staff close a task with a note of what was agreed, a closed task isn't reopened, and tasks close themselves if a later estimate covers the order again.
   - **Batch history.** Every batch has a history: the previous and latest inspection photos side by side, every inspection exactly as the worker sent it, its status (Draft, Accepted automatically, Review required, Accepted by manager, Not accepted), the manager's decision and reason, and a log of every estimate change. Inspections are never edited; decisions are added beside them.
-- **Greenhouse health map** (Greenhouse rounds). One tile per greenhouse, coloured by its most serious latest inspection: green Healthy, amber Monitor, red Needs review. A greenhouse not checked for 3+ days fades. Tap a crop to open its history.
+- **Greenhouse health map** (Greenhouse rounds). One tile per greenhouse, coloured by its most serious latest inspection: green Healthy, amber Monitor, red Needs review. A greenhouse not checked for 3+ days fades. Each crop shows its trend arrow (↗ ↘ →). Tap a crop to open its history.
+- **Conditions saved with every inspection.**
+  - **Outdoor forecast:** NEA's forecast at that moment is saved with the inspection (what it said, where, when NEA issued it, and whether it was live or demo weather).
+  - **Greenhouse reading (optional):** the worker can add the temperature and humidity from a thermometer inside the greenhouse.
+
+  Batch history shows the two on separate lines, "Outside (forecast)" and "Inside (thermometer)". NEA's figures are never treated as greenhouse conditions.
+- **Batch health trend.** Improving, Stable or Worsening, from the worker-confirmed condition (never the photo check), one check per round over the last 21 days. With fewer than two rounds it says **Insufficient history**, not Stable.
 - **Weather-aware daily advisory** (on the round page, for workers and staff). Today's forecast for MEOD's area (Lim Chu Kang, west region) comes live from NEA's public forecasts on data.gov.sg. Rules turn it into advice:
   - **Hot day (33°C+):** which greenhouses' leafy greens to check first for wilting, with those already under watch first.
   - **Showers or thunder:** when they'll hit, a lightning warning, and which delivery days may run late.
   - **Very humid:** which greenhouses to check for mould or rot.
+  - **Farm visits:** confirmed learning journeys inside a forecast showers window (9am–5pm) get a note to review the outdoor parts of the route and have an indoor alternative ready.
+
+  Every item is labelled **Forecast**. It isn't a report of what's happening at the farm, or an official warning. If there's thunder or an NEA warning, staff follow official safety guidance, and the farm manager makes the call.
 
   It's kept for 30 minutes. If data.gov.sg can't be reached, a clearly labelled demo forecast is used.
 - **Learning from inspections** ("What Tyllage is learning" on Greenhouse rounds). Measured, not claimed:

@@ -59,14 +59,78 @@
     return badge(s.label, { ok: 'green', low: 'amber', out: 'red', stale: 'grey' }[s.key]);
   }
 
-  function table(columns, rows, emptyText) {
-    if (!rows.length) return h('p', { class: 'empty', text: emptyText || 'Nothing here yet.' });
+  // Every table pages itself once it passes 10 rows: a search box over what's in the rows,
+  // "Showing 1–10 of 45", page numbers and a rows-per-page choice. Page and search survive a
+  // redraw of the same table (keyed by page title + columns). opts.paginate = false opts out
+  // (for tables that page themselves).
+  var tableState = {};
+  var PAGE_SIZES = [10, 25, 50, 100];
+  function plainTable(columns, rows) {
     return h('div', { class: 'table-wrap' },
       h('table', null,
         h('thead', null, h('tr', null, columns.map(function (c) { return h('th', { class: c.num ? 'num' : null, scope: 'col', text: c.label }); }))),
         h('tbody', null, rows.map(function (r) {
           return h('tr', null, columns.map(function (c) { return h('td', { class: c.num ? 'num' : null, 'data-label': c.label }, c.render(r)); }));
         }))));
+  }
+  function table(columns, rows, emptyText, opts) {
+    opts = opts || {};
+    if (!rows.length) return h('p', { class: 'empty', text: emptyText || 'Nothing here yet.' });
+    if (opts.paginate === false || rows.length <= PAGE_SIZES[0]) return plainTable(columns, rows);
+    var key = currentTitle + '|' + columns.map(function (c) { return c.label; }).join('|');
+    var st = tableState[key] || (tableState[key] = { page: 0, size: PAGE_SIZES[0], q: '' });
+    var texts = [];
+    // Searchable text of a row = the data its cells show (not button or menu labels), worked
+    // out only when someone searches.
+    function rowText(i) {
+      if (texts[i] == null) {
+        var tr = h('tr', null, columns.map(function (c) { return h('td', null, c.render(rows[i])); }));
+        tr.querySelectorAll('button, select, input, textarea').forEach(function (el) { el.remove(); });
+        texts[i] = tr.textContent.toLowerCase();
+      }
+      return texts[i];
+    }
+    var body = h('div', { class: 'tbl-body' }), pager = h('nav', { class: 'tbl-pager', 'aria-label': 'Table pages' }), info = h('small', { class: 'tbl-info', 'aria-live': 'polite' });
+    var search = h('input', { type: 'search', class: 'tbl-search', placeholder: 'Search ' + rows.length + ' rows', value: st.q, 'aria-label': 'Search this table' });
+    var size = h('select', { class: 'tbl-size', 'aria-label': 'Rows per page' }, PAGE_SIZES.map(function (n) { return h('option', { value: String(n), text: n + ' per page' }); }));
+    size.value = String(st.size);
+    var block = h('div', { class: 'tbl-block' }, h('div', { class: 'tbl-tools' }, search, size), body, h('div', { class: 'tbl-foot' }, info, pager));
+    function go(p) {
+      st.page = p; draw();
+      var top = block.getBoundingClientRect().top;
+      if (top < 0) window.scrollBy({ top: top - 80, behavior: 'smooth' });
+    }
+    function draw() {
+      var q = st.q.trim().toLowerCase(), idx = [];
+      for (var i = 0; i < rows.length; i++) if (!q || rowText(i).indexOf(q) > -1) idx.push(i);
+      var pages = Math.max(1, Math.ceil(idx.length / st.size));
+      if (st.page >= pages) st.page = pages - 1;
+      var from = st.page * st.size, slice = idx.slice(from, from + st.size).map(function (i) { return rows[i]; });
+      body.textContent = '';
+      append(body, slice.length ? plainTable(columns, slice) : h('p', { class: 'empty', text: 'Nothing matches "' + st.q + '".' }));
+      info.textContent = idx.length ? 'Showing ' + (from + 1) + '–' + (from + slice.length) + ' of ' + idx.length + (q ? ' (filtered from ' + rows.length + ')' : '') : '';
+      pager.textContent = '';
+      if (pages <= 1) return;
+      var btn = function (label, p, o) {
+        o = o || {};
+        return h('button', { type: 'button', class: 'pg' + (o.current ? ' on' : ''), disabled: o.disabled, 'aria-current': o.current ? 'page' : null, 'aria-label': o.aria || 'Page ' + (p + 1), text: label, onclick: function () { go(p); } });
+      };
+      append(pager, btn('‹', st.page - 1, { disabled: st.page === 0, aria: 'Previous page' }));
+      // 1 … 4 5 6 … 12: first, last, and the pages around the current one.
+      var shown = [0, pages - 1, st.page - 1, st.page, st.page + 1].filter(function (p, k, a) { return p >= 0 && p < pages && a.indexOf(p) === k; }).sort(function (a, b) { return a - b; });
+      shown.forEach(function (p, k) {
+        if (k && p - shown[k - 1] > 1) append(pager, h('span', { class: 'pg-gap', text: '…' }));
+        append(pager, btn(String(p + 1), p, { current: p === st.page }));
+      });
+      append(pager, btn('›', st.page + 1, { disabled: st.page >= pages - 1, aria: 'Next page' }));
+    }
+    // A page that already has its own search box (Customers, Users, Audit log) keeps just
+    // that one: see .panel:has(.user-search) .tbl-search in portal.css.
+    var timer;
+    search.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { st.q = search.value; st.page = 0; draw(); }, 150); });
+    size.addEventListener('change', function () { st.size = Number(size.value); st.page = 0; draw(); });
+    draw();
+    return block;
   }
   function kpi(label, value, note) { return h('div', { class: 'kpi' }, h('span', { text: label }), h('strong', { text: value }), note ? h('small', { text: note }) : null); }
   // One look for every AI-assisted feature (insights, drafts, suggestions, AI search, grading):
@@ -114,6 +178,21 @@
   function itemsSummary(o) { return o.items.map(function (i) { return i.qty + '× ' + i.title; }).join(', '); }
 
   /* ---------------- staff / admin views ---------------- */
+  // Every role's Overview starts the same way: a greeting band with today's one-line summary
+  // and the main next steps, then a row of KPI tiles, then that role's own content.
+  function greeting() { var hr = new Date().getHours(); return hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'; }
+  function overviewBand(o) {
+    return h('section', { class: 'ov-band' },
+      h('div', { class: 'ov-text' },
+        h('span', { class: 'rnd-eyebrow', text: new Date().toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + o.eyebrow }),
+        h('h2', { text: greeting() + (o.name ? ', ' + o.name : '') + ' 🌱' }),
+        h('p', { text: o.summary })),
+      h('div', { class: 'ov-actions' }, o.actions.map(function (a, i) {
+        return h('a', { class: 'btn ' + (i ? 'btn-ghost' : 'btn-gold'), href: a.href, text: a.label });
+      })));
+  }
+  function sessionFirstName() { return String(session.name || '').replace(/\s*\(demo\)/i, '').split(' ')[0]; }
+
   function staffOverview(root) {
     var weekAgo = Date.now() - 7 * 864e5;
     var recent = S().orders.filter(function (o) { return new Date(o.createdAt) > weekAgo && o.status !== 'cancelled'; });
@@ -127,23 +206,17 @@
     var newBookings = S().bookings.filter(function (b) { return b.status === 'new'; });
     var payable = M.ledger().reduce(function (s, e) { return s + e.payableCents; }, 0);
 
-    // Weekly AI briefing teaser: how many priorities, and the top one.
-    if (M.auth.can(session, 'radar')) {
-      var pr = briefingPriorities();
-      append(root, h('a', { class: 'brief-teaser', href: '#briefing' },
-        iconCircle('<path d="m12 3 1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>', 'soft'),
-        h('span', { class: 'brief-teaser-text' },
-          h('span', { class: 'brief-teaser-head' }, h('strong', { text: 'Weekly AI briefing' }), aiPill()),
-          h('small', { text: pr.length ? pr.length + ' priorities this week · top: ' + pr[0].title : 'Nothing urgent this week' })),
-        h('span', { class: 'pill-btn', text: 'Open →' })));
-    }
+    // The weekly AI briefing's top priority leads the day.
+    var pr = M.auth.can(session, 'radar') ? briefingPriorities() : [];
+    append(root, overviewBand({ eyebrow: session.role === 'admin' ? 'Admin' : 'Sales staff',
+      summary: pr.length ? pr.length + ' priorities this week. Top: ' + pr[0].title + '.' : 'Nothing urgent this week.',
+      actions: [{ label: 'Open the weekly briefing', href: '#briefing' }, { label: 'Ask Tyllage', href: '#copilot' }] }));
 
     append(root, h('div', { class: 'kpis' },
       kpi('Orders · 7 days', String(recent.length), money(revenue) + ' net of refunds'),
       kpi('Open tickets', String(openTickets.length), 'Human handover queue'),
       kpi('New bookings', String(newBookings.length), 'Farm tours & workshops'),
-      kpi('Stock alerts', String(alerts.length), 'Low, sold out or stale'),
-      kpi('Commission owed', money(payable), 'All group leaders')));
+      kpi('Stock alerts', String(alerts.length), 'Low, sold out or stale · ' + money(payable) + ' commission owed')));
 
     append(root, h('div', { class: 'two-col' },
       panel('Needs a human', 'Complaints, refunds, payment and food-safety chats go here. The bot stops handling them.',
@@ -3959,7 +4032,7 @@
         { label: 'Next tier', render: function (m) { return m.s.next ? m.s.toNext + ' to ' + m.s.next.label : '—'; } },
         { label: 'Points', num: true, render: function (m) { return String(m.s.points) + (m.s.pending ? ' (+' + m.s.pending + ')' : ''); } },
         { label: 'Last order', render: function (m) { return m.daysSinceOrder === null ? '—' : m.daysSinceOrder === 0 ? 'Today' : m.daysSinceOrder + ' d ago'; } }
-      ], slice, 'No members match — clear the search or pick another tier.'));
+      ], slice, 'No members match — clear the search or pick another tier.', { paginate: false }));
       pager.textContent = '';
       append(pager,
         h('small', { text: rows.length ? (st.page * PAGE + 1) + '–' + (st.page * PAGE + slice.length) + ' of ' + rows.length + ' member' + (rows.length === 1 ? '' : 's') : '0 members' }),
@@ -4684,6 +4757,10 @@
   function leaderOverview(root) {
     var entries = M.ledger(session.leaderId);
     var orders = leaderOrders().filter(function (o) { return o.status !== 'cancelled'; });
+    var open = leaderEvents().filter(function (e) { return e.status === 'open'; });
+    append(root, overviewBand({ eyebrow: 'Group leader', name: sessionFirstName(),
+      summary: open.length ? open.length + ' group buy' + (open.length === 1 ? '' : 's') + ' open. ' + open[0].title + ' ends ' + shortWeekday(open[0].endsAt) + '; share your code to bring more neighbours in.' : 'No group buy is open right now. Ask MEOD to start one.',
+      actions: [{ label: 'Group orders', href: '#orders' }, { label: 'Commission', href: '#commission' }] }));
     append(root, h('div', { class: 'kpis' },
       kpi('Active group buys', String(leaderEvents().filter(function (e) { return e.status === 'open'; }).length)),
       kpi('Group orders', String(orders.length)),
@@ -4796,6 +4873,10 @@
     var c = me();
     var mine = S().orders.filter(function (o) { return o.customerId === c.id; });
     var last = mine[mine.length - 1];
+    var nextDay = M.nextDeliveryDay(new Date()).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' });
+    append(root, overviewBand({ eyebrow: 'MEOD Fresh', name: sessionFirstName(),
+      summary: 'Next delivery: ' + nextDay + '.' + (last && ['paid', 'pending_payment'].indexOf(last.status) > -1 ? ' Your order ' + last.ref + ' is on its way.' : ' Fresh greens are picked the morning they\'re delivered.'),
+      actions: [{ label: 'Shop the harvest', href: '#shop' }, { label: 'My orders', href: '#orders' }] }));
     append(root, h('div', { class: 'kpis' },
       kpi('Orders', String(mine.length)),
       kpi('Latest order', last ? last.ref : '—', last ? last.status.replace('_', ' ') : null),
@@ -6421,7 +6502,10 @@
     return el;
   }
   var ROUND_FILTERS = [['all', 'All'], ['todo', 'To check'], ['done', 'Checked'], ['soon', 'Harvest ≤ 2 days']];
-  function roundChecklist() {
+  // opts.kpis: the worker's Overview shows the standard KPI row under the hero (the staff page
+  // has its own KPI row, so there the hero keeps its small stats instead).
+  function roundChecklist(opts) {
+    opts = opts || {};
     var s = M.inspect.status(M.inspect.openRound());
     var st = roundChecklist.state || (roundChecklist.state = { filter: 'all' });
     var next = s.rows.filter(function (r) { return !r.inspection; })[0];
@@ -6439,7 +6523,7 @@
         h('h2', { text: hello + ' 🌱' }),
         next ? h('p', { class: 'rnd-next' }, h('span', { text: s.checked ? 'Next up: ' : 'First up: ' }), h('strong', { text: next.greenhouse + ' · ' + next.product.title }), h('span', { text: ', harvest ' + harvestInText(next.batch) }))
           : h('p', { class: 'rnd-next', text: !s.total ? 'Nothing is growing right now.' : notReceived ? 'Every batch is checked. ' + notReceived + ' still to upload before the round is sent.' : 'Every batch is checked. Nice work!' }),
-        h('ul', { class: 'rnd-stats' },
+        opts.kpis ? null : h('ul', { class: 'rnd-stats' },
           h('li', null, h('strong', { text: String(s.total) }), h('span', { text: ' batches' })),
           h('li', null, h('strong', { text: String(Object.keys(s.rows.reduce(function (o, r) { o[r.greenhouse] = 1; return o; }, {})).length) }), h('span', { text: ' greenhouses' })),
           h('li', { class: soon.length ? 'warm' : '' }, h('strong', { text: String(soon.length) }), h('span', { text: ' harvest within 2 days' })),
@@ -6499,7 +6583,12 @@
     // Phones: the next step stays in reach at the bottom of the screen.
     var dock = next ? h('div', { class: 'rnd-dock' }, h('span', null, h('strong', { text: s.checked + ' of ' + s.total }), h('small', { text: ' checked' })),
       h('button', { class: 'btn btn-gold', type: 'button', text: s.checked ? 'Continue →' : 'Start round →', onclick: start })) : null;
-    return h('div', { class: 'rnd' }, hero, weatherCard(), s.total ? chips : null, s.total ? grid : null, dock);
+    var kpiRow = opts.kpis ? h('div', { class: 'kpis' },
+      kpi('Checked today', s.checked + ' of ' + s.total, 'batches in this round'),
+      kpi('Harvest ≤ 2 days', String(soon.length), 'check these first'),
+      kpi('Need attention', String(flagged.length), 'marked Monitor or Needs review'),
+      kpi('Not yet received', String(M.inspect.outbox().unsynced), 'saved on this phone')) : null;
+    return h('div', { class: 'rnd' }, hero, kpiRow, weatherCard(), s.total ? chips : null, s.total ? grid : null, dock);
   }
   function roundSummary(r, showImpact) {
     var items = (r.items || []).filter(function (x) { return x.status !== 'unchecked'; });
@@ -6527,7 +6616,7 @@
       append(root, panel('Today\'s round is sent', 'Thanks! The harvest plan and sales planning now use your numbers. Start another round if you check the greenhouses again today.',
         roundSummary(last, false)));
     }
-    append(root, roundChecklist());
+    append(root, roundChecklist({ kpis: true }));
     append(root, deviceStorageCard());
   }
   function pastRoundsView(root) {
@@ -7146,7 +7235,37 @@
     var root = $('[data-view]');
     root.textContent = '';
     view.render(root);
+    collapseLists(root);
     fitTables();
+  }
+
+  // Card lists that grow with the farm's data show the first few, then "Show more". How far
+  // you've expanded a list is kept while you stay on the page (actions redraw it). Fixed-size
+  // lists (7 days, 8 greenhouses) aren't touched.
+  var COLLAPSE = [['.radar-list', 6], ['.al-list', 5], ['.ld-brief', 6], ['.gantt', 8], ['.rescue-list', 5], ['.ops-brief:not(.adv-list)', 6], ['.risk-list', 4], ['.fest-list', 3]];
+  var collapseState = {};
+  function collapseLists(root) {
+    COLLAPSE.forEach(function (c) {
+      root.querySelectorAll(c[0]).forEach(function (list, n) {
+        var items = Array.prototype.filter.call(list.children, function (el) { return !el.classList.contains('gantt-axis'); });
+        if (items.length <= c[1] + 2) return; // not worth hiding one or two
+        var key = currentTitle + c[0] + n, step = c[1];
+        var more = h('div', { class: 'list-more' });
+        function apply() {
+          var shown = Math.min(items.length, collapseState[key] || step);
+          items.forEach(function (el, i) { el.hidden = i >= shown; });
+          more.textContent = '';
+          var left = items.length - shown;
+          append(more,
+            h('small', { text: 'Showing ' + shown + ' of ' + items.length }),
+            left ? h('button', { type: 'button', class: 'btn btn-sm btn-outline', text: 'Show ' + Math.min(step, left) + ' more', onclick: function () { collapseState[key] = shown + step; apply(); } }) : null,
+            left > step ? h('button', { type: 'button', class: 'mini', text: 'Show all ' + items.length, onclick: function () { collapseState[key] = items.length; apply(); } }) : null,
+            shown > step ? h('button', { type: 'button', class: 'mini', text: 'Show less', onclick: function () { collapseState[key] = step; apply(); list.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }) : null);
+        }
+        list.insertAdjacentElement('afterend', more);
+        apply();
+      });
+    });
   }
 
   // Tables that don't fit their panel switch to stacked cards (.as-cards). Phones always get

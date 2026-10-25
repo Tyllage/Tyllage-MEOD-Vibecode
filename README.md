@@ -94,6 +94,20 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 
 On phones the sidebar becomes a swipeable top menu with the same group labels.
 
+### Layout and handling lots of data (every role)
+
+- **Same overview layout for every role.** Staff, group leaders, customers and farm workers all get a greeting band (date, today's one-line summary, the main next steps), then a row of KPI tiles, then their own content. For farm workers, the round hero is the band.
+- **Even spacing and alignment.** Every page is a stack with the same 24px gap between blocks. KPI rows split evenly (4 across on wide screens, 2 × 2 on tablets and phones, no lonely tile). Cards in a row are the same height, with titles and footers lined up.
+- **Paged tables.** Every table with more than 10 rows gets:
+  - a search box (it searches what the rows show, not button labels),
+  - **Showing 1–10 of 45**,
+  - page numbers (‹ 1 2 3 … 5 ›),
+  - 10 / 25 / 50 / 100 rows per page.
+
+  Page and search are kept when an action redraws the page. Pages with their own search (Customers, Users, Audit log) keep just theirs. On phones, tables become cards and the page buttons are larger to tap.
+- **Show more.** Long card lists show the first few, then **Show more**, **Show all** or **Show less**. That covers Demand Radar, Harvest allocation, Lost demand, the Harvest Planner timeline, Harvest Rescue, Price Advisor, B2B insights, commitment risks and festivals. Fixed-size lists (7 days, 8 greenhouses) always show in full.
+- **Checked at 375px (phone) and desktop** for every screen in every role, with no sideways scrolling. A few strips scroll sideways on purpose: shop pre-orders, chat suggestions and filter chips.
+
 ### AI-assisted features
 
 Every AI-assisted feature carries the same **AI-assisted** pill. All of them are **rule-based** in the prototype: they read the demo records, show how they reached an answer, and never change prices, send messages or write orders on their own. A person always approves.

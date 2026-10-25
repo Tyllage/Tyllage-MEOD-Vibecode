@@ -1967,6 +1967,20 @@ a.pill-btn { text-decoration: none; }
 .rv-insp { display: flex; gap: 10px; align-items: flex-start; }
 .rv-insp .badge { text-transform: none; }
 .rnd-summary { display: grid; gap: 10px; }
+.risk-list { display: grid; gap: 14px; margin-top: 12px; }
+.risk-card { display: grid; gap: 10px; padding: 16px 18px; border-radius: 14px; border: 1.5px solid #f1cfc7; background: #fffaf8; }
+.risk-card.pending { border-color: #f0dca8; background: #fffcf3; }
+.risk-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: var(--forest); }
+.risk-head small { color: var(--muted); }
+.risk-steps { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: .86rem; }
+.hist-dialog { width: min(980px, calc(100vw - 16px)); }
+.hist-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.hist-fig { margin: 0; display: grid; gap: 8px; }
+.hist-fig img { width: 100%; max-width: 260px; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
+.hist-fig figcaption { display: grid; gap: 3px; justify-items: start; font-size: .82rem; }
+.hist-fig figcaption small { color: var(--muted); }
+.hist-none { display: grid; place-items: center; border: 1.5px dashed #d9d2c4; border-radius: 12px; min-height: 140px; color: var(--muted); }
+.hist-h { margin: 6px 0 0; font-size: .82rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .rnd-summary .callout { margin: 0; }
 @media (max-width: 640px) {
   .cond-pick { grid-template-columns: 1fr; }

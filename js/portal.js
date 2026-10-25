@@ -4309,7 +4309,7 @@
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
-    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan',
+    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up',
     'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
     'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
@@ -6335,10 +6335,11 @@
       h('p', { class: 'callout green', text: 'Sent ' + ago(r.submittedAt) + ' by ' + r.submittedBy + ': ' + count('applied') + ' updated, ' + count('same') + ' unchanged, ' + count('held') + ' waiting for the farm manager' +
         ((r.items || []).length - items.length ? ', ' + ((r.items || []).length - items.length) + ' not checked' : '') + '.' }),
       table([
-        { label: 'Batch', render: function (x) { var b = M.byId('batches', x.batchId), p = b && M.byId('products', b.productId); return h('span', null, h('strong', { text: p ? p.title : x.batchId }), h('br'), h('small', { text: (b ? M.inspect.greenhouse(b) : '') + ' · ' + x.batchId })); } },
+        { label: 'Batch', render: function (x) { var b = M.byId('batches', x.batchId), p = b && M.byId('products', b.productId); return h('span', null, h('strong', { text: p ? p.title : x.batchId }), h('br'), h('small', { text: (b ? M.inspect.greenhouse(b) : '') + ' · ' + x.batchId }),
+          showImpact && b ? [h('br'), mini('History', function () { openBatchHistory(b); })] : null); } },
         { label: 'Condition', render: function (x) { return conditionBadge(x.condition); } },
         { label: 'Estimate', num: true, render: function (x) { return x.from === x.to ? String(x.to) : x.from + ' → ' + x.to + ' (' + (x.changePct > 0 ? '+' : '') + x.changePct + '%)'; } },
-        { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(STATUS[x.status][0], STATUS[x.status][1]), x.atRisk ? h('small', { class: 'bag-value-low', text: ' ' + x.atRisk + ' pre-orders at risk' }) : null); } },
+        { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(STATUS[x.status][0], STATUS[x.status][1]), x.shortfall ? h('small', { class: 'bag-value-low', text: ' short ' + x.shortfall + ' of confirmed orders' }) : null); } },
         showImpact ? { label: 'Campaign Advisor now', render: function (x) { return h('small', { text: promoNow(x.batchId) }); } } : null
       ].filter(Boolean), listed, items.length ? 'Every batch checked was healthy and on plan.' : 'No batches were checked in this round.'));
   }
@@ -6363,13 +6364,18 @@
     var s = M.inspect.status(M.inspect.openRound()), held = M.inspect.held();
     var canReview = M.auth.can(session, 'inspect.review');
     var lastSent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; })[0];
+    var risks = M.inspect.risks(), tasks = (S().tasks || []).filter(function (t) { return t.status === 'open'; });
     append(root, h('div', { class: 'kpis' },
       kpi('Today\'s round', s.checked + ' of ' + s.total, 'batches checked'),
       kpi('Waiting for review', String(held.length), 'estimate changes'),
-      kpi('Last round sent', lastSent ? ago(lastSent.submittedAt) : '—', lastSent ? 'by ' + lastSent.submittedBy : 'none yet')));
+      kpi('Commitment risks', String(risks.length), risks.filter(function (r) { return r.pending; }).length + ' potential · ' + risks.filter(function (r) { return !r.pending; }).length + ' confirmed'),
+      kpi('Sales follow-ups', String(tasks.length), 'open tasks')));
+    if (risks.length) append(root, panel(aiTitle('Harvest commitment risk'), 'Batches whose estimate is below what\'s already been promised: confirmed trade orders and the batch\'s own pre-orders, each counted once. Usual shop sales are estimates, so they\'re left out. A worker\'s estimate that\'s still waiting for review is shown as a potential shortfall, not a fact.',
+      h('div', { class: 'risk-list' }, risks.map(riskCard))));
+    append(root, tasksPanel(tasks));
     append(root, panel('Waiting for your review', 'Estimates that change a batch by more than ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '%, or that the worker marked "Needs review". Approving updates the harvest plan, and Demand Radar, Harvest Drops and Campaign Advisor follow.',
       table([
-        { label: 'Batch', render: function (x) { var p = M.byId('products', x.batch.productId); return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: M.inspect.greenhouse(x.batch) + ' · harvest ' + harvestInText(x.batch) })); } },
+        { label: 'Batch', render: function (x) { var p = M.byId('products', x.batch.productId); return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: M.inspect.greenhouse(x.batch) + ' · harvest ' + harvestInText(x.batch) }), h('br'), mini('History', function () { openBatchHistory(x.batch); })); } },
         { label: 'Inspection', render: function (x) {
           var i = x.inspection;
           return h('span', { class: 'rv-insp' }, i && i.photo ? h('img', { class: 'gh-thumb', src: i.photo.url, alt: 'Inspection photo' }) : null,
@@ -6380,23 +6386,118 @@
         { label: 'Actions', render: function (x) {
           if (!canReview) return h('small', { text: 'Waiting for the farm manager' });
           return h('div', { class: 'actions' },
-            mini('Approve', function () { var r = M.inspect.review(x.round.id, x.batch.id, true, session.email); if (!r.ok) { toast(r.error); return; } commit('inspect.approved', x.batch.id, 'Estimate updated to ' + x.item.to + (r.item.atRisk ? '. ' + r.item.atRisk + ' pre-order(s) at risk: contact those customers.' : '.')); }),
-            mini('Keep old plan', function () { var r = M.inspect.review(x.round.id, x.batch.id, false, session.email); if (!r.ok) { toast(r.error); return; } commit('inspect.kept', x.batch.id, 'Kept the plan of ' + x.item.from + '.'); }));
+            mini('Approve', function () { decideEstimate(x, true); }),
+            mini('Keep old plan', function () { decideEstimate(x, false); }));
         } }
       ], held, 'Nothing waiting. Every estimate from the last round is in the plan.')));
     append(root, panel('Today\'s round', 'Workers do this on their phones (worker@meod.test). Staff can check a batch here too.', roundChecklist()));
+    if (!canReview) append(root, h('p', { class: 'callout', text: 'Only the farm manager (admin) approves estimate changes. You can see them, their effect on orders, and the follow-up tasks.' }));
     var recent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 3);
     recent.forEach(function (r, idx) {
       append(root, panel(idx ? 'Round ' + shortWeekday(r.submittedAt) : 'Last round', 'What the workers found, and what Campaign Advisor suggests for each harvest now.', roundSummary(r, true)));
     });
   }
-  // A held estimate's effect on the harvest's commitments, before anyone approves it.
+  // A held estimate's effect on confirmed orders, before anyone approves it.
   function impactIfApproved(x) {
+    var r = M.inspect.risk(x.batch, x.item.to, true);
+    var conf = 'Confirmed orders ' + r.confirmed + ' (trade ' + r.trade + ', pre-orders ' + r.preorder + ')';
+    if (r.shortfall) return conf + '. Potential shortfall ' + r.shortfall + ' across ' + r.affected.length + ' order(s); approving creates follow-up tasks for sales.';
     var d = M.promo.drops().filter(function (y) { return y.batch.id === x.batch.id; })[0];
-    if (!d) return 'Harvest is more than 2 weeks away; Demand Radar picks it up later.';
-    var wanted = d.supply - d.uncommitted + d.shortBy, unc = Math.max(0, x.item.to - wanted), short = Math.max(0, wanted - x.item.to);
-    var pre = M.harvest.preordered(x.batch);
-    return 'Uncommitted ' + d.uncommitted + ' → ' + unc + (short ? ', short by ' + short + ' (hold promotions)' : '') + (pre > x.item.to ? '. ' + (pre - x.item.to) + ' pre-order(s) at risk.' : '.');
+    return conf + ', all covered.' + (d ? ' Uncommitted after usual sales: ' + d.uncommitted + ' → ' + Math.max(0, d.uncommitted + x.item.to - x.item.from) + '.' : '');
+  }
+  // Approve or keep, with an optional reason saved as the decision record.
+  function decideEstimate(x, approve) {
+    var reason = prompt(approve ? 'Approve ' + x.item.from + ' → ' + x.item.to + '. Reason (optional):' : 'Keep the plan of ' + x.item.from + '. Reason (optional):', '');
+    if (reason === null) return;
+    var r = M.inspect.review(x.round.id, x.batch.id, approve, session.email, reason);
+    if (!r.ok) { toast(r.error); return; }
+    commit(approve ? 'inspect.approved' : 'inspect.kept', x.batch.id, approve
+      ? 'Estimate updated to ' + x.item.to + (r.risk && r.risk.shortfall ? '. Short ' + r.risk.shortfall + ' of confirmed orders: ' + r.tasksCreated + ' follow-up task(s) created for sales.' : '.')
+      : 'Kept the plan of ' + x.item.from + '. Harvest Drop offers for this batch can resume.');
+  }
+  var RISK_ROW = { covered: ['Covered', 'green'], partial: ['Partly at risk', 'amber'], 'at-risk': ['At risk', 'red'] };
+  function riskCard(r) {
+    var b = r.batch, p = M.byId('products', b.productId);
+    var cell = function (label, v, cls) { return h('li', { class: cls || '' }, h('small', { text: label }), h('strong', { text: String(v) })); };
+    var steps = r.pending
+      ? ['New Harvest Drop offers for this batch are paused.', 'Check the batch (History has the photos), then approve or keep the estimate.', 'Approving creates a follow-up task for each affected order. Nothing is sent to customers.']
+      : ['Harvest Drop offers and promotions for this batch are off.', 'Sales follow up each affected order (tasks below): a smaller quantity, a substitute or a later delivery.', 'Availability opens again only if a later round raises the estimate.'];
+    return h('article', { class: 'risk-card' + (r.pending ? ' pending' : '') },
+      h('div', { class: 'risk-head' },
+        h('span', null, h('strong', { text: p.title + ' · ' + M.inspect.greenhouse(b) }), h('small', { text: ' batch ' + b.id + ' · harvest ' + harvestInText(b) })),
+        h('span', { class: 'ptype' }, badge(r.pending ? 'Potential shortfall · manager review' : 'Confirmed shortfall', r.pending ? 'amber' : 'red'))),
+      h('ul', { class: 'drop-stats wide' },
+        cell(r.pending ? 'Proposed estimate' : 'Approved estimate', r.estimate + (r.pending ? ' (plan ' + b.expectedQty + ')' : '')),
+        cell('Confirmed trade orders', r.trade), cell('Batch pre-orders', r.preorder), cell(r.pending ? 'Potential shortfall' : 'Shortfall', r.shortfall, 'hl')),
+      h('ul', { class: 'risk-steps' }, steps.map(function (t) { return h('li', { text: t }); })),
+      h('details', { class: 'cp-vs' }, h('summary', { text: r.affected.length + ' affected order(s) of ' + r.rows.length }),
+        table([
+          { label: 'Order', render: function (x) { return h('span', null, h('strong', { text: x.ref }), h('br'), h('small', { text: (x.kind === 'trade' ? 'Trade · ' : 'Pre-order · ') + (x.kind === 'trade' ? x.who : customerLabel(x.customerId)) })); } },
+          { label: 'When', render: function (x) { return x.dayKey ? shortWeekday(M.clearance.parseDayKey(x.dayKey).toISOString()) : 'Harvest day'; } },
+          { label: 'Qty', num: true, render: function (x) { return String(x.qty); } },
+          { label: 'Covered', num: true, render: function (x) { return String(x.covered); } },
+          { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(RISK_ROW[x.status][0], RISK_ROW[x.status][1])); } }
+        ], r.rows, '')),
+      h('div', { class: 'actions' }, mini('History', function () { openBatchHistory(b); })));
+  }
+  function tasksPanel(open) {
+    var done = (S().tasks || []).filter(function (t) { return t.status !== 'open'; }).slice(0, 5);
+    return panel('Sales follow-ups', 'Internal tasks, one per order that a lower harvest may not cover. Tyllage never contacts customers on its own; staff agree a smaller quantity, a substitute or a later delivery, and any message still goes through the usual approval and consent checks.',
+      table([
+        { label: 'Task', render: function (t) { return h('span', null, h('strong', { text: t.title }), t.customerId ? h('small', { text: ' · ' + customerLabel(t.customerId) }) : null, h('br'), h('small', { text: t.detail })); } },
+        { label: 'Due', render: function (t) { return shortWeekday(M.clearance.parseDayKey(t.dueKey).toISOString()); } },
+        { label: 'Status', render: function (t) { return h('span', { class: 'ptype' }, badge(t.status === 'open' ? 'Open' : t.status === 'done' ? 'Done' : 'Resolved', t.status === 'open' ? 'amber' : 'green'), t.note ? h('small', { text: ' ' + t.note }) : null); } },
+        { label: 'Actions', render: function (t) {
+          if (t.status !== 'open') return '—';
+          return mini('Mark done', function () {
+            var note = prompt('What was agreed with the customer? (optional)', '');
+            if (note === null) return;
+            var r = M.inspect.closeTask(t.id, session.email, note);
+            if (!r.ok) { toast(r.error); return; }
+            commit('task.done', t.id, 'Task closed.');
+          });
+        } }
+      ], open.concat(done), 'No follow-ups. Every confirmed order is covered by its harvest estimate.'));
+  }
+  // One batch's evidence: latest vs previous photo side by side, every inspection exactly as
+  // the worker sent it, the manager's decisions and every change to the estimate.
+  function openBatchHistory(b) {
+    document.querySelectorAll('.hist-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var p = M.byId('products', b.productId), hist = M.inspect.history(b.id);
+    var withPhoto = hist.inspections.filter(function (x) { return x.inspection.photo; });
+    var dlg = h('dialog', { class: 'receipt-dialog reply-dialog hist-dialog', 'aria-labelledby': 'hi-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var fig = function (x, label) {
+      var i = x.inspection;
+      return h('figure', { class: 'hist-fig' }, h('img', { src: i.photo.url, alt: label + ' inspection photo' }),
+        h('figcaption', null, h('strong', { text: label }), h('small', { text: shortWeekday(i.at) + ' · ' + i.by }), conditionBadge(i.condition),
+          h('small', { text: 'Estimate ' + i.estQty + ' (plan then ' + i.expectedBefore + ')' })));
+    };
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'hi-title', text: p.title + ' · ' + M.inspect.greenhouse(b) }), badge('Batch ' + b.id, 'grey')),
+        h('small', { class: 'hint', text: 'Harvest ' + harvestInText(b) + ' · plan now ' + b.expectedQty + ' · ' + hist.inspections.length + ' inspection(s). Inspections are kept exactly as the worker sent them; decisions are added beside them.' }),
+        withPhoto.length ? h('div', { class: 'hist-compare' }, withPhoto[1] ? fig(withPhoto[1], 'Previous') : h('div', { class: 'hist-none' }, h('small', { text: 'No earlier photo yet.' })), fig(withPhoto[0], 'Latest')) : null,
+        h('h3', { class: 'hist-h', text: 'Inspections' }),
+        table([
+          { label: 'When', render: function (x) { return h('span', null, h('strong', { text: shortWeekday(x.inspection.at) }), h('br'), h('small', { text: x.inspection.by })); } },
+          { label: 'Photo', render: function (x) { return x.inspection.photo ? h('img', { class: 'gh-thumb', src: x.inspection.photo.url, alt: '' }) : h('small', { text: 'None' }); } },
+          { label: 'Condition', render: function (x) { return h('span', null, conditionBadge(x.inspection.condition), x.inspection.photo && x.inspection.photo.reason ? [h('br'), h('small', { text: 'Photo check: ' + x.inspection.photo.reason })] : null, x.inspection.notes ? [h('br'), h('small', { text: '“' + x.inspection.notes + '”' })] : null); } },
+          { label: 'Estimate', num: true, render: function (x) { return x.inspection.expectedBefore + ' → ' + x.inspection.estQty; } },
+          { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(x.status[0], x.status[1])); } },
+          { label: 'Decision', render: function (x) { var it = x.item; return it && it.reviewedBy ? h('small', { text: it.reviewedBy + ', ' + shortDate(it.reviewedAt) + (it.decisionReason ? ': “' + it.decisionReason + '”' : '') }) : '—'; } }
+        ], hist.inspections, 'No inspections for this batch yet.'),
+        h('h3', { class: 'hist-h', text: 'Estimate changes' }),
+        table([
+          { label: 'When', render: function (e) { return h('span', null, h('strong', { text: shortWeekday(e.at) }), h('br'), h('small', { text: e.by || '—' })); } },
+          { label: 'Change', num: true, render: function (e) { return e.from + ' → ' + e.to; } },
+          { label: 'How', render: function (e) { return h('span', null, e.source || '—', e.reason ? [h('br'), h('small', { text: '“' + e.reason + '”' })] : null); } }
+        ], hist.log, 'The estimate hasn\'t changed since the batch was planned.')),
+      h('div', { class: 'r-actions' }, h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: closeDialog })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
   }
 
   var NAV = {
@@ -6410,7 +6511,7 @@
       { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
       { id: 'twin', group: 'Farm ops', label: 'Decision twin', perm: 'allocation', title: 'Farm Decision Twin', sub: 'What if the harvest, demand or buyers change? Compare responses before deciding.', render: twinView },
-      { id: 'rounds', group: 'Farm ops', label: 'Greenhouse rounds', perm: 'inspect', title: 'Greenhouse rounds', sub: 'Workers\' inspections, straight into the harvest plan. Big changes wait for you.', render: roundsAdminView, count: function () { return M.inspect.held().length; } },
+      { id: 'rounds', group: 'Farm ops', label: 'Greenhouse rounds', perm: 'inspect', title: 'Greenhouse rounds', sub: 'Workers\' inspections, straight into the harvest plan. Big changes wait for you.', render: roundsAdminView, count: function () { return M.inspect.held().length + (S().tasks || []).filter(function (t) { return t.status === 'open'; }).length; } },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },

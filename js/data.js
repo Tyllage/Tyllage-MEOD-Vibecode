@@ -980,6 +980,9 @@
       s.rounds = s.rounds || [];
       s.migrations.inspectV1 = true;
     }
+    // Commitment-risk follow-up tasks and the log of every estimate change.
+    s.tasks = s.tasks || [];
+    s.estimateLog = s.estimateLog || [];
     return s;
   }
   function greenhouseName(i) { var n = i % RULES.inspect.greenhouses + 1; return 'GH-' + (n < 10 ? '0' : '') + n; }
@@ -2499,10 +2502,16 @@
       var spots = openable ? batchLeft(b) : 0, dropQty = Math.min(qty, spots), overLimit = qty - dropQty;
       var live = (state.campaigns || []).filter(function (c) { return c.drop && c.drop.batchId === b.id && c.status !== 'rejected'; })[0] || null;
       var options = dropQty > 0 ? dropOptions(p, dropQty) : [];
-      var rec, reason, capped = false, flagged = false;
+      var rec, reason, capped = false, flagged = false, pend = pendingEstimate(b);
       if (x.shortBy > 0) { rec = 'none'; reason = 'Demand is already ' + x.shortBy + ' more than this harvest. Keep the normal price and don\'t promote it.'; }
       else if (!qty) { rec = 'none'; reason = 'Trade orders, pre-orders and usual sales already cover the harvest. A promotion would only give margin away.'; }
       else if (!openable) { rec = 'none'; reason = 'Pre-orders for this harvest have closed. Use Harvest Rescue after picking if any is left.'; }
+      else if (pend && pend.item.to < b.expectedQty) {
+        // Treat the worker's lower number as a warning, not a fact, until the manager decides.
+        var pr = commitmentRisk(b, pend.item.to, true);
+        rec = 'none'; flagged = true; reason = 'A worker\'s lower estimate (' + pend.item.to + ', plan ' + b.expectedQty + ') is waiting for the farm manager. New Harvest Drop offers are paused until it\'s decided.' +
+          (pr.shortfall ? ' Confirmed orders total ' + pr.confirmed + ', so the potential shortfall is ' + pr.shortfall + '.' : '');
+      }
       else if (b.health && b.health.condition === 'review' && !b.health.reviewed) { rec = 'none'; flagged = true; reason = 'A worker flagged this batch for review in ' + batchGreenhouse(b) + '. Hold promotions until the farm manager has looked at it in Greenhouse rounds.'; }
       else if (!dropQty) { rec = 'none'; capped = true; reason = qty + ' uncommitted, but all ' + b.preorderCap + ' pre-order spots are taken. Opening more is a Harvest Planner decision; otherwise plan Harvest Rescue after picking.'; }
       else if (sg.key === 'strong' || sg.key === 'sold_out' || share <= P.dropBundleShare) { rec = 'normal'; reason = 'Only ' + Math.round(share * 100) + '% of the harvest is uncommitted' + (sg.key === 'strong' ? ' and pre-orders are filling fast' : '') + ', so a normal-price pre-order should be enough. No discount needed.'; }
@@ -2539,6 +2548,8 @@
   function dropApply(c) {
     var d = c.drop, b = d && byId('batches', d.batchId);
     if (!b || !dropOpenable(b)) return { ok: false, error: 'That harvest no longer takes pre-orders.' };
+    var pend = pendingEstimate(b);
+    if (pend && pend.item.to < b.expectedQty) return { ok: false, error: 'New Harvest Drop offers for this harvest are paused: a lower estimate (' + pend.item.to + ') is waiting for the farm manager in Greenhouse rounds.' };
     if (d.qty > batchLeft(b)) return { ok: false, error: 'Only ' + batchLeft(b) + ' pre-order spots are left on this harvest, and this drop needs ' + d.qty + '. Raise the limit in Harvest Planner or redraft the drop.' };
     if (d.option === 'discount' || d.option === 'bundle') {
       var g = marginGuard(b.productId, d.priceCents, d.qty);
@@ -2766,12 +2777,130 @@
     var sent = st.complete ? roundSubmit(round.id, actor) : null;
     return { ok: true, inspection: rec, round: round, status: st, sent: sent };
   }
-  function applyEstimate(b, qty, rec) {
-    var pre = batchPreordered(b);
+  // Every change to a batch's estimate is logged (worker inspections themselves are never
+  // edited). A confirmed shortfall creates follow-up tasks for sales; a recovery closes them.
+  function applyEstimate(b, qty, meta) {
+    var pre = batchPreordered(b), from = b.expectedQty;
     b.expectedQty = qty;
     // Pre-order spots never exceed the new estimate, and never drop below what's already taken.
     b.preorderCap = Math.max(pre, Math.min(b.preorderCap, qty));
-    return { preordered: pre, atRisk: Math.max(0, pre - qty) };
+    state.estimateLog = state.estimateLog || [];
+    state.estimateLog.push(Object.assign({ batchId: b.id, at: new Date().toISOString(), from: from, to: qty }, meta || {}));
+    var risk = commitmentRisk(b, qty, false);
+    var tasks = syncRiskTasks(b, risk, meta && meta.by);
+    return { risk: risk, tasksCreated: tasks.created, tasksClosed: tasks.closed };
+  }
+
+  /* ---- Harvest commitment risk ----
+   * What a batch has actually promised: confirmed trade orders and accepted-quote deliveries
+   * in the batch's window (its harvest day up to the next batch of the same crop), plus the
+   * batch's own pre-orders. Usual shop sales are estimates, so they're left out. Each
+   * commitment is keyed by its underlying order or reservation, so the same order can't be
+   * counted twice (a pre-order turned into a trade order carries fromOrderId). */
+  function batchWindow(b) {
+    var next = batchesUpcoming().filter(function (x) { return x.productId === b.productId && x.harvestDate > b.harvestDate; })[0];
+    var days = next ? Math.max(2, Math.round((parseDayKey(next.harvestDate) - parseDayKey(b.harvestDate)) / 864e5)) : 7;
+    return { from: b.harvestDate, to: bagDayKey(new Date(parseDayKey(b.harvestDate).getTime() + days * 864e5)), days: days };
+  }
+  function batchCommitments(b) {
+    var w = batchWindow(b), byKey = {}, rows = [];
+    function add(key, row) {
+      if (byKey[key]) { byKey[key].qty += row.qty; return; }
+      row.key = key; byKey[key] = row; rows.push(row);
+    }
+    b2bStore().orders.forEach(function (o) {
+      if (o.status !== 'confirmed' || o.deliveryDay < w.from || o.deliveryDay >= w.to) return;
+      var qty = o.items.reduce(function (t, i) { return t + (i.productId === b.productId ? i.qty : 0); }, 0);
+      var acc = byId_safe(b2bStore().accounts, o.accountId);
+      if (qty) add('order:' + (o.fromOrderId || o.id), { kind: 'trade', ref: o.ref, who: acc ? acc.name : 'Trade buyer', qty: qty, dayKey: o.deliveryDay, orderId: o.id });
+    });
+    (state.commitments || []).filter(function (c) { return c.status === 'active' && c.productId === b.productId; }).forEach(function (c) {
+      var end = bagDayKey(new Date(parseDayKey(c.startKey).getTime() + c.weeks * 7 * 864e5));
+      for (var d = parseDayKey(w.from > c.startKey ? w.from : c.startKey); bagDayKey(d) < w.to && bagDayKey(d) < end; d = new Date(d.getTime() + 864e5)) {
+        if (c.days.indexOf(d.getDay()) > -1) add('commitment:' + c.id + ':' + bagDayKey(d), { kind: 'trade', ref: c.id + ' (standing)', who: c.buyerName, qty: c.unitsPerDelivery, dayKey: bagDayKey(d) });
+      }
+    });
+    batchLines(b.id).forEach(function (l) {
+      var cu = byId('customers', l.order.customerId);
+      add('order:' + l.order.id, { kind: 'preorder', ref: l.order.ref, who: cu ? cu.name : 'Customer', customerId: l.order.customerId, qty: l.item.qty, at: l.order.createdAt, orderId: l.order.id });
+    });
+    return rows;
+  }
+  function byId_safe(list, id) { return (list || []).filter(function (x) { return x.id === id; })[0] || null; }
+  // Serve commitments in the farm's usual priority: trade orders by delivery day, then
+  // pre-orders oldest first. Whatever the estimate can't cover is at risk.
+  function commitmentRisk(b, estimate, pending) {
+    var rows = batchCommitments(b).sort(function (x, y) {
+      if (x.kind !== y.kind) return x.kind === 'trade' ? -1 : 1;
+      return x.kind === 'trade' ? (x.dayKey < y.dayKey ? -1 : 1) : (x.at < y.at ? -1 : 1);
+    });
+    var left = estimate;
+    rows.forEach(function (r) { r.covered = Math.max(0, Math.min(r.qty, left)); left -= r.covered; r.short = r.qty - r.covered; r.status = !r.short ? 'covered' : r.covered ? 'partial' : 'at-risk'; });
+    var trade = rows.filter(function (r) { return r.kind === 'trade'; }).reduce(function (s, r) { return s + r.qty; }, 0);
+    var preorder = rows.filter(function (r) { return r.kind === 'preorder'; }).reduce(function (s, r) { return s + r.qty; }, 0);
+    return { batch: b, estimate: estimate, planned: b.expectedQty, trade: trade, preorder: preorder, confirmed: trade + preorder,
+      shortfall: Math.max(0, trade + preorder - estimate), pending: Boolean(pending), rows: rows, affected: rows.filter(function (r) { return r.short; }) };
+  }
+  // A held (unapproved) estimate for this batch, if any.
+  function pendingEstimate(b) {
+    var out = null;
+    (state.rounds || []).forEach(function (r) { (r.items || []).forEach(function (it) { if (it.batchId === b.id && it.status === 'held') out = { round: r, item: it }; }); });
+    return out;
+  }
+  // Potential risks (a lower estimate waiting for review) and confirmed ones (the plan itself
+  // is below what's been promised), across growing batches.
+  function commitmentRisks() {
+    var out = [];
+    inspectableBatches().forEach(function (b) {
+      var p = pendingEstimate(b);
+      var r = p ? commitmentRisk(b, p.item.to, true) : commitmentRisk(b, b.expectedQty, false);
+      if (r.shortfall > 0) { r.held = p; out.push(r); }
+    });
+    return out.sort(function (a, b) { return (a.pending ? 1 : 0) - (b.pending ? 1 : 0) || b.shortfall - a.shortfall; });
+  }
+  // Internal follow-up tasks for sales: one per affected order, never a customer message.
+  function syncRiskTasks(b, risk, actor) {
+    state.tasks = state.tasks || [];
+    var created = 0, closed = 0, keys = {};
+    risk.affected.forEach(function (r) {
+      var key = b.id + '|' + r.key;
+      keys[key] = true;
+      // One task per order: an open one stands, and one sales already dealt with isn't reopened.
+      if (state.tasks.some(function (t) { return t.key === key && (t.status === 'open' || t.status === 'done'); })) return;
+      var p = byId('products', b.productId);
+      state.tasks.unshift({ id: nextId('TK'), key: key, kind: 'commitment-risk', batchId: b.id, status: 'open', createdAt: new Date().toISOString(), createdBy: actor || 'Tyllage',
+        // Customer names aren't stored in the task: the portal shows them masked or not, by role.
+        title: (r.kind === 'trade' ? 'Trade order ' + r.ref + ' (' + r.who + ')' : 'Pre-order ' + r.ref) + ': ' + r.short + ' of ' + r.qty + ' ' + p.title + ' may not be covered', customerId: r.customerId || null,
+        detail: 'The ' + p.title + ' estimate for ' + batchGreenhouse(b) + ' (harvest ' + shortDayLabel(b.harvestDate) + ') is now ' + risk.estimate + ' against ' + risk.confirmed + ' confirmed. Agree a smaller quantity, a substitute or a later delivery with the customer.',
+        dueKey: r.dayKey || b.harvestDate, orderRef: r.ref });
+      created++;
+    });
+    state.tasks.forEach(function (t) {
+      if (t.batchId === b.id && t.kind === 'commitment-risk' && t.status === 'open' && !keys[t.key]) { t.status = 'resolved'; t.closedAt = new Date().toISOString(); t.note = 'The estimate now covers this order.'; closed++; }
+    });
+    return { created: created, closed: closed };
+  }
+  function taskClose(id, actor, note) {
+    var t = byId('tasks', id);
+    if (!t || t.status !== 'open') return { ok: false, error: 'That task is already closed.' };
+    t.status = 'done'; t.closedAt = new Date().toISOString(); t.closedBy = actor; t.note = String(note || '').trim().slice(0, 200);
+    return { ok: true, task: t };
+  }
+
+  // One batch's evidence: every inspection (as the worker sent it), what happened to it,
+  // the manager's decisions and every change to the estimate.
+  var INSPECTION_STATUS = { draft: ['Draft (round not sent)', 'grey'], replaced: ['Replaced by a later check', 'grey'], same: ['Accepted · no change', 'green'],
+    applied: ['Accepted automatically', 'green'], held: ['Review required', 'amber'], approved: ['Accepted by manager', 'green'], kept: ['Not accepted · plan kept', 'grey'] };
+  function batchHistory(batchId) {
+    var list = (state.inspections || []).filter(function (i) { return i.batchId === batchId; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+    var rows = list.map(function (i) {
+      var r = byId('rounds', i.roundId), key;
+      if (!r || r.status === 'open') key = roundInspections(i.roundId)[batchId] === i ? 'draft' : 'replaced';
+      else { var it = (r.items || []).filter(function (x) { return x.inspectionId === i.id; })[0]; key = it ? it.status : 'replaced'; }
+      var item = r && (r.items || []).filter(function (x) { return x.inspectionId === i.id; })[0] || null;
+      return { inspection: i, round: r, item: item, statusKey: key, status: INSPECTION_STATUS[key] };
+    });
+    return { inspections: rows, log: (state.estimateLog || []).filter(function (e) { return e.batchId === batchId; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; }) };
   }
   function roundSubmit(roundId, actor) {
     var round = byId('rounds', roundId);
@@ -2784,7 +2913,10 @@
       var held = i.condition === 'review' || change > RULES.inspect.autoApplyPct;
       var it = { batchId: b.id, inspectionId: i.id, condition: i.condition, from: from, to: i.estQty, changePct: Math.round((i.estQty - from) / (from || 1) * 100),
         status: held ? 'held' : i.estQty === from ? 'same' : 'applied', reason: i.condition === 'review' ? 'Marked "Needs review"' : held ? 'Changes the estimate by more than ' + Math.round(RULES.inspect.autoApplyPct * 100) + '%' : null };
-      if (!held && i.estQty !== from) it.atRisk = applyEstimate(b, i.estQty, i).atRisk;
+      if (!held && i.estQty !== from) {
+        var ap = applyEstimate(b, i.estQty, { by: actor, source: 'Round update (within ±' + Math.round(RULES.inspect.autoApplyPct * 100) + '%)', roundId: roundId, inspectionId: i.id });
+        it.shortfall = ap.risk.shortfall; it.tasksCreated = ap.tasksCreated;
+      }
       b.health = { condition: i.condition, at: i.at, by: i.by, inspectionId: i.id };
       items.push(it);
     });
@@ -2792,14 +2924,20 @@
     return { ok: true, round: round, applied: items.filter(function (x) { return x.status === 'applied'; }).length, held: items.filter(function (x) { return x.status === 'held'; }).length };
   }
   // The farm manager approves a held estimate (it updates the batch) or keeps the old one.
-  function roundReview(roundId, batchId, approve, actor) {
+  // The decision is recorded on the round item; the worker's inspection stays as it was sent.
+  function roundReview(roundId, batchId, approve, actor, reason) {
     var round = byId('rounds', roundId), it = round && (round.items || []).filter(function (x) { return x.batchId === batchId && x.status === 'held'; })[0];
     var b = byId('batches', batchId);
     if (!it || !b) return { ok: false, error: 'Nothing waiting for review here.' };
-    if (approve) it.atRisk = applyEstimate(b, it.to, null).atRisk;
+    reason = String(reason || '').trim().slice(0, 200);
+    var ap = null;
+    if (approve) {
+      ap = applyEstimate(b, it.to, { by: actor, source: 'Approved by the farm manager', roundId: roundId, inspectionId: it.inspectionId, reason: reason });
+      it.shortfall = ap.risk.shortfall; it.tasksCreated = ap.tasksCreated;
+    }
     if (b.health) b.health.reviewed = true;
-    it.status = approve ? 'approved' : 'kept'; it.reviewedBy = actor; it.reviewedAt = new Date().toISOString();
-    return { ok: true, item: it, batch: b };
+    it.status = approve ? 'approved' : 'kept'; it.reviewedBy = actor; it.reviewedAt = new Date().toISOString(); it.decisionReason = reason;
+    return { ok: true, item: it, batch: b, risk: ap && ap.risk, tasksCreated: ap ? ap.tasksCreated : 0 };
   }
   // A flagged batch's suggestion reads "Hold promotions" rather than "No promotion needed".
   function flaggedRanking(reason) {
@@ -3890,7 +4028,8 @@
     twin: { simulate: twinSimulate },
     inspect: {
       CONDITIONS: CONDITIONS, GRADE_CONDITION: GRADE_CONDITION, greenhouse: batchGreenhouse, batches: inspectableBatches, openRound: openRound,
-      status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates
+      status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates,
+      risk: commitmentRisk, risks: commitmentRisks, pending: pendingEstimate, closeTask: taskClose, history: batchHistory, STATUS: INSPECTION_STATUS
     },
     copilot: { ask: copilotAsk },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },

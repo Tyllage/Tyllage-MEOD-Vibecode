@@ -7162,13 +7162,24 @@
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
-      { id: 'orders', group: 'Sales', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView },
+      { id: 'orders', group: 'Sales', label: 'Orders', title: 'Orders', sub: 'Move orders through payment, fulfilment and refunds.', render: ordersView,
+        count: function () { return S().orders.filter(function (o) { return o.status === 'pending_payment' || o.status === 'paid'; }).length; } },
       { id: 'content', group: 'Sales', label: 'Content studio', perm: 'content', title: 'Content studio', sub: 'Weekly social and WhatsApp posts from what the farm has right now — staff edit, someone else approves.', render: contentView, count: function () { return (S().contentPlan || []).filter(function (c) { return c.status === 'pending'; }).length; } },
       { id: 'b2b', group: 'Sales', label: 'B2B buyers', perm: 'b2b', title: 'B2B buyers', sub: 'Trade accounts, standing orders and new buyer leads.', render: b2bView },
       { id: 'quotes', group: 'Sales', label: 'Quotations', perm: 'quotes', title: 'Quotations', sub: 'Turn a buyer\'s enquiry into a checked counter-offer — and an accepted one into recurring demand.', render: quotesView },
-      { id: 'campaigns', group: 'Sales', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView },
+      { id: 'campaigns', group: 'Sales', label: 'Campaigns', title: 'Campaign Studio', sub: 'Messages only go to people who opted in, after approval.', render: campaignsView,
+        count: function () { return S().campaigns.filter(function (c) { return c.status === 'pending_approval'; }).length; } },
       { id: 'pricing', group: 'Sales', label: 'Price Advisor', perm: 'pricing', title: 'Price Advisor', sub: 'Price suggestions checked by Margin Guard — an admin approves every change.', render: pricingView },
-      { id: 'clearance', group: 'Sales', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView },
+      { id: 'clearance', group: 'Sales', label: 'Buy to Clear', perm: 'clearance', title: 'Buy to Clear', sub: 'Candidates, listings and the Surprise Harvest Bag.', render: clearanceView,
+        count: function () {
+          var n = 0, from = new Date();
+          for (var i = 0; i < 4; i++) {
+            var info = M.clearance.nextBagCutoff(from);
+            n += M.clearance.bagOrdersForDay(M.clearance.dayKey(info.deliveryDay)).filter(function (o) { return o.bagContentsApproved !== true; }).length;
+            from = new Date(info.deliveryDay.getTime() + 36e5);
+          }
+          return n;
+        } },
       { id: 'rewards', group: 'Sales', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
       { id: 'groupbuy', group: 'Sales', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'visits', group: 'Sales', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },

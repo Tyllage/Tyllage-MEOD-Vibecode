@@ -4326,7 +4326,7 @@
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
-    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up', 'market.price': 'Added a market price check',
+    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up', 'market.price': 'Added a market price check', 'signal.tested': 'Recorded a greenhouse signal check',
     'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
     'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
@@ -6307,15 +6307,10 @@
           if (!r.ok) { err.textContent = r.error; return; }
           closeDialog();
           M.audit(session.email, 'inspect.saved', b.id);
-          if (r.sent) {
-            M.audit(session.email, 'inspect.sent', r.sent.round.id);
-            M.save();
-            toast('Round sent: ' + r.sent.applied + ' estimate(s) updated' + (r.sent.held ? ', ' + r.sent.held + ' waiting for the farm manager' : '') + '.');
-            render();
-            return;
-          }
           M.save();
           render();
+          // Saved on the device; uploading (and sending the round) happens only on a receipt.
+          trySync();
           // Straight on to the next batch that hasn't been checked.
           var next = M.inspect.status(M.inspect.openRound()).rows.filter(function (x) { return !x.inspection; })[0];
           if (next && onDone !== false) openInspect(next);
@@ -6344,6 +6339,7 @@
     var next = s.rows.filter(function (r) { return !r.inspection; })[0];
     var soon = s.rows.filter(function (r) { return daysToHarvest(r.batch) <= 2; });
     var flagged = s.rows.filter(function (r) { return r.inspection && r.inspection.condition !== 'healthy'; });
+    var notReceived = s.rows.filter(function (r) { return r.inspection && M.inspect.syncStatus(r.inspection.id) !== 'received'; }).length;
     var hour = new Date().getHours();
     var hello = (hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') + (session.role === 'worker' ? ', ' + session.name.split(' ')[0] : '');
     var start = function () { if (next) openInspect(next); };
@@ -6354,7 +6350,7 @@
         h('span', { class: 'rnd-eyebrow', text: new Date().toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · Greenhouse round' }),
         h('h2', { text: hello + ' 🌱' }),
         next ? h('p', { class: 'rnd-next' }, h('span', { text: s.checked ? 'Next up: ' : 'First up: ' }), h('strong', { text: next.greenhouse + ' · ' + next.product.title }), h('span', { text: ', harvest ' + harvestInText(next.batch) }))
-          : h('p', { class: 'rnd-next', text: s.total ? 'Every batch is checked. Nice work!' : 'Nothing is growing right now.' }),
+          : h('p', { class: 'rnd-next', text: !s.total ? 'Nothing is growing right now.' : notReceived ? 'Every batch is checked. ' + notReceived + ' still to upload before the round is sent.' : 'Every batch is checked. Nice work!' }),
         h('ul', { class: 'rnd-stats' },
           h('li', null, h('strong', { text: String(s.total) }), h('span', { text: ' batches' })),
           h('li', null, h('strong', { text: String(Object.keys(s.rows.reduce(function (o, r) { o[r.greenhouse] = 1; return o; }, {})).length) }), h('span', { text: ' greenhouses' })),
@@ -6362,13 +6358,16 @@
           flagged.length ? h('li', { class: 'alert' }, h('strong', { text: String(flagged.length) }), h('span', { text: flagged.length === 1 ? ' needs attention' : ' need attention' })) : null),
         h('div', { class: 'rnd-actions' },
           next ? h('button', { class: 'btn btn-gold rnd-cta', type: 'button', onclick: start }, s.checked ? 'Continue round' : 'Start round', h('span', { 'aria-hidden': 'true', text: ' →' })) : null,
-          s.checked && !s.complete ? h('button', { class: 'btn btn-ghost rnd-send', type: 'button', text: 'Send now', title: (s.total - s.checked) + ' not checked keep their plan', onclick: function () {
+          // A part-finished round can be sent only once everything checked so far has been received.
+          s.checked && !s.complete ? h('button', { class: 'btn btn-ghost rnd-send', type: 'button', disabled: notReceived > 0, text: notReceived ? 'Send now (' + notReceived + ' still uploading)' : 'Send now',
+            title: (s.total - s.checked) + ' not checked keep their plan', onclick: function () {
             if (!confirm('Send the round now? ' + (s.total - s.checked) + ' batch(es) not checked will keep their current plan.')) return;
             var r = M.inspect.submit(s.round.id, session.email);
             if (!r.ok) { toast(r.error); return; }
             commit('inspect.sent', s.round.id, 'Round sent: ' + r.applied + ' estimate(s) updated' + (r.held ? ', ' + r.held + ' waiting for the farm manager' : '') + '.');
           } }) : null),
-        h('small', { class: 'rnd-rule', text: 'The round sends itself when the last batch is checked. Changes within ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '% go straight into the harvest plan; bigger ones go to the farm manager.' })));
+        syncStrip(),
+        h('small', { class: 'rnd-rule', text: 'Each check is saved on this phone first. The round is sent once every batch is checked and received by Tyllage. Changes within ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '% go straight into the harvest plan; bigger ones go to the farm manager.' })));
 
     var count = { all: s.rows.length, todo: s.total - s.checked, done: s.checked, soon: soon.length };
     var keep = function (r) { return st.filter === 'all' || (st.filter === 'todo' ? !r.inspection : st.filter === 'done' ? Boolean(r.inspection) : daysToHarvest(r.batch) <= 2); };
@@ -6394,7 +6393,7 @@
               h('span', { class: 'gh-info' },
                 h('strong', { text: r.product.title }),
                 h('small', { text: 'Plan ' + r.batch.expectedQty + ' · ' + kgText(r.product, r.batch.expectedQty) }),
-                i ? h('span', { class: 'gh-result' }, conditionBadge(i.condition), h('small', { text: i.estQty === r.batch.expectedQty ? 'On plan' : 'Estimate ' + i.estQty })) : null),
+                i ? h('span', { class: 'gh-result' }, conditionBadge(i.condition), h('small', { text: i.estQty === r.batch.expectedQty ? 'On plan' : 'Estimate ' + i.estQty }), syncBadge(i.id)) : null),
               when,
               h('span', { class: 'gh-go' + (i ? ' redo' : ''), text: i ? 'Redo' : 'Check' }));
           })));
@@ -6441,6 +6440,7 @@
         roundSummary(last, false)));
     }
     append(root, roundChecklist());
+    append(root, deviceStorageCard());
   }
   function pastRoundsView(root) {
     var rounds = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 10);
@@ -6482,6 +6482,7 @@
       ], held, 'Nothing waiting. Every estimate from the last round is in the plan.')));
     append(root, panel('Today\'s round', 'Workers do this on their phones (worker@meod.test). Staff can check a batch here too.', roundChecklist()));
     append(root, learningPanel());
+    append(root, deadZonePanel());
     if (!canReview) append(root, h('p', { class: 'callout', text: 'Only the farm manager (admin) approves estimate changes. You can see them, their effect on orders, and the follow-up tasks.' }));
     var recent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 3);
     recent.forEach(function (r, idx) {
@@ -6624,7 +6625,12 @@
     var t = setTimeout(function () { if (ctl) ctl.abort(); }, 6000);
     return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
   }
+  var WEATHER_LAST_KEY = 'meod-weather-last';
+  function lastSavedWeather() { try { var x = JSON.parse(localStorage.getItem(WEATHER_LAST_KEY) || 'null'); if (x) x.offline = true; return x; } catch (e) { return null; } }
   function loadWeather() {
+    // No signal: show the last forecast saved on this phone (labelled), or demo weather.
+    if (!canUpload()) { if (!weatherNow || !weatherNow.offline) weatherNow = lastSavedWeather() || demoWeather(); return; }
+    if (weatherNow && weatherNow.offline) weatherNow = null;
     if (weatherNow || weatherLoading) return;
     weatherLoading = true;
     Promise.all([fetchJson('https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast'), fetchJson('https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast')])
@@ -6639,7 +6645,7 @@
       .catch(function () { return demoWeather(); })
       .then(function (w) {
         weatherNow = w; weatherLoading = false;
-        try { sessionStorage.setItem(WEATHER_KEY, JSON.stringify(w)); } catch (e) { /* ignore */ }
+        try { sessionStorage.setItem(WEATHER_KEY, JSON.stringify(w)); if (w.source === 'live') localStorage.setItem(WEATHER_LAST_KEY, JSON.stringify(w)); } catch (e) { /* ignore */ }
         document.querySelectorAll('[data-weather]').forEach(function (el) { fillWeather(el); });
       });
   }
@@ -6657,19 +6663,21 @@
           h('small', { text: 'Outdoor forecast · ' + w.area }),
           h('strong', { text: w.now ? w.now.text + ' now' : w.day.text }),
           h('span', { class: 'wx-temps', text: w.day.low + '–' + w.day.high + '°C · humidity up to ' + w.day.humHigh + '% · ' + w.day.text.toLowerCase() + ' later' })),
-        h('span', { class: 'ptype wx-src' }, badge(w.source === 'live' ? 'Live · NEA' : 'Demo weather', w.source === 'live' ? 'green' : 'grey'))),
+        h('span', { class: 'ptype wx-src' }, badge(w.offline ? 'Last saved · offline' : w.source === 'live' ? 'Live · NEA' : 'Demo weather', w.offline ? 'amber' : w.source === 'live' ? 'green' : 'grey'))),
       h('ul', { class: 'wx-advice' }, advice.map(function (a) {
         return h('li', { class: 'wx-' + a.tone }, h('span', { class: 'wx-a-icon', 'aria-hidden': 'true', text: ADVICE_ICON[a.key] || '•' }),
           h('span', null, h('strong', { text: a.title }), h('small', { text: a.text })));
       })),
-      h('small', { class: 'wx-foot', text: w.source === 'live'
+      h('small', { class: 'wx-foot', text: w.offline
+        ? 'No signal: this is the last NEA forecast saved on this phone (issued ' + new Date(w.updated).toLocaleString('en-SG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) + '). It may be out of date.'
+        : w.source === 'live'
         ? 'Outdoor forecast from NEA via data.gov.sg (west region), issued ' + new Date(w.updated).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }) + '. It isn\'t a reading inside the greenhouses or an official warning; staff follow NEA\'s guidance and decide. The advice is rules, not a prediction.'
         : 'data.gov.sg couldn\'t be reached, so this is simulated demo weather. The advice rules are the same.' }));
   }
   function weatherCard() {
     var el = h('section', { class: 'wx-card', 'data-weather': '', 'aria-label': 'Today\'s weather and advice' });
-    fillWeather(el);
     loadWeather();
+    fillWeather(el);
     return el;
   }
 
@@ -6813,6 +6821,153 @@
     commit('campaign.submitted', id, f.name + ' message drafted for ' + festiveAudience(crops).length + ' opted-in buyer(s) — waiting for admin approval.');
   }
 
+  /* ---------------- Offline-first rounds: upload queue (simulated server) ----------------
+   * Every inspection is saved on the phone first. It uploads only when there's a connection,
+   * and counts as received only when the (simulated) server acknowledges its own ID. Being
+   * "online" is never taken as proof of receipt. A demo switch fakes a dead zone so the
+   * whole cycle can be shown anywhere. Nothing is deleted from the phone after a receipt. */
+  var SIM_OFFLINE_KEY = 'meod-sim-offline', syncing = false;
+  function simOffline() { try { return sessionStorage.getItem(SIM_OFFLINE_KEY) === '1'; } catch (e) { return false; } }
+  function setSimOffline(on) { try { if (on) sessionStorage.setItem(SIM_OFFLINE_KEY, '1'); else sessionStorage.removeItem(SIM_OFFLINE_KEY); } catch (e) { /* ignore */ } }
+  function deviceOnline() { return navigator.onLine !== false; }
+  function canUpload() { return deviceOnline() && !simOffline(); }
+  function trySync(quiet) {
+    if (syncing || !M.inspect.outbox().unsynced) return;
+    if (!canUpload()) {
+      if (M.inspect.wait()) { M.save(); render(); }
+      if (!quiet) toast('Saved on this phone. No signal, so it will upload when the connection is back.');
+      return;
+    }
+    syncing = true;
+    // A short pause stands in for the upload; the signal can drop during it.
+    setTimeout(function () {
+      syncing = false;
+      if (!canUpload()) { M.inspect.wait(); M.save(); render(); return; }
+      var r = M.inspect.upload(session.email);
+      var msg = r.received ? r.received + ' inspection(s) received by Tyllage (simulated server receipt).' : '';
+      if (r.sent) {
+        M.audit(session.email, 'inspect.sent', r.sent.round.id);
+        msg += ' Round sent: ' + r.sent.applied + ' estimate(s) updated' + (r.sent.held ? ', ' + r.sent.held + ' waiting for the farm manager' : '') + '.';
+      }
+      M.save();
+      if (msg) toast(msg);
+      render();
+    }, 700);
+  }
+  window.addEventListener('online', function () { trySync(true); render(); });
+  window.addEventListener('offline', function () { M.inspect.wait(); M.save(); render(); });
+  setInterval(function () { if (canUpload() && M.inspect.outbox().unsynced) trySync(true); }, 30000);
+
+  var SYNC_LABEL = { saved: ['Saved on device', 'grey'], waiting: ['Waiting to upload', 'amber'], received: ['Received · simulated', 'green'] };
+  function syncBadge(inspectionId) {
+    if (!M.inspect.outboxEntry(inspectionId)) return null;
+    var s = SYNC_LABEL[M.inspect.syncStatus(inspectionId)];
+    return h('span', { class: 'ptype sync-badge' }, badge(s[0], s[1]));
+  }
+  function syncStrip() {
+    var sum = M.inspect.outbox(), up = canUpload();
+    var sw = h('input', { type: 'checkbox', checked: simOffline(), 'aria-label': 'Simulate no signal' });
+    sw.addEventListener('change', function () {
+      setSimOffline(sw.checked);
+      if (sw.checked) { M.inspect.wait(); M.save(); toast('Demo: no signal. New inspections stay on this phone.'); render(); }
+      else { toast('Demo: signal back. Uploading anything waiting…'); render(); trySync(true); }
+    });
+    return h('div', { class: 'sync-strip' },
+      h('span', { class: 'sig ' + (up ? 'on' : 'off') }, up ? '📶 Signal' : simOffline() ? '📵 No signal (demo)' : '📵 No signal'),
+      h('span', { class: 'sync-counts' },
+        h('span', { text: sum.saved + sum.waiting + ' on phone, not yet received' }), h('span', { text: sum.received + ' received (simulated)' })),
+      sum.unsynced && up ? h('button', { class: 'btn btn-sm btn-gold', type: 'button', text: 'Upload now', onclick: function () { trySync(); } }) : null,
+      h('label', { class: 'sim-switch' }, sw, h('span', { text: 'Simulate no signal' })));
+  }
+
+  // What's on this phone, and the risk of losing it.
+  function deviceStorageCard() {
+    var ins = S().inspections || [], sum = M.inspect.outbox();
+    var photoBytes = ins.reduce(function (s, i) { return s + (i.photo && i.photo.url ? i.photo.url.length : 0); }, 0);
+    var stateBytes = 0;
+    try { stateBytes = (localStorage.getItem('meod-demo-state-v2') || '').length; } catch (e) { /* ignore */ }
+    var quota = h('small', { class: 'hint' });
+    if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(function (e) { if (e.quota) quota.textContent = 'The browser allows this app about ' + Math.round(e.quota / 1048576) + ' MB; it uses ' + kb(e.usage || 0) + ' (including the saved app files).'; });
+    var kb = function (n) { return !n ? '0 KB' : n < 1048576 ? Math.max(1, Math.round(n / 1024)) + ' KB' : (Math.round(n / 104857.6) / 10) + ' MB'; };
+    return h('section', { class: 'dev-card' + (sum.unsynced ? ' warn' : '') },
+      h('header', null, h('strong', { text: '📱 On this phone' }), installButton()),
+      h('ul', { class: 'dev-stats' },
+        h('li', null, h('strong', { text: String(ins.filter(function (i) { return i.by === session.email; }).length) }), h('small', { text: 'inspections by you' })),
+        h('li', null, h('strong', { text: kb(photoBytes) }), h('small', { text: 'photo thumbnails' })),
+        h('li', null, h('strong', { text: kb(stateBytes) }), h('small', { text: 'all app data' })),
+        h('li', { class: sum.unsynced ? 'hot' : '' }, h('strong', { text: String(sum.unsynced) }), h('small', { text: 'not yet received' }))),
+      h('small', { text: sum.unsynced
+        ? 'Keep this phone\'s browser data until these show "Received". Don\'t clear browsing data or use a private window.'
+        : 'Nothing waiting. In this prototype the phone is still the only copy, so nothing is deleted after a receipt.' }),
+      quota,
+      h('small', { class: 'hint', text: 'Before real use: a shared server, secure sign-in, a screen lock on work phones, and a way to wipe a lost phone.' }));
+  }
+  function installButton() {
+    var P = window.MEOD_PWA;
+    if (!P) return null;
+    if (P.installed()) return h('span', { class: 'ptype' }, badge('Installed as an app', 'green'));
+    if (!P.canInstall()) return h('small', { class: 'hint', text: P.isIOS() ? 'To install: Share → Add to Home Screen' : '' });
+    return h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Install app', onclick: function () { P.install().then(render); } });
+  }
+
+  /* ---------------- Signal check (dead-zone log) ----------------
+   * Walk the greenhouses and test the connection in each. The test times a small request to
+   * data.gov.sg (standing in for Tyllage's server). With no signal at all, the page still
+   * opens from the phone's cache and the worker can record "No signal" by hand. */
+  var DZ_VERDICT = { untested: ['Not enough tests', 'grey'], good: ['Good signal', 'green'], patchy: ['Patchy', 'amber'], dead: ['Dead zone', 'red'] };
+  function runSignalTest(gh) {
+    var net = navigator.connection && navigator.connection.effectiveType ? navigator.connection.effectiveType : null;
+    var save = function (result, ms, method) {
+      var r = M.inspect.addSignal({ greenhouse: gh, result: result, latencyMs: ms, method: method, simulated: simOffline(), network: net }, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('signal.tested', gh, gh + ': ' + M.inspect.SIGNAL[result][0] + (ms != null ? ' (' + ms + ' ms)' : '') + (simOffline() ? ' — demo, not counted' : '') + '.');
+    };
+    if (simOffline() || !deviceOnline()) { save('none', null, 'auto'); return; }
+    toast('Testing the connection in ' + gh + '…');
+    var t0 = performance.now(), ctl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+    fetch('https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast?_=' + Date.now(), { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { clearTimeout(timer); if (!r.ok) throw new Error(); var ms = Math.round(performance.now() - t0); save(ms < 1500 ? 'good' : 'slow', ms, 'auto'); })
+      .catch(function () { clearTimeout(timer); save('none', null, 'auto'); });
+  }
+  function signalView(root) {
+    var zones = M.inspect.deadZones();
+    append(root, h('p', { class: 'callout', text: 'Stand inside each greenhouse and tap "Test here". It times a small request over your mobile data. If nothing loads, tap "No signal". Test each greenhouse a few times on different days; demo-mode tests are kept separately and don\'t count.' }));
+    append(root, h('div', { class: 'dz-grid' }, zones.map(function (z) {
+      var v = DZ_VERDICT[z.verdict];
+      return h('article', { class: 'dz-card dz-' + z.verdict },
+        h('header', null, h('strong', { text: z.greenhouse }), h('span', { class: 'ptype' }, badge(v[0], v[1]))),
+        h('small', { text: z.tests ? z.tests + ' test(s)' + (z.avgLatencyMs != null ? ' · avg ' + z.avgLatencyMs + ' ms' : '') + ' · last ' + ago(z.last.at) + ': ' + M.inspect.SIGNAL[z.last.result][0] : 'Not tested yet' }),
+        h('div', { class: 'dz-actions' },
+          h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Test here', onclick: function () { runSignalTest(z.greenhouse); } }),
+          h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'No signal', onclick: function () {
+            var r = M.inspect.addSignal({ greenhouse: z.greenhouse, result: 'none', method: 'manual', simulated: simOffline() }, session.email);
+            if (r.ok) commit('signal.tested', z.greenhouse, z.greenhouse + ': no signal recorded.');
+          } })));
+    })));
+    append(root, panel('Recent tests', null, signalTestsTable((S().signalTests || []).slice(0, 15))));
+  }
+  function signalTestsTable(list) {
+    return table([
+      { label: 'When', render: function (t) { return h('span', null, h('strong', { text: t.greenhouse }), h('br'), h('small', { text: ago(t.at) + ' · ' + t.by })); } },
+      { label: 'Result', render: function (t) { var s = M.inspect.SIGNAL[t.result]; return h('span', { class: 'ptype' }, badge(s[0], s[1]), t.simulated ? h('small', { text: ' demo' }) : null); } },
+      { label: 'Speed', num: true, render: function (t) { return t.latencyMs != null ? t.latencyMs + ' ms' : '—'; } },
+      { label: 'How', render: function (t) { return h('small', { text: (t.method === 'manual' ? 'Marked by hand' : 'Automatic test') + (t.network ? ' · ' + t.network : '') }); } }
+    ], list, 'No signal tests yet.');
+  }
+  // Staff: where the dead zones are, from the workers' tests.
+  function deadZonePanel() {
+    var zones = M.inspect.deadZones(), tested = zones.filter(function (z) { return z.tests; }).length;
+    return panel('Signal by greenhouse', 'From workers\' signal checks (demo-mode tests excluded). Greenhouses marked Dead zone or Patchy are where offline saving matters most. ' + tested + ' of ' + zones.length + ' greenhouses tested so far.',
+      table([
+        { label: 'Greenhouse', render: function (z) { return h('strong', { text: z.greenhouse }); } },
+        { label: 'Verdict', render: function (z) { var v = DZ_VERDICT[z.verdict]; return h('span', { class: 'ptype' }, badge(v[0], v[1])); } },
+        { label: 'Tests', num: true, render: function (z) { return String(z.tests) + (z.simulatedTests ? ' (+' + z.simulatedTests + ' demo)' : ''); } },
+        { label: 'No signal', num: true, render: function (z) { return z.tests ? z.noneCount + ' of ' + z.tests : '—'; } },
+        { label: 'Avg speed', num: true, render: function (z) { return z.avgLatencyMs != null ? z.avgLatencyMs + ' ms' : '—'; } }
+      ], zones, ''));
+  }
+
   var NAV = {
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
@@ -6850,7 +7005,8 @@
     ],
     worker: [
       { id: 'overview', label: 'Today\'s round', title: 'Greenhouse round', sub: 'Photo, condition and harvest estimate for each batch. It sends itself when you finish.', render: roundView },
-      { id: 'past', label: 'Past rounds', title: 'Past rounds', sub: 'What you sent, and what the farm manager did with it.', render: pastRoundsView }
+      { id: 'past', label: 'Past rounds', title: 'Past rounds', sub: 'What you sent, and what the farm manager did with it.', render: pastRoundsView },
+      { id: 'signal', label: 'Signal check', title: 'Signal check', sub: 'Find the greenhouses where mobile data drops, so MEOD knows where offline saving matters.', render: signalView }
     ],
     leader: [
       { id: 'overview', label: 'Overview', title: 'My group buys', sub: 'Share your code and see how your group is doing.', render: leaderOverview },

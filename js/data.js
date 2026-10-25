@@ -2816,10 +2816,101 @@
       condition: data.condition, estQty: est, expectedBefore: b.expectedQty, notes: String(data.notes || '').trim().slice(0, 280),
       photo: data.photo || null, indoor: indoor, weather: weatherSnapshot(data.weather) };
     state.inspections.push(rec);
+    // Saved on the device first, with its own ID for upload. The round is only sent once every
+    // inspection in it has been received (see outboxUpload), never just because it's complete.
+    state.outbox = state.outbox || [];
+    state.outbox.push({ clientId: newClientId(), inspectionId: rec.id, roundId: round.id, status: 'saved', attempts: 0, createdAt: rec.at, lastAttemptAt: null, receivedAt: null, receipt: null });
+    return { ok: true, inspection: rec, round: round, status: roundStatus(round) };
+  }
+
+  /* ---------- Offline outbox for greenhouse rounds ----------
+   * Signal can drop inside the greenhouses, so every inspection is saved on the device first
+   * (status "saved"), waits while there's no connection ("waiting"), and only counts as
+   * "received" when the server acknowledges its own ID. Coming back online is never enough.
+   * PROTOTYPE: there is no backend, so the server below is simulated and its receipts are
+   * labelled as such. Nothing is deleted from the device after a receipt: in this prototype
+   * the device is still the only copy. */
+  function newClientId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'insp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+  function outboxEntry(inspectionId) { return (state.outbox || []).filter(function (o) { return o.inspectionId === inspectionId; })[0] || null; }
+  // Inspections from before the outbox existed (or demo history) count as received.
+  function syncStatusOf(inspectionId) { var o = outboxEntry(inspectionId); return o ? o.status : 'received'; }
+  // Simulated Tyllage server: remembers every ID it has accepted, so a retry of the same
+  // inspection gets the same receipt back and is never counted twice.
+  function mockServerReceive(entry) {
+    state.mockServer = state.mockServer || { received: {}, count: 0 };
+    var known = state.mockServer.received[entry.clientId];
+    if (known) return { duplicate: true, receipt: known };
+    state.mockServer.count++;
+    var receipt = { serverRef: 'SIM-' + state.mockServer.count, at: new Date().toISOString(), simulated: true };
+    state.mockServer.received[entry.clientId] = receipt;
+    return { duplicate: false, receipt: receipt };
+  }
+  // No connection: anything just saved is now waiting to upload.
+  function outboxWait() {
+    var n = 0;
+    (state.outbox || []).forEach(function (o) { if (o.status === 'saved') { o.status = 'waiting'; n++; } });
+    return n;
+  }
+  // Upload everything not yet acknowledged (or, for a retry test, re-send one entry).
+  function outboxUpload(actor, onlyClientId) {
+    var res = { received: 0, duplicates: 0, sent: null };
+    (state.outbox || []).forEach(function (o) {
+      if (onlyClientId ? o.clientId !== onlyClientId : o.status === 'received') return;
+      o.attempts++; o.lastAttemptAt = new Date().toISOString();
+      var r = mockServerReceive(o);
+      if (r.duplicate) res.duplicates++;
+      if (o.status !== 'received') { o.status = 'received'; o.receivedAt = r.receipt.at; o.receipt = r.receipt; res.received++; }
+    });
+    res.sent = processReceivedRound(actor);
+    return res;
+  }
+  // "Server side": once every inspection in the open round has been received, send the round.
+  function processReceivedRound(actor) {
+    var round = openRound();
+    if (!round) return null;
     var st = roundStatus(round);
-    // The last batch checked sends the whole round.
-    var sent = st.complete ? roundSubmit(round.id, actor) : null;
-    return { ok: true, inspection: rec, round: round, status: st, sent: sent };
+    if (!st.complete) return null;
+    var allIn = st.rows.every(function (r) { return syncStatusOf(r.inspection.id) === 'received'; });
+    return allIn ? roundSubmit(round.id, actor) : null;
+  }
+  function outboxSummary() {
+    var c = { saved: 0, waiting: 0, received: 0 };
+    (state.outbox || []).forEach(function (o) { c[o.status]++; });
+    c.unsynced = c.saved + c.waiting;
+    c.total = (state.outbox || []).length;
+    c.serverCount = state.mockServer ? state.mockServer.count : 0;
+    return c;
+  }
+
+  /* ---------- Greenhouse signal log (dead zones) ----------
+   * Before relying on offline sync, find out where the signal actually drops: a worker runs
+   * a quick connection test (or records "no signal") in each greenhouse. */
+  var SIGNAL_RESULTS = { good: ['Good', 'green'], slow: ['Slow', 'amber'], none: ['No signal', 'red'] };
+  function signalTestAdd(x, actor) {
+    var names = []; for (var i = 0; i < RULES.inspect.greenhouses; i++) names.push(greenhouseName(i));
+    if (names.indexOf(x.greenhouse) < 0) return { ok: false, error: 'Choose a greenhouse.' };
+    if (!SIGNAL_RESULTS[x.result]) return { ok: false, error: 'Unknown result.' };
+    state.signalTests = state.signalTests || [];
+    var rec = { id: nextId('SG'), greenhouse: x.greenhouse, result: x.result, latencyMs: x.latencyMs == null ? null : Math.round(x.latencyMs), method: x.method || 'manual',
+      simulated: Boolean(x.simulated), network: x.network || null, at: new Date().toISOString(), by: actor };
+    state.signalTests.unshift(rec);
+    return { ok: true, record: rec };
+  }
+  function deadZones() {
+    var out = [];
+    for (var i = 0; i < RULES.inspect.greenhouses; i++) {
+      var name = greenhouseName(i), tests = (state.signalTests || []).filter(function (t) { return t.greenhouse === name && !t.simulated; });
+      var sim = (state.signalTests || []).filter(function (t) { return t.greenhouse === name && t.simulated; }).length;
+      var none = tests.filter(function (t) { return t.result === 'none'; }).length, slow = tests.filter(function (t) { return t.result === 'slow'; }).length;
+      var lat = tests.filter(function (t) { return t.latencyMs != null; });
+      var verdict = tests.length < 2 ? 'untested' : none / tests.length >= 0.5 ? 'dead' : (none + slow) / tests.length >= 0.5 ? 'patchy' : 'good';
+      out.push({ greenhouse: name, tests: tests.length, simulatedTests: sim, last: tests[0] || null, noneCount: none, slowCount: slow,
+        avgLatencyMs: lat.length ? Math.round(lat.reduce(function (s, t) { return s + t.latencyMs; }, 0) / lat.length) : null, verdict: verdict });
+    }
+    return out;
   }
   // Every change to a batch's estimate is logged (worker inspections themselves are never
   // edited). A confirmed shortfall creates follow-up tasks for sales; a recovery closes them.
@@ -2827,7 +2918,7 @@
   // when NEA issued it, and whether it was live or demo weather. A forecast, not a reading.
   function weatherSnapshot(w) {
     if (!w || !w.day) return null;
-    return { kind: 'Outdoor forecast', source: w.source === 'live' ? 'NEA via data.gov.sg' : 'Demo weather (simulated)', live: w.source === 'live', area: w.area,
+    return { kind: 'Outdoor forecast', source: w.source === 'live' ? 'NEA via data.gov.sg' + (w.offline ? ' (last saved copy, no signal)' : '') : 'Demo weather (simulated)', live: w.source === 'live' && !w.offline, area: w.area,
       issuedAt: w.updated || null, capturedAt: new Date().toISOString(), now: w.now ? w.now.text : null, nowValid: w.now ? w.now.until : null,
       forecast: w.day.text, lowC: w.day.low, highC: w.day.high, humidityHigh: w.day.humHigh };
   }
@@ -4283,7 +4374,9 @@
       CONDITIONS: CONDITIONS, GRADE_CONDITION: GRADE_CONDITION, greenhouse: batchGreenhouse, batches: inspectableBatches, openRound: openRound,
       status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates,
       risk: commitmentRisk, risks: commitmentRisks, pending: pendingEstimate, closeTask: taskClose, history: batchHistory, STATUS: INSPECTION_STATUS,
-      health: greenhouseHealth, weatherAdvice: weatherAdvice, trend: batchTrend, learning: learningStats, bias: estimateBias, corrected: correctedEstimate
+      health: greenhouseHealth, weatherAdvice: weatherAdvice, trend: batchTrend,
+      syncStatus: syncStatusOf, outbox: outboxSummary, upload: outboxUpload, wait: outboxWait, outboxEntry: outboxEntry,
+      SIGNAL: SIGNAL_RESULTS, addSignal: signalTestAdd, deadZones: deadZones, learning: learningStats, bias: estimateBias, corrected: correctedEstimate
     },
     seasons: {
       FESTIVALS: FESTIVALS, WINDOW_DAYS: FESTIVE_WINDOW_DAYS, outlook: festiveOutlook, STORES: MARKET_STORES, addPrice: marketPriceAdd, compare: marketCompare

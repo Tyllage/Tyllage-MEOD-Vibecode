@@ -78,7 +78,7 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 |---|---|---|
 | **Admin** | `admin@meod.test` | Everything in the staff sidebar below, plus **Users**, **Audit log** and **Settings** (editable AI assumptions and unit costs). Admins approve campaigns and price changes proposed by someone else, and set clearance minimum prices |
 | **Sales staff** | `sales@meod.test` | The staff sidebar below, minus Users / Audit log / Settings. Customer names and phones are **masked**, campaigns and price proposals need an admin's approval, and only an admin can set a clearance **minimum price** (staff see it, read-only) |
-| **Farm worker** | `worker@meod.test` | Phone-first **Greenhouse round** (photo, condition and harvest estimate per batch, grouped by greenhouse) and **Past rounds**. Nothing else |
+| **Farm worker** | `worker@meod.test` | Phone-first **Greenhouse round** (photo, condition and harvest estimate per batch, grouped by greenhouse; saved on the phone first and uploaded when there's signal), **Past rounds** and **Signal check**. Nothing else |
 | **Group leader** | `leader@meod.test`, `leader2@meod.test` | Own group buys and share link, members' orders (**masked**), commission ledger with a worked example |
 | **Customer** | `customer@meod.test` | Home with **Smart picks** and a rewards card, Shop (incl. **Buy to Clear**, the Surprise Harvest Bag and **harvest pre-orders**), My orders with **delivery tracking**, **Rewards**, Group buy, Preferences (**profile editing**), Ask MEOD |
 
@@ -245,6 +245,9 @@ js/recipes.js     recipe library (EN / 中文 / BM)
 js/content.js     Content studio post ideas and caption checks
 js/replies.js     visit enquiry reply drafts
 js/portal.js      all portal screens
+js/pwa.js         registers the service worker, "Install app"
+sw.js             service worker: portal opens with no signal
+manifest.webmanifest  installable app (name, icons, colours)
 
 assets/           MEOD-supplied originals (logo SVG, photos)
 assets/img/       optimised WebP copies the site actually loads
@@ -258,7 +261,30 @@ assets/img/       optimised WebP copies the site actually loads
 
 **Third-party scripts, loaded only when needed** from cdnjs: SheetJS (`xlsx` 0.18.5) when an Excel file is imported, and `qrcodejs` 1.0.0 when a visit QR code is shown. CSV import and everything else work offline. See [SECURITY.md](SECURITY.md).
 
-**Public weather data:** the round page reads NEA's 24-hour and 2-hour forecasts from `api-open.data.gov.sg` with plain GET requests. Nothing about MEOD, its staff or customers is sent. Offline, it shows demo weather instead.
+**Public weather data:** the round page reads NEA's 24-hour and 2-hour forecasts from `api-open.data.gov.sg` with plain GET requests. Nothing about MEOD, its staff or customers is sent. With no signal it shows the last forecast saved on the phone, labelled "Last saved · offline", or demo weather if there isn't one.
+
+## Offline-first rounds and the installable app
+
+Signal can drop inside MEOD's greenhouses, so greenhouse rounds work without it.
+
+- **Saved on the phone first.** Every inspection gets its own ID and a status shown on its batch:
+  - **Saved on device:** just saved.
+  - **Waiting to upload:** there's no connection.
+  - **Received · simulated:** the server acknowledged that exact ID.
+
+  Coming back online is never treated as proof of receipt. The round is sent to the harvest plan only once every checked batch has been received. "Send now" for a part-finished round waits for the same.
+- **No duplicates.** The server remembers every ID it has accepted. Re-sending an inspection returns the same receipt and is never counted twice, and a round can't be sent twice.
+- **Signal and demo switch.** The round's hero shows the phone's signal. **Simulate no signal** fakes a dead zone so the whole save → wait → upload → receipt cycle can be shown anywhere. Uploads retry automatically when the signal returns, and every 30 seconds while anything is waiting.
+- **On this phone** card: inspections, photo and data size, the browser's storage allowance, and how much isn't received yet, with a warning not to clear browser data until it is.
+- **Signal check** (worker) and **Signal by greenhouse** (staff). Workers test the connection inside each greenhouse, either automatically (a timed request to data.gov.sg, standing in for Tyllage's server) or by tapping "No signal". Two or more tests give a verdict per greenhouse: Good, Patchy or Dead zone. Demo-mode tests are kept apart and not counted. Run this at MEOD before relying on offline sync.
+- **Installable app (PWA).** `manifest.webmanifest`, icons in `assets/icons/`, and a service worker (`sw.js`, registered by `js/pwa.js`). The portal's own files are fetched fresh when there's signal (or within 4 seconds) and otherwise come from the copy saved on the phone, so the round page opens even with no connection. Install with **Install app** on the "On this phone" card (Chrome or Edge), or Share → Add to Home Screen on iPhone. Bump `VERSION` in `sw.js` when the list of saved files changes.
+
+**What's simulated, and what real use needs.** There's no backend, so the "server" is simulated inside the browser and its receipts are labelled as simulated. In this prototype the phone is the only copy of an inspection, so nothing is deleted after a receipt, and clearing the browser's data loses it. Before real use MEOD needs:
+- a shared server that acknowledges each inspection ID,
+- authenticated sign-in,
+- a screen lock and device rules for work phones,
+- a retention period for photos and records kept on phones,
+- a way to sign out and wipe a lost phone.
 
 ## Demo data
 

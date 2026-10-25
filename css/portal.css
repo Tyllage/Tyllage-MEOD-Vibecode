@@ -2014,6 +2014,35 @@ a.pill-btn { text-decoration: none; }
 .gh-go { padding: 8px 16px; border-radius: 999px; background: var(--forest); color: #fff; font-weight: 700; font-size: .85rem; }
 .gh-go.redo { background: transparent; color: var(--forest); border: 1.5px solid #cfe0c6; }
 .rnd-dock { display: none; }
+/* Offline sync: strip in the round hero, badges on batches, phone storage card */
+.sync-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: 12px; background: rgba(0, 0, 0, .18); font-size: .82rem; }
+.sync-strip .sig { font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.sync-strip .sig.on { background: rgba(159, 220, 127, .25); }
+.sync-strip .sig.off { background: rgba(255, 140, 110, .35); }
+.sync-counts { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; opacity: .9; }
+.sync-strip .btn { padding: 6px 14px; }
+.sim-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; margin-left: auto; opacity: .9; }
+.sim-switch input { width: 18px; height: 18px; accent-color: var(--gold); }
+.sync-badge .badge { text-transform: none; white-space: nowrap; }
+.dev-card { display: grid; gap: 8px; margin-top: 18px; padding: 16px 18px; border-radius: 16px; background: #fff; border: 1.5px solid #eee8de; }
+.dev-card.warn { border-color: #f0dca8; background: #fffcf3; }
+.dev-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: var(--forest); }
+.dev-stats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.dev-stats li { display: grid; padding: 8px 10px; border-radius: 10px; background: #f7f4ee; }
+.dev-stats li.hot { background: #fff1d6; }
+.dev-stats small { color: var(--muted); font-size: .74rem; }
+.dev-card > small { font-size: .82rem; }
+/* Signal check (dead zones) */
+.dz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; margin-bottom: 18px; }
+.dz-card { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: #fff; border: 1.5px solid #eee8de; }
+.dz-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dz-card header strong { font-size: 1.2rem; color: var(--forest); }
+.dz-card small { color: var(--muted); }
+.dz-card.dz-dead { border-color: #f1cfc7; background: #fffaf8; }
+.dz-card.dz-patchy { border-color: #f0dca8; background: #fffcf3; }
+.dz-card.dz-good { border-color: #cfe6c4; }
+.dz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dz-actions .btn { flex: 1; justify-content: center; min-height: 44px; }
 /* Weather card */
 .wx-card { display: grid; gap: 12px; padding: 18px 20px; border-radius: 18px; background: linear-gradient(135deg, #eef5fb 0%, #fff 70%); border: 1.5px solid #d9e6f2; }
 .wx-loading { margin: 0; color: var(--muted); }

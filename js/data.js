@@ -58,7 +58,8 @@
       milestoneLift: 0.25,          // group-buy goal = usual volume + 25%
       milestoneDays: 14,
       visitVoucherCents: 500,       // thank-you voucher for visitors who opted in
-      resultDays: 7                 // orders within this many days of sending count towards a campaign
+      resultDays: 7,                // orders within this many days of sending count towards a campaign
+      assumedResponse: 0.25         // share of people messaged assumed to order (saved with each draft, compared with results)
     },
     preorderConvert: 0.3,           // Decision twin: share of extra supply pre-orders typically sell
     // Quotation Copilot: kg per sold unit (bunch or pack), to convert buyers' kg requests. Illustrative.
@@ -2049,7 +2050,8 @@
     { key: 'clearanceDefaultMinRate', group: 'Pricing & margins', label: 'Lowest discounted price', unit: '% of normal', min: 30, max: 95, pct: true, usedBy: ['Margin Guard', 'Buy to Clear', 'Harvest Rescue'], note: 'No discount may go below this share of the normal price.' },
     { key: 'b2bPriceRate', group: 'Pricing & margins', label: 'Trade price', unit: '% of retail', min: 50, max: 100, pct: true, usedBy: ['B2B buyers'], note: 'What restaurants, cafés and offices pay for standing orders.' },
     { key: 'radarTolerance', group: 'Demand', label: 'Balanced band', unit: '± % of demand', min: 0, max: 30, pct: true, usedBy: ['Demand Radar', 'Price Advisor', 'Weekly briefing'], note: 'A gap between supply and demand within this band counts as balanced, not short or surplus.' },
-    { key: 'promoLiftPer10', group: 'Demand', label: 'Sales lift per 10% off', unit: '% more sales', min: 0, max: 100, pct: true, usedBy: ['Promotion simulator', 'Price Advisor'], note: 'How much extra a 10% discount is assumed to sell. Compare with real campaign results over time.' }
+    { key: 'promoLiftPer10', group: 'Demand', label: 'Sales lift per 10% off', unit: '% more sales', min: 0, max: 100, pct: true, usedBy: ['Promotion simulator', 'Price Advisor'], note: 'How much extra a 10% discount is assumed to sell. Compare with real campaign results over time.' },
+    { key: 'promo.assumedResponse', group: 'Demand', label: 'Expected campaign response', unit: '% of people messaged', min: 1, max: 100, pct: true, usedBy: ['Campaign Studio', 'Campaign results'], note: 'Saved with each campaign when it\'s drafted, then compared with how many people actually ordered.' }
   ].concat(Object.keys(CAT_LABELS).map(function (c) {
     return { key: 'shelfDays.' + c, group: 'Harvest & freshness', label: CAT_LABELS[c] + ' shelf life', unit: 'days', min: 1, max: 21, usedBy: ['Harvest Rescue', 'Price Advisor'], note: 'Days after harvest a batch should be sold by.' };
   })).concat(Object.keys(CAT_LABELS).map(function (c) {
@@ -2400,17 +2402,38 @@
    * 3. Learning-journey vouchers: a thank-you voucher for visitors who opted in.
    * 4. Results: what each sent campaign led to, and a summary per promotion type.
    * PROTOTYPE: rules, not a trained model. Results start the history a model would need. */
+  // Each type also says what to try instead (alt) and what not to do (avoid), so every
+  // recommendation reads as Suggested / Alternative / Avoid with a reason for each.
   var PROMO_TYPES = {
-    drop: { label: 'Harvest Drop', tone: 'green', when: 'A harvest has supply nobody has committed to yet. Offer it as a pre-order before it\'s picked.' },
-    bundle: { label: 'Smart bundle', tone: 'green', when: 'One crop is slow and another sells well. A pair at a small saving moves the slow one without cutting its own price.' },
-    rescue: { label: 'Rescue offer', tone: 'red', when: 'Produce that\'s already harvested is near its sell-by date. Alert past buyers first, and only then list it on Buy to Clear.' },
-    group: { label: 'Group-buy milestone', tone: 'blue', when: 'A group buy orders regularly. A volume goal combines orders into one drop-off, and the reward has to cost less than the extra margin.' },
-    visit: { label: 'Learning-journey voucher', tone: 'blue', when: 'A group visited recently and some visitors opted in. A thank-you voucher turns a visit into produce orders.' },
-    repeat: { label: 'Repeat-buyer reward', tone: 'amber', when: 'Members are close to a tier or have points they haven\'t used. Use the rewards they already have; no new discount.' },
-    reactivate: { label: 'Reactivation', tone: 'amber', when: 'Past buyers who opted in haven\'t ordered for 30+ days. Tell them what\'s fresh this week.' },
-    normal: { label: 'Normal-price promo', tone: 'blue', when: 'Demand just needs a reminder: a restock nudge or a surplus crop at its usual price.' },
-    none: { label: 'No promotion needed', tone: 'grey', when: 'Demand already covers the harvest, or the crop is short. A promotion would only give margin away or disappoint people.' }
+    drop: { label: 'Harvest Drop', tone: 'green', when: 'A harvest has supply nobody has committed to yet. Offer it as a pre-order before it\'s picked.',
+      alt: ['Smart bundle', 'If pre-orders are still slow a few days before the cutoff.'], avoid: ['Broad discount', 'Cuts the price for people who would buy anyway, before a normal-price pre-order has been tried.'] },
+    bundle: { label: 'Smart bundle', tone: 'green', when: 'One crop is slow and another sells well. A pair at a small saving moves the slow one without cutting its own price.',
+      alt: ['Normal-price pre-order', 'If MEOD would rather not publish a bundle in MEOD Fresh.'], avoid: ['Broad discount', 'A shop-wide price cut gives margin away on every sale, not just the extra ones.'] },
+    rescue: { label: 'Rescue offer', tone: 'red', when: 'Produce that\'s already harvested is near its sell-by date. Alert past buyers first, and only then list it on Buy to Clear.',
+      alt: ['Buy to Clear listing', 'If the alert hasn\'t sold it within a day. Never below the minimum price.'], avoid: ['Waiting', 'Each day closer to the sell-by date lowers what it can sell for.'] },
+    group: { label: 'Group-buy milestone', tone: 'blue', when: 'A group buy orders regularly. A volume goal combines orders into one drop-off, and the reward has to cost less than the extra margin.',
+      alt: ['Normal group-buy reminder', 'If the group\'s orders are already growing without a goal.'], avoid: ['A bigger group discount', 'It lowers the price of every group order, including the usual ones.'] },
+    visit: { label: 'Learning-journey voucher', tone: 'blue', when: 'A group visited recently and some visitors opted in. A thank-you voucher turns a visit into produce orders.',
+      alt: ['Harvest updates only', 'If MEOD prefers no voucher. Visitors who opted in still hear about fresh harvests.'], avoid: ['Messaging visitors who didn\'t opt in', 'Not allowed: marketing needs their consent.'] },
+    repeat: { label: 'Repeat-buyer reward', tone: 'amber', when: 'Members are close to a tier or have points they haven\'t used. Use the rewards they already have; no new discount.',
+      alt: ['Points reminder', 'Remind them what their points are worth instead.'], avoid: ['A new voucher on top', 'They already have rewards to use; another discount only costs margin.'] },
+    reactivate: { label: 'Reactivation', tone: 'amber', when: 'Past buyers who opted in haven\'t ordered for 30+ days. Tell them what\'s fresh this week.',
+      alt: ['What\'s-fresh message', 'Show this week\'s harvest with no offer at all.'], avoid: ['A big win-back discount', 'It teaches customers to wait for offers.'] },
+    normal: { label: 'Normal-price promo', tone: 'blue', when: 'Demand just needs a reminder: a restock nudge or a surplus crop at its usual price.',
+      alt: ['Add a recipe idea', 'Gives people a reason to buy without changing the price.'], avoid: ['A discount', 'These buyers are due to buy anyway; a discount only gives margin away.'] },
+    none: { label: 'No promotion needed', tone: 'grey', when: 'Demand already covers the harvest, or the crop is short. A promotion would only give margin away or disappoint people.',
+      alt: ['Normal-price pre-order', 'Only if commitments fall before the cutoff.'], avoid: ['Any discount', 'Demand already covers it, or there isn\'t enough to sell.'] }
   };
+  // Suggested / Alternative / Avoid for a promotion type, with an optional override per role.
+  function promoRanking(type, why, over) {
+    var T = PROMO_TYPES[type] || PROMO_TYPES.normal;
+    over = over || {};
+    return [
+      { role: 'suggested', label: T.label, why: why || T.when },
+      { role: 'alternative', label: (over.alt || T.alt)[0], why: (over.alt || T.alt)[1] },
+      { role: 'avoid', label: (over.avoid || T.avoid)[0], why: (over.avoid || T.avoid)[1] }
+    ];
+  }
   var CAMPAIGN_TYPE = { 'harvest-drop': 'drop', 'rewards-preorder': 'drop', 'rescue-alert': 'rescue', 'rewards-surplus': 'rescue', 'clear-alert': 'rescue',
     'preorder-push': 'drop', 'group-milestone': 'group', 'visit-voucher': 'visit', 'rewards-tier': 'repeat', 'rewards-points': 'repeat', 'tier-nudge': 'repeat', 'rewards-winback': 'reactivate', bundle: 'bundle' };
   function campaignType(c) { return CAMPAIGN_TYPE[c.kind] || (c.drop && 'drop') || 'normal'; }
@@ -2453,12 +2476,16 @@
       var committed = x.wanted.b2b + x.wanted.preorder, expected = x.wanted.group + x.wanted.shop;
       var qty = x.unallocated, share = x.supply ? qty / x.supply : 0;
       var sg = batchSignal(b), openable = dropOpenable(b);
+      // A drop never opens more than the batch's pre-order limit (60% of expected yield by
+      // default). Raising that limit is a separate Harvest Planner decision.
+      var spots = openable ? batchLeft(b) : 0, dropQty = Math.min(qty, spots), overLimit = qty - dropQty;
       var live = (state.campaigns || []).filter(function (c) { return c.drop && c.drop.batchId === b.id && c.status !== 'rejected'; })[0] || null;
-      var options = qty > 0 ? dropOptions(p, qty) : [];
-      var rec, reason;
+      var options = dropQty > 0 ? dropOptions(p, dropQty) : [];
+      var rec, reason, capped = false;
       if (x.shortBy > 0) { rec = 'none'; reason = 'Demand is already ' + x.shortBy + ' more than this harvest. Keep the normal price and don\'t promote it.'; }
       else if (!qty) { rec = 'none'; reason = 'Trade orders, pre-orders and usual sales already cover the harvest. A promotion would only give margin away.'; }
       else if (!openable) { rec = 'none'; reason = 'Pre-orders for this harvest have closed. Use Harvest Rescue after picking if any is left.'; }
+      else if (!dropQty) { rec = 'none'; capped = true; reason = qty + ' uncommitted, but all ' + b.preorderCap + ' pre-order spots are taken. Opening more is a Harvest Planner decision; otherwise plan Harvest Rescue after picking.'; }
       else if (sg.key === 'strong' || sg.key === 'sold_out' || share <= P.dropBundleShare) { rec = 'normal'; reason = 'Only ' + Math.round(share * 100) + '% of the harvest is uncommitted' + (sg.key === 'strong' ? ' and pre-orders are filling fast' : '') + ', so a normal-price pre-order should be enough. No discount needed.'; }
       else {
         var bun = options.filter(function (o) { return o.key === 'bundle' && o.guard.ok; })[0], dis = options.filter(function (o) { return o.key === 'discount' && o.guard.ok; })[0];
@@ -2466,23 +2493,38 @@
         else if (bun) { rec = 'bundle'; reason = Math.round(share * 100) + '% uncommitted. A bundle with a crop that sells well moves it without a general price cut.'; }
         else { rec = 'normal'; reason = 'No bundle or discount passes Margin Guard, so offer it at the normal price.'; }
       }
+      if (rec !== 'none' && overLimit > 0) reason += ' The drop is sized to the ' + dropQty + ' pre-order spots left; the other ' + overLimit + ' would need the pre-order limit raised in Harvest Planner.';
       options.forEach(function (o) { o.recommended = o.key === rec; });
       return { batch: b, product: p, supply: x.supply, committed: committed, b2b: x.wanted.b2b, preordered: x.wanted.preorder, expectedSales: expected,
-        uncommitted: qty, shortBy: x.shortBy, sharePct: Math.round(share * 100), kg: Math.round(qty * kgPerUnit(p) * 10) / 10, signal: sg,
-        openable: openable, options: options, recommended: rec, reason: reason, campaign: live };
+        uncommitted: qty, dropQty: dropQty, spotsLeft: spots, overLimit: overLimit, capped: capped, shortBy: x.shortBy, sharePct: Math.round(share * 100),
+        kg: Math.round(qty * kgPerUnit(p) * 10) / 10, signal: sg, openable: openable, options: options, recommended: rec, reason: reason,
+        ranking: dropRanking(rec, reason, options, p, x, capped), campaign: live };
     });
   }
-  // Approving a Harvest Drop opens enough pre-order spots for it and, for a discount, sets the
-  // drop price on the batch (checked by Margin Guard again at that moment). Fails closed.
+  // Suggested / Alternative / Avoid for one harvest, built from its own options.
+  function dropRanking(rec, reason, options, p, x, capped) {
+    var by = function (k) { return options.filter(function (o) { return o.key === k; })[0]; };
+    var dis = by('discount'), bun = by('bundle');
+    var cut = dis ? money(p.priceCents - dis.priceCents) + ' a unit' : 'margin';
+    if (capped) return promoRanking('none', reason, { alt: ['Raise the pre-order limit', 'In Harvest Planner, if the farm is confident in the yield. A separate decision.'], avoid: ['Opening spots from here', 'Campaigns don\'t change pre-order limits.'] });
+    if (rec === 'none') return promoRanking('none', reason, x.shortBy > 0 ? { alt: ['Sow another batch', 'Demand Radar shows when one would be ready.'], avoid: ['Any promotion', 'It would sell stock the farm doesn\'t have.'] } : null);
+    if (rec === 'normal') return promoRanking('drop', reason, { alt: bun && bun.guard.ok ? ['Smart bundle with ' + bun.partner.title, 'If pre-orders are still slow a few days before the cutoff.'] : ['Harvest Rescue after picking', 'If pre-orders don\'t fill.'],
+      avoid: ['Discount', 'Nothing suggests demand needs a lower price; it would give up ' + cut + '.'] });
+    if (rec === 'bundle') return promoRanking('bundle', reason, { alt: ['Normal-price pre-order', 'If MEOD would rather not publish a bundle in MEOD Fresh.'], avoid: ['Broad discount', 'Cutting the shop price gives up ' + cut + ' on every sale, not just the extra ones.'] });
+    return promoRanking('drop', reason, { alt: bun && bun.guard.ok ? ['Smart bundle with ' + bun.partner.title, 'Keeps this crop\'s own price if the pair appeals.'] : ['Normal-price pre-order', 'If MEOD would rather keep the price.'],
+      avoid: ['A shop-wide discount', 'Keep the lower price to the drop spots only, until pre-orders close.'] });
+  }
+  // Approving a Harvest Drop never opens extra pre-order spots: it must fit in the spots
+  // left under the batch's pre-order limit. For a discount it sets the drop price (checked by
+  // Margin Guard again at that moment). Fails closed.
   function dropApply(c) {
     var d = c.drop, b = d && byId('batches', d.batchId);
     if (!b || !dropOpenable(b)) return { ok: false, error: 'That harvest no longer takes pre-orders.' };
+    if (d.qty > batchLeft(b)) return { ok: false, error: 'Only ' + batchLeft(b) + ' pre-order spots are left on this harvest, and this drop needs ' + d.qty + '. Raise the limit in Harvest Planner or redraft the drop.' };
     if (d.option === 'discount' || d.option === 'bundle') {
       var g = marginGuard(b.productId, d.priceCents, d.qty);
       if (!g.ok) return { ok: false, error: 'Margin Guard blocked it: ' + g.reasons.join('; ') + '.' };
     }
-    var need = Math.max(0, d.qty - batchLeft(b));
-    b.preorderCap = Math.min(b.expectedQty, b.preorderCap + need);
     b.drop = { campaignId: c.id, option: d.option, qty: d.qty, normalPriceCents: b.drop ? b.drop.normalPriceCents : b.preorderPriceCents,
       partnerId: d.partnerId || null, bundlePriceCents: d.bundlePriceCents || null, takenAtStart: batchPreordered(b), startedAt: new Date().toISOString() };
     if (d.option === 'discount') b.preorderPriceCents = d.priceCents;
@@ -2560,11 +2602,34 @@
     }).filter(function (x) { return x.audience.length; });
   }
 
+  // What Tyllage expected when a campaign was drafted, saved with it so the results can be
+  // compared with the assumption rather than with hindsight. extra adds type-specific figures.
+  function promoAssume(c, extra) {
+    var n = (c.audience || []).length, rate = RULES.promo.assumedResponse;
+    c.assumed = Object.assign({ at: new Date().toISOString(), recipients: n, buyers: Math.round(n * rate), rate: rate,
+      basis: 'About ' + Math.round(rate * 100) + '% of the ' + n + ' people messaged order within ' + RULES.promo.resultDays + ' days (Settings).' }, extra || {});
+    return c.assumed;
+  }
   // Approve and send hooks for the promotion kinds that change something besides a message.
+  // Campaigns drafted before assumptions were saved get them now, before any result exists.
   function promoOnApprove(c) {
-    if (c.kind === 'harvest-drop') return dropApply(c);
-    if (c.kind === 'group-milestone') return milestoneApply(c);
-    return { ok: true };
+    var r = c.kind === 'harvest-drop' ? dropApply(c) : c.kind === 'group-milestone' ? milestoneApply(c) : { ok: true };
+    if (r.ok && !c.assumed) promoAssume(c, { savedAt: 'approval' });
+    return r;
+  }
+  // Assumed vs actual, one row per figure the campaign was expected to move. "lower" rows are
+  // costs, where coming in under the assumption is good.
+  function assumedVsActual(c, r) {
+    var a = c.assumed;
+    if (!a) return [];
+    var rows = [{ label: 'People who ordered', assumed: a.buyers, actual: r.buyers }];
+    if (a.units != null) rows.push({ label: a.unitsLabel || 'Units', assumed: a.units, actual: a.unitsActual === 'group' ? (r.groupUnits || 0) : (r.dropTaken != null ? r.dropTaken : r.units) });
+    if (a.marginCents != null) rows.push({ label: a.marginLabel || 'Margin', assumed: a.marginCents, actual: r.marginCents, money: true });
+    if (a.voucherCostCents != null) rows.push({ label: 'Voucher cost', assumed: a.voucherCostCents, actual: r.voucherCostCents, money: true, lower: true });
+    rows.forEach(function (x) {
+      x.verdict = (x.lower ? x.actual <= x.assumed : x.actual >= x.assumed) ? 'met' : r.open ? 'counting' : 'below';
+    });
+    return rows;
   }
   function promoOnSend(c, recipients) {
     c.sentAt = new Date().toISOString();
@@ -2600,6 +2665,12 @@
       var b = byId('batches', c.drop.batchId);
       if (b) { r.dropTaken = Math.max(0, batchPreordered(b) - (b.drop && b.drop.campaignId === c.id ? b.drop.takenAtStart : 0)); r.dropQty = c.drop.qty; }
     }
+    if (c.milestone) {
+      var ev = byId('events', c.milestone.eventId), pr = ev && ev.milestone && ev.milestone.campaignId === c.id ? milestoneProgress(ev) : null;
+      r.groupUnits = pr ? pr.units : 0;
+    }
+    r.assumed = c.assumed || null;
+    r.vsAssumed = assumedVsActual(c, r);
     return r;
   }
   function promoResultsByType() {
@@ -2607,8 +2678,13 @@
     state.campaigns.forEach(function (c) {
       var r = campaignResult(c);
       if (!r) return;
-      var x = by[r.type] || (by[r.type] = { type: r.type, campaigns: 0, recipients: 0, buyers: 0, revenueCents: 0, marginCents: 0, voucherCostCents: 0 });
+      var x = by[r.type] || (by[r.type] = { type: r.type, campaigns: 0, recipients: 0, buyers: 0, revenueCents: 0, marginCents: 0, voucherCostCents: 0, assumedBuyers: 0, withAssumed: 0, met: 0, settled: 0 });
       x.campaigns++; x.recipients += r.recipients; x.buyers += r.buyers; x.revenueCents += r.revenueCents; x.marginCents += r.marginCents; x.voucherCostCents += r.voucherCostCents;
+      if (r.assumed) {
+        x.withAssumed++; x.assumedBuyers += r.assumed.buyers;
+        // A campaign "met" its assumption when every row did; only finished ones count.
+        if (!r.open) { x.settled++; if (r.vsAssumed.every(function (v) { return v.verdict === 'met'; })) x.met++; }
+      }
     });
     return Object.keys(by).map(function (k) {
       var x = by[k];
@@ -3687,7 +3763,7 @@
     promo: {
       simulate: promoSimulate, TYPES: PROMO_TYPES, typeOf: campaignType, drops: harvestDrops, onApprove: promoOnApprove, onSend: promoOnSend,
       milestoneIdea: milestoneIdea, milestoneProgress: milestoneProgress, milestoneReward: milestoneReward, groupMembers: groupMembers,
-      visitIdeas: visitVoucherIdeas, result: campaignResult, resultsByType: promoResultsByType
+      visitIdeas: visitVoucherIdeas, result: campaignResult, resultsByType: promoResultsByType, ranking: promoRanking, assume: promoAssume
     },
     importer: { KINDS: IMPORT_KINDS, parseCsv: parseCsv, preview: importPreview, apply: importApply, template: importTemplate },
     pilot: { metrics: pilotMetrics, recordBaseline: pilotRecordBaseline, DRAFT_MINUTES: DRAFT_MINUTES },

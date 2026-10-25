@@ -71,7 +71,7 @@
   function kpi(label, value, note) { return h('div', { class: 'kpi' }, h('span', { text: label }), h('strong', { text: value }), note ? h('small', { text: note }) : null); }
   // One look for every AI-assisted feature (insights, drafts, suggestions, AI search, grading):
   // a blue "AI-assisted" pill beside its heading. aiTitle() builds that heading for panel().
-  function aiPill() { return h('span', { class: 'badge b-blue ai-pill', text: 'AI-assisted' }); }
+  function aiPill() { return h('span', { class: 'badge b-blue ai-pill', text: 'AI-assisted', title: 'In this prototype: explainable rules, calculations and editable templates. No trained model, and no data is sent to an AI service.' }); }
   function aiTitle(text, tag) { return h('div', { class: 'rw-head' }, h(tag || 'h2', { text: text }), aiPill()); }
   var currentTitle = '';
   function panel(title, hint) {
@@ -95,6 +95,8 @@
     toastTimer = setTimeout(function () { t.classList.remove('show'); }, 3200);
   }
   function commit(event, target, msg) {
+    // Every new draft saves what Tyllage expects of it, to compare with the results later.
+    if (event === 'campaign.submitted') M.state.campaigns.forEach(function (c) { if (c.status === 'pending_approval' && !c.assumed) M.promo.assume(c); });
     M.audit(session.email, event, target);
     M.save();
     if (msg) toast(msg);
@@ -424,7 +426,7 @@
    * It also warns against promoting crops that are short, and skips anything already drafted
    * in the last 7 days. Every "Draft it" still goes through admin approval. */
   var ADVISOR_SOURCE = { rescue: ['Harvest Rescue', 'red'], drop: ['Harvest allocation', 'green'], radar: ['Demand Radar', 'green'], preorder: ['Harvest Planner', 'green'], restock: ['Restock', 'blue'], rewards: ['Rewards', 'amber'],
-    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'] };
+    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'], limit: ['Pre-order limit', 'grey'] };
   var REWARD_PTYPE = { preorder: 'drop', surplus: 'rescue', tier: 'repeat', points: 'repeat', winback: 'reactivate' };
   function recentlyDrafted(productId, kinds) {
     var weekAgo = Date.now() - 7 * 864e5;
@@ -453,15 +455,17 @@
       if (d.recommended === 'none') { if (!d.shortBy && d.openable) covered.push(d); return; }
       if (++drops > 4) return;
       var a = audienceFor(d.product.id);
-      out.push({ source: 'drop', ptype: d.recommended === 'bundle' ? 'bundle' : 'drop', score: 82 + Math.min(8, d.sharePct / 10), product: d.product, audience: a.eligible.length, drop: d,
+      out.push({ source: 'drop', ptype: d.recommended === 'bundle' ? 'bundle' : 'drop', score: 82 + Math.min(8, d.sharePct / 10), product: d.product, audience: a.eligible.length, drop: d, ranking: d.ranking,
         done: d.campaign, title: 'Harvest Drop: ' + d.uncommitted + ' ' + d.product.title + ' uncommitted',
         why: 'Harvest ' + shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString()) + '. ' + d.reason,
         label: 'Compare options', run: function () { openDropCompare(d); } });
     });
-    covered.slice(0, 2).forEach(function (d) {
-      out.push({ source: 'none', ptype: 'none', score: 19, product: d.product, audience: 0, hold: true,
-        title: 'No promotion needed: ' + d.product.title + ' on ' + shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString()),
-        why: 'All ' + d.supply + ' expected are covered by trade orders, pre-orders and usual sales. Keep the normal price.' });
+    // Harvests at their pre-order limit first: someone has to decide in Harvest Planner.
+    covered.sort(function (a, b) { return (b.capped ? 1 : 0) - (a.capped ? 1 : 0); }).slice(0, 2).forEach(function (d) {
+      var day = shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString());
+      out.push({ source: d.capped ? 'limit' : 'none', ptype: 'none', score: 19, product: d.product, audience: 0, hold: true, ranking: d.ranking,
+        title: (d.capped ? 'Pre-order limit reached: ' : 'No promotion needed: ') + d.product.title + ' on ' + day,
+        why: d.capped ? d.reason : 'All ' + d.supply + ' expected are covered by trade orders, pre-orders and usual sales. Keep the normal price.' });
     });
     // 2. Demand Radar: crops with more supply than demand.
     crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 2).forEach(function (c) {
@@ -507,6 +511,7 @@
     // 5. Short crops: say what NOT to promote.
     crops.filter(function (c) { return c.status === 'short'; }).sort(function (a, b) { return a.gap - b.gap; }).slice(0, 2).forEach(function (c) {
       out.push({ source: 'hold', ptype: 'none', score: 20, product: c.product, audience: 0, hold: true,
+        ranking: M.promo.ranking('none', null, { alt: ['Sow another batch', 'Demand Radar shows when one would be ready.'], avoid: ['Any promotion', 'It would sell stock the farm doesn\'t have.'] }),
         title: 'Don\'t promote ' + c.product.title + ' this week',
         why: 'About ' + Math.abs(c.gap) + ' units short of demand. A promo would only disappoint customers — leave it out of campaigns until the next harvest.' });
     });
@@ -527,19 +532,19 @@
     var rest = adv.filter(function (x) { return first.indexOf(x) < 0; });
     var grid = function (list) { return h('div', { class: 'ops-brief adv-list aligned', style: '--rows:4' }, list.map(function (x) {
         var src = ADVISOR_SOURCE[x.source];
-        var T = M.promo.TYPES[x.ptype || 'normal'];
+        var link = { none: ['#allocation', 'Harvest allocation'], limit: ['#harvest', 'Harvest Planner'] }[x.source] || ['#radar', 'Demand Radar'];
         return h('article', { class: 'ops-card' + (x.hold ? ' adv-hold' : /^(rescue|drop|radar|preorder)$/.test(x.source) ? ' farm' : '') + (x.done ? ' adv-done' : '') },
           h('div', { class: 'ops-card-head' },
             x.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(x.product)) : iconCircle(ICONS.users, 'soft'),
             h('span', { class: 'why-wrap' }, whyBtn(x.title, function () { return explainAdvice(x); }), h('span', { class: 'badge b-' + src[1], text: (x.hold ? '' : (todo.indexOf(x) + 1 || '✓') + ' · ') + src[0] }))),
           h('strong', { class: 'ops-title', text: x.title }),
           h('div', { class: 'adv-body' },
-            h('span', { class: 'adv-type', title: T.when }, badge(T.label, T.tone)),
             x.drop ? dropStats(x.drop) : null,
-            h('p', { text: x.why })),
+            h('p', { text: x.why }),
+            rankList(adviceRanking(x))),
           h('div', { class: 'ops-foot' },
-            h('small', { text: x.source === 'none' ? 'Keep the normal price' : x.hold ? 'Pause promotions' : x.audience + ' opted-in ' + (x.audience === 1 ? 'person' : 'people') }),
-            x.hold ? h('a', { class: 'mini', href: x.source === 'none' ? '#allocation' : '#radar', text: x.source === 'none' ? 'Harvest allocation' : 'Demand Radar' })
+            h('small', { text: x.source === 'none' ? 'Keep the normal price' : x.source === 'limit' ? 'A Harvest Planner decision' : x.hold ? 'Pause promotions' : x.audience + ' opted-in ' + (x.audience === 1 ? 'person' : 'people') + ' · farm approval required' }),
+            x.hold ? h('a', { class: 'mini', href: link[0], text: link[1] })
               : x.done ? h('small', { class: 'pending-note', text: 'Drafted ' + ago(x.done.createdAt) })
               : !x.audience ? h('small', { class: 'hint', text: 'Nobody opted in yet' })
               : h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: x.label, onclick: function () {
@@ -556,23 +561,51 @@
   }
 
   /* ---- Promotion Intelligence helpers (Campaign Advisor) ---- */
+  // Suggested / Alternative / Avoid. The suggested reason is the card's own text, so it's
+  // only repeated where there's no card around it (full).
+  var RANK_ROLE = { suggested: 'Suggested', alternative: 'Alternative', avoid: 'Avoid' };
+  function adviceRanking(x) { return x.ranking || M.promo.ranking(x.ptype || 'normal', x.why); }
+  function rankList(ranking, full) {
+    return h('ul', { class: 'adv-rank' }, ranking.map(function (r) {
+      return h('li', { class: 'rk-' + r.role }, h('span', { class: 'rk-role', text: RANK_ROLE[r.role] }),
+        h('span', { class: 'rk-text' }, h('strong', { text: r.label }), r.role !== 'suggested' || full ? h('small', { text: r.why }) : null));
+    }));
+  }
+  // What each part of the "intelligence" actually is today, so nothing rule-based is passed
+  // off as a trained model.
+  var INTEL_LAYERS = [
+    ['Demand gaps and uncommitted harvest', 'Calculation', 'Now', 'Expected yield minus trade orders, pre-orders and 4-week average sales.'],
+    ['Margin Guard', 'Fixed business rule', 'Now', 'No price below unit cost + minimum margin, or below the minimum price.'],
+    ['Choosing the promotion type', 'Explainable decision rules', 'Now', 'Thresholds in RULES.promo; each card shows Suggested, Alternative and Avoid.'],
+    ['Campaign messages', 'Editable templates', 'Now', 'Filled in with the product, dates and prices; staff can edit before approval.'],
+    ['Campaign results', 'Recorded outcomes', 'Now', 'Orders by the people messaged, compared with what was assumed at draft.'],
+    ['Message writing by a language model', 'Optional LLM', 'Future', 'Would rephrase the same facts; it wouldn\'t decide prices or audiences.'],
+    ['Predicting which promotion works best', 'Model trained on results', 'Future', 'Needs enough recorded campaigns per type first (3+ is the minimum to compare).']
+  ];
   function promoTypesGuide() {
     var T = M.promo.TYPES;
-    return h('details', { class: 'adv-more promo-guide' }, h('summary', { text: 'How Tyllage picks the kind of promotion' }),
+    return h('details', { class: 'adv-more promo-guide' }, h('summary', { text: 'How Tyllage decides, and what\'s rule-based' }),
       h('ul', { class: 'promo-types' }, Object.keys(T).map(function (k) {
         return h('li', null, badge(T[k].label, T[k].tone), h('small', { text: T[k].when }));
       })),
+      h('div', { class: 'intel-layers' }, table([
+        { label: 'Part', render: function (r) { return h('strong', { text: r[0] }); } },
+        { label: 'How it works', render: function (r) { return h('span', null, r[1], h('br'), h('small', { class: 'hint', text: r[3] })); } },
+        { label: 'Status', render: function (r) { return badge(r[2], r[2] === 'Now' ? 'green' : 'grey'); } }
+      ], INTEL_LAYERS)),
       h('small', { class: 'hint', text: 'Tyllage recommends and drafts. MEOD sets prices, approves every offer and sends it from MEOD Fresh to customers who opted in.' }));
   }
-  function dropStats(d) {
+  // The card shows the four allocation figures; the dialog (wide) adds the pre-order spots left.
+  function dropStats(d, wide) {
     var cell = function (label, v, cls) { return h('li', { class: cls || '' }, h('small', { text: label }), h('strong', { text: String(v) })); };
-    return h('ul', { class: 'drop-stats' },
-      cell('Expected', d.supply), cell('Committed', d.committed), cell('Usual sales', d.expectedSales), cell('Uncommitted', d.uncommitted + (d.kg ? ' (~' + d.kg + ' kg)' : ''), 'hl'));
+    return h('ul', { class: 'drop-stats' + (wide ? ' wide' : '') },
+      cell('Expected', d.supply), cell('Committed', d.committed), cell('Usual sales', d.expectedSales), cell('Uncommitted', d.uncommitted + (d.kg ? ' (~' + d.kg + ' kg)' : ''), 'hl'),
+      wide ? cell('Pre-order spots left', d.spotsLeft + ' of ' + d.batch.preorderCap) : null);
   }
   var DROP_MSG = {
-    normal: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.uncommitted + ' are open for pre-order at ' + money(o.priceCents) + '. Reserve yours by ' + by + ' in your MEOD account and earn 2× reward points. Reply STOP to opt out.'; },
-    bundle: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. Pair it with ' + o.partner.title + ': both for ' + money(o.bundlePriceCents) + ' (usually ' + money(d.product.priceCents + o.partner.priceCents) + '), for the first ' + d.uncommitted + ' orders before ' + by + '. Reply STOP to opt out.'; },
-    discount: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.uncommitted + ' Harvest Drop spots at ' + money(o.priceCents) + ' (usually ' + money(d.product.priceCents) + '), only until ' + by + '. Reserve in your MEOD account. Reply STOP to opt out.'; }
+    normal: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' are open for pre-order at ' + money(o.priceCents) + '. Reserve yours by ' + by + ' in your MEOD account and earn 2× reward points. Reply STOP to opt out.'; },
+    bundle: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. Pair it with ' + o.partner.title + ': both for ' + money(o.bundlePriceCents) + ' (usually ' + money(d.product.priceCents + o.partner.priceCents) + '), for the first ' + d.dropQty + ' orders before ' + by + '. Reply STOP to opt out.'; },
+    discount: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' Harvest Drop spots at ' + money(o.priceCents) + ' (usually ' + money(d.product.priceCents) + '), only until ' + by + '. Reserve in your MEOD account. Reply STOP to opt out.'; }
   };
   function draftDrop(d, o) {
     var p = d.product, a = audienceFor(p.id), id = M.nextId('CP');
@@ -580,12 +613,15 @@
     S().campaigns.unshift({
       id: id, kind: 'harvest-drop', productId: p.id, title: p.title + ' — Harvest Drop (' + o.label + ')', language: 'en', message: DROP_MSG[o.key](d, o, day, by),
       audience: a.eligible, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0,
-      drop: { batchId: d.batch.id, qty: d.uncommitted, option: o.key, priceCents: o.priceCents, partnerId: o.partner ? o.partner.id : null, bundlePriceCents: o.bundlePriceCents || null }
+      drop: { batchId: d.batch.id, qty: d.dropQty, option: o.key, priceCents: o.priceCents, partnerId: o.partner ? o.partner.id : null, bundlePriceCents: o.bundlePriceCents || null }
     });
-    M.decisions.log({ kind: 'campaign', feature: 'Campaign Advisor', title: 'Harvest Drop: ' + d.uncommitted + ' ' + p.title + ' (' + o.label + ')', recommendation: d.options.filter(function (x) { return x.recommended; }).map(function (x) { return x.label; })[0] || o.label,
-      campaignId: id, inputs: [['Expected harvest', d.supply], ['Committed (trade + pre-orders)', d.committed], ['Usual sales (est.)', d.expectedSales], ['Uncommitted', d.uncommitted], ['Chosen option', o.label + ' at ' + money(o.priceCents)]],
-      calc: ['Uncommitted = expected − committed − usual sales', 'Contribution per unit = ' + money(o.priceCents) + ' − unit cost = ' + money(o.contributionCents), d.reason],
-      assumptions: ['Usual sales are 4-week averages.', 'Potential revenue assumes every uncommitted unit sells; actual sales may be lower.'],
+    M.promo.assume(S().campaigns[0], { units: d.dropQty, unitsLabel: 'Drop spots filled (goal: all)',
+      scenario: 'If all ' + d.dropQty + ' sell: ' + money(o.potentialRevenueCents) + ' revenue, ' + money(o.potentialContributionCents) + ' contribution. A ceiling, not a forecast.' });
+    M.decisions.log({ kind: 'campaign', feature: 'Campaign Advisor', title: 'Harvest Drop: ' + d.dropQty + ' ' + p.title + ' (' + o.label + ')', recommendation: d.options.filter(function (x) { return x.recommended; }).map(function (x) { return x.label; })[0] || o.label,
+      campaignId: id, inputs: [['Expected harvest', d.supply], ['Committed (trade + pre-orders)', d.committed], ['Usual sales (est.)', d.expectedSales], ['Uncommitted', d.uncommitted], ['Pre-order spots left', d.spotsLeft], ['Chosen option', o.label + ' at ' + money(o.priceCents)]],
+      calc: ['Uncommitted = expected − committed − usual sales', 'Drop size = the smaller of uncommitted and pre-order spots left = ' + d.dropQty, 'Contribution per unit = ' + money(o.priceCents) + ' − unit cost = ' + money(o.contributionCents), d.reason]
+        .concat(d.ranking.map(function (r) { return RANK_ROLE[r.role] + ': ' + r.label + (r.role === 'suggested' ? '' : ' — ' + r.why); })),
+      assumptions: ['Usual sales are 4-week averages.', 'Potential revenue assumes every drop spot sells; actual sales may be lower.', 'About ' + Math.round(M.RULES.promo.assumedResponse * 100) + '% of the people messaged order (Settings).'],
       confidence: { level: 'medium', note: 'Committed figures are firm; usual sales are estimates.' } }, session.email);
     commit('campaign.submitted', id, 'Harvest Drop for ' + p.title + ' drafted for ' + a.eligible.length + ' opted-in buyer(s) — waiting for admin approval.');
   }
@@ -598,15 +634,16 @@
       h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
       h('div', { class: 'rd-body' },
         h('div', { class: 'rd-head' }, h('h2', { id: 'dd-title', text: 'Harvest Drop: ' + p.title }), aiPill(), badge('Harvest ' + shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString()), 'green')),
-        dropStats(d),
+        dropStats(d, true),
         h('p', { class: 'callout green', text: 'Tyllage suggests: ' + d.reason }),
+        rankList(d.ranking),
         h('div', { class: 'sim-grid' }, d.options.map(function (o) {
           var blocked = !o.guard.ok;
           return h('article', { class: 'sim-card' + (o.recommended ? ' best' : '') + (blocked ? ' blocked' : '') },
             h('div', { class: 'sim-head' }, h('strong', { text: o.label }), o.recommended ? badge('Suggested', 'green') : blocked ? badge('Blocked', 'red') : h('span')),
             h('div', { class: 'sim-price' }, o.priceCents < p.priceCents ? [h('span', { class: 'price-was', text: money(p.priceCents) }), h('strong', { text: money(o.priceCents) })] : h('strong', { text: money(o.priceCents) })),
             h('ul', { class: 'sim-nums' },
-              h('li', null, h('small', { text: 'Uncommitted' }), h('strong', { text: String(d.uncommitted) })),
+              h('li', null, h('small', { text: 'Drop spots' }), h('strong', { text: String(d.dropQty) })),
               h('li', { class: 'sim-margin' }, h('small', { text: 'Contribution / unit' }), h('strong', { text: money(o.contributionCents) })),
               h('li', null, h('small', { text: 'Potential revenue*' }), h('strong', { text: money(o.potentialRevenueCents) })),
               h('li', { class: 'sim-margin' }, h('small', { text: 'Potential contribution*' }), h('strong', { text: money(o.potentialContributionCents) }))),
@@ -614,8 +651,9 @@
             h('button', { class: 'pa-act btn btn-sm ' + (o.recommended ? 'btn-forest' : 'btn-outline'), type: 'button', disabled: blocked || !a.eligible.length,
               text: 'Draft for approval', onclick: function () { closeDialog(); draftDrop(d, o); } }));
         })),
-        h('small', { class: 'rd-disclaimer', text: '*If all ' + d.uncommitted + ' uncommitted units sell at that price. This is a scenario, not a sales forecast: actual sales may be zero. Contribution is after the unit cost in Settings; delivery and fixed costs aren\'t included.' }),
-        h('small', { class: 'hint', text: 'Goes out as MEOD Fresh on WhatsApp to ' + a.eligible.length + ' opted-in past buyer(s) of ' + M.CATEGORIES[p.category].label.toLowerCase() + '. Customers order in MEOD\'s own shop. Approving opens ' + d.uncommitted + ' pre-order spots on this harvest.' })),
+        h('small', { class: 'rd-disclaimer', text: '*If all ' + d.dropQty + ' drop spots sell at that price. This is a scenario, not a sales forecast: actual sales may be zero. Contribution is after the unit cost in Settings; delivery and fixed costs aren\'t included.' }),
+        h('small', { class: 'hint', text: 'Goes out as MEOD Fresh on WhatsApp to ' + a.eligible.length + ' opted-in past buyer(s) of ' + M.CATEGORIES[p.category].label.toLowerCase() + '. Customers order in MEOD\'s own shop. The drop uses ' + d.dropQty + ' of the ' + d.spotsLeft + ' pre-order spots already open; it never opens more.' +
+          (d.overLimit ? ' The other ' + d.overLimit + ' uncommitted would need the pre-order limit raised in Harvest Planner.' : '') })),
       h('div', { class: 'r-actions' }, h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: closeDialog })));
     dlg.addEventListener('close', function () { dlg.remove(); });
     document.body.appendChild(dlg);
@@ -634,6 +672,8 @@
       audience: aud, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0,
       milestone: { eventId: ev.id, target: m.target, days: m.days, voucherCents: m.voucherCents }
     });
+    M.promo.assume(S().campaigns[0], { buyers: m.expectBuyers, units: m.target, unitsLabel: 'Group items ordered', unitsActual: 'group', voucherCostCents: m.rewardCostCents,
+      basis: 'About ' + m.expectBuyers + ' member(s) order and the group reaches its goal of ' + m.target + ' (usually ' + m.baseline + '), so vouchers cost about ' + money(m.rewardCostCents) + '.' });
     commit('campaign.submitted', id, 'Group goal for ' + ev.title + ' drafted — waiting for admin approval.');
   }
   function visitVoucherDraft(x) {
@@ -643,6 +683,8 @@
       message: 'Thanks for visiting MEOD Farm 🌱 Here\'s ' + money(x.voucherCents) + ' off your next order of fresh greens (min ' + money(M.RULES.rewards.voucherMinSpendCents) + ' of full-price produce). It\'s already in your MEOD account. Reply STOP to opt out.',
       audience: x.audience, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
     });
+    var used = Math.round(x.audience.length * M.RULES.promo.assumedResponse);
+    M.promo.assume(S().campaigns[0], { voucherCostCents: used * x.voucherCents });
     commit('campaign.submitted', id, 'Thank-you voucher for ' + (b.org || b.name) + ' drafted — waiting for admin approval.');
   }
 
@@ -821,7 +863,18 @@
       h('small', { text: money(r.revenueCents) + ' sales · ' + money(r.marginCents) + ' margin' }),
       r.dropQty ? h('small', { text: r.dropTaken + ' of ' + r.dropQty + ' drop spots taken' }) : null,
       r.vouchersIssued ? h('small', { text: r.vouchersUsed + ' of ' + r.vouchersIssued + ' vouchers used' }) : null,
-      r.open ? h('small', { class: 'pending-note', text: 'Still counting' }) : null);
+      r.open ? h('small', { class: 'pending-note', text: 'Still counting' }) : null,
+      r.vsAssumed.length ? h('details', { class: 'cp-vs' }, h('summary', { text: 'Assumed vs actual' }), vsTable(r)) : null);
+  }
+  // What Tyllage assumed when the campaign was drafted, beside what happened.
+  var VS_MARK = { met: ['✓ met', 'green'], below: ['✕ below', 'red'], counting: ['… counting', 'grey'] };
+  function vsTable(r) {
+    var fmt = function (x, v) { return x.money ? money(v) : String(v); };
+    return h('div', { class: 'cp-vs-body' },
+      h('ul', null, r.vsAssumed.map(function (x) {
+        return h('li', null, h('span', { text: x.label }), h('small', { text: 'assumed ' + fmt(x, x.assumed) }), h('strong', { text: fmt(x, x.actual) }), badge(VS_MARK[x.verdict][0], VS_MARK[x.verdict][1]));
+      })),
+      h('small', { text: r.assumed.basis + (r.assumed.scenario ? ' ' + r.assumed.scenario : '') + (r.assumed.savedAt === 'approval' ? ' Saved at approval (drafted before assumptions were recorded).' : ' Saved ' + shortDate(r.assumed.at) + ' when drafted.') }));
   }
   function promoResultsPanel() {
     var rows = M.promo.resultsByType();
@@ -835,7 +888,9 @@
         { label: 'Margin', num: true, render: function (x) { return money(x.marginCents); } },
         { label: 'Vouchers used', num: true, render: function (x) { return x.voucherCostCents ? '−' + money(x.voucherCostCents) : '—'; } },
         { label: 'Net', num: true, render: function (x) { return h('strong', { text: money(x.netCents) }); } },
-        { label: 'Evidence', render: function (x) { return x.enough ? badge('Enough to compare', 'green') : h('small', { class: 'hint', text: 'Too few to judge (' + x.campaigns + ' of 3)' }); } }
+        { label: 'Assumed → actual buyers', num: true, render: function (x) { return x.withAssumed ? x.assumedBuyers + ' → ' + x.buyers : '—'; } },
+        { label: 'Met assumption', num: true, render: function (x) { return x.settled ? x.met + ' of ' + x.settled : h('small', { class: 'hint', text: 'None finished yet' }); } },
+        { label: 'Evidence', render: function (x) { return x.enough ? h('span', { class: 'ptype' }, badge('Enough to compare', 'green')) : h('small', { class: 'hint', text: 'Too few to judge (' + x.campaigns + ' of 3)' }); } }
       ], rows, 'No campaigns sent yet. Results show here a week after each one goes out.'));
   }
 
@@ -2294,7 +2349,8 @@
     var p = x.product, c = p ? M.radar.crops().filter(function (r) { return r.product.id === p.id; })[0] : null;
     var base = c ? M.decisions.explainRadar(c) : { inputs: [], calc: [], assumptions: [], confidence: { level: 'medium', note: 'Based on member history.' } };
     return { inputs: base.inputs.concat([['Opted-in people to message', x.audience]]),
-      calc: base.calc.concat(['Ranked ' + ADVISOR_SOURCE[x.source][0] + ': ' + x.why]),
+      calc: base.calc.concat(['Ranked ' + ADVISOR_SOURCE[x.source][0] + ': ' + x.why],
+        adviceRanking(x).map(function (r) { return RANK_ROLE[r.role] + ': ' + r.label + (r.role === 'suggested' ? '' : ' — ' + r.why); })),
       assumptions: base.assumptions.concat(['Only people who opted in to messages are included.', 'Food at risk of waste ranks above sales nudges.']),
       confidence: base.confidence };
   }

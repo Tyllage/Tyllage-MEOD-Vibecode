@@ -97,6 +97,18 @@ On phones the sidebar becomes a swipeable top menu with the same group labels.
 
 Every AI-assisted feature carries the same **AI-assisted** pill. All of them are **rule-based** in the prototype: they read the demo records, show how they reached an answer, and never change prices, send messages or write orders on their own. A person always approves.
 
+What each part of the intelligence actually is today (also shown in Campaign Studio under *How Tyllage decides, and what's rule-based*):
+
+| Part | How it works | Status |
+|---|---|---|
+| Demand gaps and uncommitted harvest | Calculation | Now |
+| Margin Guard | Fixed business rule | Now |
+| Choosing the promotion type | Explainable decision rules (`RULES.promo`) | Now |
+| Campaign messages | Editable templates | Now |
+| Campaign results | Recorded outcomes vs assumptions saved at draft | Now |
+| Message writing by a language model | Optional LLM | Future |
+| Predicting which promotion works best | Model trained on recorded results | Future, once each type has enough campaigns |
+
 - **Ask Tyllage** (staff): a chat, laid out like the customer's Ask MEOD, for questions in English or 中文, typed or spoken (browser speech recognition). Answers are tables of real records with "How I worked this out" and links to the page behind them. If the records can't answer, it says so.
 - **"Why?" panels and the AI decision ledger.** Demand Radar, Price Advisor, Campaign Advisor and Harvest allocation suggestions open a "Why?" panel: the data, calculation, assumptions, confidence, who decided and what happened. Price, campaign, quote and visit decisions are logged to the ledger.
 - **Weekly briefing.** Ranked priorities across farm ops, sales and customers, a harvest and pack summary, a sales pulse, a 7-day calendar and an editable summary to copy.
@@ -106,9 +118,10 @@ Every AI-assisted feature carries the same **AI-assisted** pill. All of them are
 - **Harvest Planner** (with **photo grading** of harvest photos into Grade A / Cosmetic / Check) and **Harvest Rescue** (sell-by deadlines per batch and ranked rescue options).
 - **Price Advisor with Margin Guard** and a **Promotion simulator**: discount, bundle or bulk-trade suggestions checked against a price floor; no surge pricing.
 - **Campaign Studio**: a ranked list of recommended campaigns, AI-drafted messages per language, and **restock reminders**.
-- **Promotion Intelligence** (inside Campaign Studio): every recommendation names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
-  - **Harvest Drops.** Each harvest in the next 2 weeks shows expected, committed, usual sales and uncommitted quantities. Tyllage compares a normal-price pre-order, a bundle and a small discount, showing contribution per unit and the potential revenue if everything sells. Approving opens pre-order spots for the uncommitted amount.
-  - **Results by promotion type.** Each sent campaign shows what it led to: orders, sales, margin, vouchers used and drop spots taken. A table compares the promotion types and marks which ones have enough campaigns to judge.
+- **Promotion Intelligence** (inside Campaign Studio): every recommendation is ranked as **Suggested**, **Alternative** and **Avoid**, each with a reason. The suggested option names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
+  - **Harvest Drops.** Each harvest in the next 2 weeks shows expected, committed, usual sales and uncommitted quantities. Tyllage compares a normal-price pre-order, a bundle and a small discount, showing contribution per unit and the potential revenue if every drop spot sells. A drop never opens more pre-order spots than the batch's limit (60% of expected yield by default). If the uncommitted amount is bigger, the drop is sized to the spots left. Raising the limit is a separate decision in Harvest Planner, and a harvest with no spots left shows a "Pre-order limit reached" card.
+  - **Assumptions vs actual.** Each draft saves what Tyllage expected: how many people order (the *Expected campaign response* in Settings, 25% by default), plus drop spots, group volume or voucher cost where relevant. Each sent campaign shows those beside what actually happened, marked met, below or still counting.
+  - **Results by promotion type.** Each sent campaign shows what it led to: orders, sales, margin, vouchers used and drop spots taken. A table compares the promotion types: assumed vs actual buyers, how many finished campaigns met their assumptions, and which types have enough campaigns to judge.
 - **Content studio**: weekly social and WhatsApp post ideas with caption checks.
 - **B2B buyers** insights and **Quotation Copilot** (reads a buyer's enquiry, checks a counter-offer against Margin Guard and spare supply; accepted quotes become recurring demand).
 - **Feedback intelligence**: ratings, reviews, chats, tickets, trade buyers and visits, grouped by theme and traced to a harvest batch or delivery round.
@@ -148,7 +161,7 @@ All of these live in `RULES` in `js/data.js`. Admins can change the AI assumptio
 - **Buy to Clear.** A clearance price can never be below its minimum price (default 60% of normal). Clearance stock is a discounted slice of a product's own stock, so a sale decrements both. Bag pre-orders close 10pm the day before each delivery.
 - **Harvest pre-orders** close 10pm the night before harvest. 60% of a batch's expected yield opens to pre-order by default. A cancel or refund frees the spot.
 - **Margin Guard:** no price may go below max(unit cost + 15% margin, the minimum price). Short crops get "hold price", never a surge.
-- **Promotions (`RULES.promo`):** a Harvest Drop stays at the normal price when 25% or less of the harvest is uncommitted or pre-orders are filling fast. Between 25% and 50% it suggests a bundle (10% off the pair). Above 50%, with slow pre-orders, it suggests 10% off the drop spots only. A drop's price is checked by Margin Guard again at approval, and the approval fails if it doesn't pass. Group goals pay S$3 per member, visit vouchers are S$5, and results count orders by recipients within 7 days of sending.
+- **Promotions (`RULES.promo`):** a Harvest Drop stays at the normal price when 25% or less of the harvest is uncommitted or pre-orders are filling fast. Between 25% and 50% it suggests a bundle (10% off the pair). Above 50%, with slow pre-orders, it suggests 10% off the drop spots only. A drop is sized to the smaller of the uncommitted amount and the pre-order spots left. At approval, the drop must still fit in the spots left and pass Margin Guard; if either check fails, the approval fails and nothing changes. Approval never raises a batch's pre-order limit. Uncommitted figures can't double-count across two batches of the same crop: each batch only counts trade orders, standing orders and usual sales from its own harvest day up to the next batch's, and pre-orders belong to one batch. Group goals pay S$3 per member, visit vouchers are S$5, and results count orders by recipients within 7 days of sending.
 - **Who does what:** MEOD owns the produce, sets and approves prices and offers, sends from MEOD Fresh and owns its customer relationships. Tyllage analyses, recommends, drafts and reports. It never buys or resells produce.
 - **Harvest Rescue:** sell-by dates come from a shelf life per category (4–7 days).
 - **Rewards:** 1 point per S$1; 100 points = S$5 voucher (S$20 minimum on full-price items, valid 90 days); 2× points on anti-waste lines; four tiers (Seedling, Sprout, Harvester, Farm Friend). Points come from orders, so refunds reverse them.

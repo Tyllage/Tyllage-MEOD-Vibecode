@@ -87,7 +87,7 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 | Group | Screens |
 |---|---|
 | **Today** | SalesDesk **Overview**, **Ask Tyllage**, **Weekly briefing**, **Pilot metrics**, **AI decision ledger** |
-| **Farm ops** | **Lost demand**, **Demand Radar**, **Harvest allocation**, **Decision twin**, **Greenhouse rounds**, **Harvest Planner**, **Harvest Rescue**, Stock |
+| **Farm ops** | **Lost demand**, **Demand Radar**, **Harvest allocation**, **Decision twin**, **Greenhouse rounds**, **Seasonal calendar**, **Harvest Planner**, **Harvest Rescue**, Stock |
 | **Sales** | Orders, **Content studio**, **B2B buyers**, **Quotations**, Campaigns, **Price Advisor**, Buy to Clear, **Rewards**, Group buys, **Visits** |
 | **Customers** | Inbox, **Feedback**, Customers |
 | **Admin** | **Data import**, Users, Audit log, Settings |
@@ -127,6 +127,23 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
     - Once approved, it becomes a **confirmed shortfall**, with the affected orders listed (trade orders first, then pre-orders oldest first).
   - **Sales follow-ups.** A confirmed shortfall creates one internal task per affected order. Tyllage never contacts customers itself. Staff close a task with a note of what was agreed, a closed task isn't reopened, and tasks close themselves if a later estimate covers the order again.
   - **Batch history.** Every batch has a history: the previous and latest inspection photos side by side, every inspection exactly as the worker sent it, its status (Draft, Accepted automatically, Review required, Accepted by manager, Not accepted), the manager's decision and reason, and a log of every estimate change. Inspections are never edited; decisions are added beside them.
+- **Greenhouse health map** (Greenhouse rounds). One tile per greenhouse, coloured by its most serious latest inspection: green Healthy, amber Monitor, red Needs review. A greenhouse not checked for 3+ days fades. Tap a crop to open its history.
+- **Weather-aware daily advisory** (on the round page, for workers and staff). Today's forecast for MEOD's area (Lim Chu Kang, west region) comes live from NEA's public forecasts on data.gov.sg. Rules turn it into advice:
+  - **Hot day (33°C+):** which greenhouses' leafy greens to check first for wilting, with those already under watch first.
+  - **Showers or thunder:** when they'll hit, a lightning warning, and which delivery days may run late.
+  - **Very humid:** which greenhouses to check for mould or rot.
+
+  It's kept for 30 minutes. If data.gov.sg can't be reached, a clearly labelled demo forecast is used.
+- **Learning from inspections** ("What Tyllage is learning" on Greenhouse rounds). Measured, not claimed:
+  - **Photo check vs workers.** Each worker decision on a photo-checked batch is a labelled example. The panel shows how often the colour check agrees with workers, whether it flags too much or too little, and a suggestion-vs-decision table.
+  - **Estimate accuracy.** Each harvest of an inspected batch is archived with the last worker estimate and the real yield. Once a crop has 3+ harvests and a steady bias of 5% or more, the inspection screen shows a corrected figure, e.g. "Kai Lan estimates have run 10% high over 4 past harvests, so about 56 is likelier", with a one-tap **Use 56**.
+  - Ships with 12 weeks of demo history so the panel isn't empty.
+- **Seasonal calendar.** Singapore festivals in the next five months (Deepavali, Dongzhi, Christmas, Chinese New Year, Hari Raya) and the greens each one lifts.
+  - For each crop: festive demand vs planned harvests, the gap, and the last day to sow to close it.
+  - Harvest Planner shows a **Sow now for the festivals** panel when a sowing deadline is within 3 weeks.
+  - Campaign Advisor suggests a normal-price festive pre-order message 3 weeks before a festival.
+  - Uplifts are illustrative until MEOD's own festive sales replace them.
+- **Market price check** (Seasonal calendar). Staff record supermarket and wet-market prices for a similar pack. Tyllage compares the last 30 days with MEOD's price: Premium, At market or Below market.
 - **Price Advisor with Margin Guard** and a **Promotion simulator**: discount, bundle or bulk-trade suggestions checked against a price floor; no surge pricing.
 - **Campaign Studio**: a ranked list of recommended campaigns, AI-drafted messages per language, and **restock reminders**.
 - **Promotion Intelligence** (inside Campaign Studio): every recommendation is ranked as **Suggested**, **Alternative** and **Avoid**, each with a reason. The suggested option names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
@@ -231,6 +248,8 @@ assets/img/       optimised WebP copies the site actually loads
 - `dashboard.html`: `data.js → assist.js → auth.js → grade.js → recipes.js → content.js → replies.js → portal.js`.
 
 **Third-party scripts, loaded only when needed** from cdnjs: SheetJS (`xlsx` 0.18.5) when an Excel file is imported, and `qrcodejs` 1.0.0 when a visit QR code is shown. CSV import and everything else work offline. See [SECURITY.md](SECURITY.md).
+
+**Public weather data:** the round page reads NEA's 24-hour and 2-hour forecasts from `api-open.data.gov.sg` with plain GET requests. Nothing about MEOD, its staff or customers is sent. Offline, it shows demo weather instead.
 
 ## Demo data
 

@@ -81,6 +81,8 @@
     inspect: {
       greenhouses: 8,               // demo greenhouses GH-01 … GH-08
       autoApplyPct: 0.2,            // estimate changes within ±20% apply automatically
+      staleDays: 3,                 // health map: a greenhouse not inspected for this long fades
+      minHarvestsForBias: 3,        // learning: harvests needed before suggesting a corrected estimate
       thumbSide: 96                 // photos are kept as a small thumbnail only
     },
     // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
@@ -985,6 +987,36 @@
     // Commitment-risk follow-up tasks and the log of every estimate change.
     s.tasks = s.tasks || [];
     s.estimateLog = s.estimateLog || [];
+    if (!s.migrations.learningV1) {
+      // Demo history for "learning from inspections": 12 weeks of past harvests, each with the
+      // last worker estimate before picking and the photo check's suggestion. Each crop has a
+      // typical estimating habit (Kai Lan usually 12% high, Red Pak Choy 8% low…), and the photo
+      // check over-flags some healthy crops, so agreement isn't perfect.
+      var habit = { 'Kai Lan': 0.12, 'Xiao Bai Cai': 0.05, 'Red Pak Choy': -0.08, 'Cos Lettuce': 0.03, 'Kangkong': 0.15, 'Tuscan Kale': -0.04, 'Oyster Mushroom': 0, 'Bayam': 0.09, 'HK Cai Xin': 0.06 };
+      var dayMs = 864e5, k = 0;
+      s.harvestRecords = s.harvestRecords || [];
+      Object.keys(habit).forEach(function (title, ci) {
+        var p = s.products.filter(function (x) { return x.title === title; })[0];
+        if (!p) return;
+        for (var w = 0; w < 4; w++) {
+          k++;
+          var actual = 35 + (hashOf(title + w) % 30), noise = ((hashOf(title + 'n' + w) % 9) - 4) / 100;
+          var est = Math.max(1, Math.round(actual * (1 + habit[title] + noise)));
+          // Photo suggestion vs worker: about 1 in 5 disagree (strong light or purple leaves read as yellowing).
+          var cond = k % 7 === 0 ? 'monitor' : 'healthy';
+          var grade = p.category === 'fungi' ? null : k % 5 === 0 ? 'cosmetic' : cond === 'monitor' ? (k % 2 ? 'cosmetic' : 'A') : 'A';
+          s.harvestRecords.push({ productId: p.id, batchId: null, greenhouse: greenhouseName(ci), harvestedAt: new Date(Date.now() - (14 + w * 18 + ci) * dayMs).toISOString(),
+            estimate: est, actual: actual, condition: cond, photoGrade: grade, demo: true });
+        }
+      });
+      s.marketPrices = s.marketPrices || [];
+      [['Xiao Bai Cai', 'FairPrice', 295], ['Xiao Bai Cai', 'Cold Storage', 340], ['Xiao Bai Cai', 'Sheng Siong', 260], ['Kai Lan', 'FairPrice', 310], ['Kai Lan', 'Wet market', 250],
+       ['Cos Lettuce', 'FairPrice', 395], ['Cos Lettuce', 'Cold Storage', 480], ['Shiitake Mushroom', 'FairPrice', 550], ['Tuscan Kale', 'Cold Storage', 690], ['Sweet Basil', 'Cold Storage', 350]].forEach(function (m, i) {
+        var p = s.products.filter(function (x) { return x.title === m[0]; })[0];
+        if (p) s.marketPrices.push({ id: 'MP-' + (900 + i), productId: p.id, store: m[1], priceCents: m[2], note: 'Similar pack size (demo)', at: new Date(Date.now() - (2 + i) * dayMs).toISOString(), by: 'sales@meod.test', demo: true });
+      });
+      s.migrations.learningV1 = true;
+    }
     return s;
   }
   function greenhouseName(i) { var n = i % RULES.inspect.greenhouses + 1; return 'GH-' + (n < 10 ? '0' : '') + n; }
@@ -1435,6 +1467,7 @@
     // Harvest Rescue: how much went into stock, and when it should be sold by.
     b.toStock = toStock;
     b.sellBy = bagDayKey(new Date(Date.now() + ((p && RULES.shelfDays[p.category]) || 4) * 864e5));
+    archiveHarvest(b);
     return { ok: true, reserved: reserved, served: Math.min(reserved, sellable), toStock: toStock, shortfall: Math.max(0, reserved - sellable), held: grades ? grades.check : 0 };
   }
   function batchCancel(id) {
@@ -2953,6 +2986,184 @@
     return out.filter(function (x) { return x.batch && batchStage(x.batch) === 'growing'; });
   }
 
+  /* ---------- Greenhouse health map ----------
+   * One tile per greenhouse: the worst latest condition of its growing batches, and how long
+   * since anyone checked. Not checked for RULES.inspect.staleDays → the tile fades. */
+  var CONDITION_RANK = { healthy: 1, monitor: 2, review: 3 };
+  function greenhouseHealth() {
+    var latest = {};
+    (state.inspections || []).forEach(function (i) { if (!latest[i.batchId] || latest[i.batchId].at < i.at) latest[i.batchId] = i; });
+    var out = [];
+    for (var n = 0; n < RULES.inspect.greenhouses; n++) {
+      var name = greenhouseName(n);
+      var rows = inspectableBatches().filter(function (b) { return batchGreenhouse(b) === name; }).map(function (b) { return { batch: b, product: byId('products', b.productId), inspection: latest[b.id] || null }; });
+      var worst = null, lastAt = null;
+      rows.forEach(function (r) {
+        if (!r.inspection) return;
+        if (!worst || CONDITION_RANK[r.inspection.condition] > CONDITION_RANK[worst]) worst = r.inspection.condition;
+        if (!lastAt || r.inspection.at > lastAt) lastAt = r.inspection.at;
+      });
+      var age = lastAt ? (Date.now() - new Date(lastAt).getTime()) / 864e5 : null;
+      out.push({ name: name, rows: rows, condition: worst, lastAt: lastAt, ageDays: age, stale: !lastAt || age > RULES.inspect.staleDays,
+        unchecked: rows.filter(function (r) { return !r.inspection; }).length });
+    }
+    return out;
+  }
+
+  /* ---------- Weather-aware advice ----------
+   * The weather itself is NEA's public forecast (data.gov.sg, fetched by the portal); these
+   * rules only turn it into farm advice: which greenhouses to check first on a hot day,
+   * when showers will hit deliveries, and when humidity means checking for rot. */
+  function weatherAdvice(w) {
+    var out = [];
+    if (!w) return out;
+    var leafy = greenhouseHealth().filter(function (g) { return g.rows.some(function (r) { return ['asian-greens', 'lettuces', 'herbs'].indexOf(r.product.category) > -1; }); });
+    // Greenhouses with a crop already under watch go first.
+    leafy.sort(function (a, b) { return (CONDITION_RANK[b.condition] || 0) - (CONDITION_RANK[a.condition] || 0); });
+    var fungi = greenhouseHealth().filter(function (g) { return g.rows.some(function (r) { return r.product.category === 'fungi' || r.product.category === 'lettuces'; }); });
+    var wet = /shower|rain|thunder/i, thunder = /thunder/i;
+    var rainy = (w.periods || []).filter(function (p) { return wet.test(p.text); });
+    if (w.day && w.day.high >= 33) {
+      out.push({ key: 'heat', tone: 'amber', title: 'Hot day: up to ' + w.day.high + '°C',
+        text: 'Check the leafy greens in ' + leafy.slice(0, 3).map(function (g) { return g.name; }).join(', ') + ' first for wilting, ideally before noon.', greenhouses: leafy.slice(0, 3).map(function (g) { return g.name; }) });
+    }
+    if (rainy.length) {
+      var first = rainy[0], days = [];
+      rainy.forEach(function (p) {
+        for (var d = new Date(p.start); d < new Date(p.end); d = new Date(d.getTime() + 3600e3)) {
+          var key = bagDayKey(d);
+          if (DELIVERY_DAYS.indexOf(d.getDay()) > -1 && d.getHours() >= 8 && d.getHours() < 20 && days.indexOf(key) < 0) days.push(key);
+        }
+      });
+      out.push({ key: 'rain', tone: 'blue', title: first.text.charAt(0) + first.text.slice(1).toLowerCase() + ', ' + first.label.charAt(0).toLowerCase() + first.label.slice(1),
+        text: (thunder.test(first.text) ? 'Move between greenhouses before it starts, and stay out of open ground while there\'s thunder. ' : 'Plan outdoor work around it. ') +
+          (days.length ? days.map(function (k) { return shortDayLabel(k); }).join(' and ') + ' deliveries may run late: pack early and warn the drivers.' : 'No delivery runs fall in that window.') });
+    }
+    if (w.day && w.day.humHigh >= 90 && rainy.length) {
+      out.push({ key: 'humid', tone: 'amber', title: 'Very humid: up to ' + w.day.humHigh + '%',
+        text: 'Look for mould or soft rot on mushrooms and lettuces in ' + fungi.slice(0, 3).map(function (g) { return g.name; }).join(', ') + '.' });
+    }
+    if (!out.length) out.push({ key: 'fair', tone: 'green', title: w.day ? w.day.text + ', ' + w.day.low + '–' + w.day.high + '°C' : 'Fair weather', text: 'Nothing unusual. A normal round.' });
+    return out;
+  }
+
+  /* ---------- Learning from inspections ----------
+   * Two measured things, not claims:
+   * 1. Labelled examples: each time a worker confirms or overrides the photo check, that's a
+   *    label. Agreement shows whether the colour check can be trusted.
+   * 2. Estimate accuracy: when a batch is harvested, its last worker estimate is compared with
+   *    the real yield. A steady bias per crop becomes a suggested correction.
+   * This is the dataset a trained model would need later. */
+  function archiveHarvest(b) {
+    var ins = (state.inspections || []).filter(function (i) {
+      var r = byId('rounds', i.roundId);
+      return i.batchId === b.id && r && r.status === 'submitted';
+    }).sort(function (x, y) { return x.at < y.at ? 1 : -1; })[0];
+    if (!ins) return;
+    state.harvestRecords = state.harvestRecords || [];
+    state.harvestRecords.push({ productId: b.productId, batchId: b.id, greenhouse: batchGreenhouse(b), harvestedAt: b.harvestedAt, estimate: ins.estQty, actual: b.actualQty,
+      condition: ins.condition, photoGrade: ins.photo ? ins.photo.grade : null, demo: false });
+  }
+  function learningExamples() {
+    var ex = [];
+    (state.inspections || []).forEach(function (i) {
+      if (i.photo && GRADE_CONDITION[i.photo.grade]) ex.push({ suggested: GRADE_CONDITION[i.photo.grade], chosen: i.condition, simulated: Boolean(i.photo.simulated), demo: false, at: i.at });
+    });
+    (state.harvestRecords || []).forEach(function (r) {
+      if (GRADE_CONDITION[r.photoGrade]) ex.push({ suggested: GRADE_CONDITION[r.photoGrade], chosen: r.condition, simulated: false, demo: Boolean(r.demo), at: r.harvestedAt });
+    });
+    return ex;
+  }
+  function estimateBias(productId) {
+    var recs = (state.harvestRecords || []).filter(function (r) { return r.productId === productId && r.actual > 0; });
+    var n = recs.length;
+    var mean = n ? recs.reduce(function (s, r) { return s + (r.estimate - r.actual) / r.actual; }, 0) / n : 0;
+    var ok = n >= RULES.inspect.minHarvestsForBias && Math.abs(mean) >= 0.05;
+    return { productId: productId, n: n, biasPct: Math.round(mean * 100), factor: 1 / (1 + mean), ok: ok, demo: recs.some(function (r) { return r.demo; }) };
+  }
+  // A worker's estimate adjusted by that crop's measured habit (only once there's enough history).
+  function correctedEstimate(productId, est) {
+    var b = estimateBias(productId);
+    return b.ok ? { value: Math.round(est * b.factor), bias: b } : null;
+  }
+  function learningStats() {
+    var ex = learningExamples();
+    var agree = ex.filter(function (e) { return e.suggested === e.chosen; }).length;
+    var matrix = {};
+    Object.keys(CONDITIONS).forEach(function (s) { matrix[s] = {}; Object.keys(CONDITIONS).forEach(function (c) { matrix[s][c] = 0; }); });
+    ex.forEach(function (e) { matrix[e.suggested][e.chosen]++; });
+    var ids = {};
+    (state.harvestRecords || []).forEach(function (r) { ids[r.productId] = true; });
+    var crops = Object.keys(ids).map(function (id) { var b = estimateBias(id); b.product = byId('products', id); return b; })
+      .filter(function (b) { return b.product; }).sort(function (a, b) { return Math.abs(b.biasPct) - Math.abs(a.biasPct); });
+    return { examples: ex.length, agree: agree, agreementPct: ex.length ? Math.round(agree / ex.length * 100) : null,
+      fromDemoPhotos: ex.filter(function (e) { return e.simulated; }).length, fromDemoHistory: ex.filter(function (e) { return e.demo; }).length,
+      overflags: ex.filter(function (e) { return CONDITION_RANK[e.suggested] > CONDITION_RANK[e.chosen]; }).length,
+      underflags: ex.filter(function (e) { return CONDITION_RANK[e.suggested] < CONDITION_RANK[e.chosen]; }).length,
+      matrix: matrix, crops: crops, harvests: (state.harvestRecords || []).length };
+  }
+
+  /* ---------- Seasonal and festive demand ----------
+   * Singapore's festivals move demand for particular greens (steamboat for Dongzhi and the
+   * Chinese New Year reunion dinner, salads at Christmas, sayur for Hari Raya…). Dates are
+   * Singapore's public-holiday calendar where there is one; demand uplifts are illustrative
+   * until MEOD's own sales history replaces them. */
+  var FESTIVALS = [
+    { key: 'deepavali-26', name: 'Deepavali', date: '2026-11-08', uplift: 0.25, crops: ['Bayam', 'Garden Mint', 'Kangkong'], why: 'Home cooking for family visits (spinach dishes, mint chutney).' },
+    { key: 'dongzhi-26', name: 'Dongzhi (Winter Solstice)', date: '2026-12-22', uplift: 0.2, crops: ['Xiao Bai Cai', 'HK Cai Xin', 'Shiitake Mushroom'], why: 'Family steamboat dinners.' },
+    { key: 'christmas-26', name: 'Christmas', date: '2026-12-25', uplift: 0.3, crops: ['Cos Lettuce', 'Mesclun Mix', 'Mizuna', 'Sweet Basil'], why: 'Salads and party platters.' },
+    { key: 'cny-27', name: 'Chinese New Year', date: '2027-02-06', uplift: 0.4, crops: ['Xiao Bai Cai', 'HK Cai Xin', 'Kai Lan', 'Shiitake Mushroom', 'Oyster Mushroom'], why: 'Reunion-dinner steamboat on the eve (5 Feb) and visiting meals.' },
+    { key: 'hrp-27', name: 'Hari Raya Puasa', date: '2027-03-10', approx: true, uplift: 0.25, crops: ['Kangkong', 'Bayam'], why: 'Sayur lodeh and festive cooking. The date depends on the moon sighting.' },
+    { key: 'hrh-27', name: 'Hari Raya Haji', date: '2027-05-17', approx: true, uplift: 0.15, crops: ['Kangkong', 'Bayam'], why: 'Festive meals. The date depends on the moon sighting.' }
+  ];
+  var FESTIVE_WINDOW_DAYS = 10;   // demand builds over the 10 days before a festival
+  function festiveOutlook(days) {
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var until = now.getTime() + (days || 150) * 864e5;
+    return FESTIVALS.filter(function (f) { var t = parseDayKey(f.date).getTime(); return t >= now.getTime() && t <= until; }).map(function (f) {
+      var day = parseDayKey(f.date), daysAway = Math.round((day - now) / 864e5);
+      var from = bagDayKey(new Date(day.getTime() - FESTIVE_WINDOW_DAYS * 864e5));
+      var crops = f.crops.map(function (title) {
+        var p = state.products.filter(function (x) { return x.title === title; })[0];
+        if (!p) return null;
+        var weekly = Math.max(1, weeklySales(p.id));
+        var demand = Math.round(weekly * FESTIVE_WINDOW_DAYS / 7 * (1 + f.uplift));
+        var supply = state.batches.filter(function (b) { return b.productId === p.id && b.status !== 'cancelled' && b.harvestDate >= from && b.harvestDate <= f.date; })
+          .reduce(function (s, b) { return s + (b.status === 'harvested' ? b.actualQty || 0 : b.expectedQty); }, 0);
+        var grow = RULES.growDays[p.category] || 30;
+        var sowBy = new Date(day.getTime() - (grow + 3) * 864e5), toSow = Math.round((sowBy - now) / 864e5);
+        var gap = demand - supply;
+        return { product: p, weekly: weekly, demand: demand, supply: supply, gap: gap, growDays: grow, sowBy: bagDayKey(sowBy), daysToSow: toSow,
+          action: gap <= 0 ? 'covered' : toSow >= 0 ? 'sow' : 'late' };
+      }).filter(Boolean);
+      return { festival: f, day: f.date, daysAway: daysAway, crops: crops, short: crops.filter(function (c) { return c.gap > 0; }) };
+    });
+  }
+
+  // Supermarket price checks entered by staff, compared with MEOD's own price.
+  var MARKET_STORES = ['FairPrice', 'Cold Storage', 'Sheng Siong', 'Giant', 'Wet market', 'Other'];
+  function marketPriceAdd(x, actor) {
+    var p = byId('products', x.productId);
+    if (!p) return { ok: false, error: 'Choose a product.' };
+    if (MARKET_STORES.indexOf(x.store) < 0) return { ok: false, error: 'Choose a store.' };
+    if (!(x.priceCents > 0) || x.priceCents > 10000) return { ok: false, error: 'Enter the price for a similar pack, between S$0.01 and S$100.' };
+    state.marketPrices = state.marketPrices || [];
+    var rec = { id: nextId('MP'), productId: p.id, store: x.store, priceCents: Math.round(x.priceCents), note: String(x.note || '').trim().slice(0, 80), at: new Date().toISOString(), by: actor };
+    state.marketPrices.unshift(rec);
+    return { ok: true, record: rec };
+  }
+  function marketCompare(days) {
+    var since = Date.now() - (days || 30) * 864e5, by = {};
+    (state.marketPrices || []).forEach(function (m) { if (new Date(m.at).getTime() >= since) (by[m.productId] = by[m.productId] || []).push(m); });
+    return Object.keys(by).map(function (id) {
+      var p = byId('products', id), list = by[id];
+      var avg = Math.round(list.reduce(function (s, m) { return s + m.priceCents; }, 0) / list.length);
+      var diff = Math.round((p.priceCents - avg) / avg * 100);
+      return { product: p, checks: list, avgCents: avg, minCents: Math.min.apply(null, list.map(function (m) { return m.priceCents; })), maxCents: Math.max.apply(null, list.map(function (m) { return m.priceCents; })),
+        diffPct: diff, position: diff > 15 ? 'premium' : diff < -15 ? 'below' : 'at' };
+    }).sort(function (a, b) { return b.diffPct - a.diffPct; });
+  }
+
   /* ---------- Data import (Excel / CSV) ----------
    * MEOD keeps sales and harvest records in spreadsheets. Staff upload one (CSV, or .xlsx
    * read in the browser), the columns are matched by name ("Item", "Product", "SKU" →
@@ -4031,7 +4242,11 @@
     inspect: {
       CONDITIONS: CONDITIONS, GRADE_CONDITION: GRADE_CONDITION, greenhouse: batchGreenhouse, batches: inspectableBatches, openRound: openRound,
       status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates,
-      risk: commitmentRisk, risks: commitmentRisks, pending: pendingEstimate, closeTask: taskClose, history: batchHistory, STATUS: INSPECTION_STATUS
+      risk: commitmentRisk, risks: commitmentRisks, pending: pendingEstimate, closeTask: taskClose, history: batchHistory, STATUS: INSPECTION_STATUS,
+      health: greenhouseHealth, weatherAdvice: weatherAdvice, learning: learningStats, bias: estimateBias, corrected: correctedEstimate
+    },
+    seasons: {
+      FESTIVALS: FESTIVALS, WINDOW_DAYS: FESTIVE_WINDOW_DAYS, outlook: festiveOutlook, STORES: MARKET_STORES, addPrice: marketPriceAdd, compare: marketCompare
     },
     copilot: { ask: copilotAsk },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },

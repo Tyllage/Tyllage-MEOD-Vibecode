@@ -426,7 +426,7 @@
    * It also warns against promoting crops that are short, and skips anything already drafted
    * in the last 7 days. Every "Draft it" still goes through admin approval. */
   var ADVISOR_SOURCE = { rescue: ['Harvest Rescue', 'red'], drop: ['Harvest allocation', 'green'], radar: ['Demand Radar', 'green'], preorder: ['Harvest Planner', 'green'], restock: ['Restock', 'blue'], rewards: ['Rewards', 'amber'],
-    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'], limit: ['Pre-order limit', 'grey'], flag: ['Greenhouse rounds', 'red'] };
+    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], season: ['Seasonal calendar', 'amber'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'], limit: ['Pre-order limit', 'grey'], flag: ['Greenhouse rounds', 'red'] };
   var REWARD_PTYPE = { preorder: 'drop', surplus: 'rescue', tier: 'repeat', points: 'repeat', winback: 'reactivate' };
   function recentlyDrafted(productId, kinds) {
     var weekAgo = Date.now() - 7 * 864e5;
@@ -509,6 +509,18 @@
         why: x.audience.length + ' visitor(s) opted in after the ' + shortWeekday(M.clearance.parseDayKey(b.date).toISOString()) + ' visit. A ' + money(x.voucherCents) + ' voucher on full-price produce (min ' + money(M.RULES.rewards.voucherMinSpendCents) + ') turns a visit into repeat orders.',
         label: 'Draft voucher', run: function () { visitVoucherDraft(x); } });
     });
+    // 4d. Festivals in the next 3 weeks: open pre-orders at the normal price, no discount.
+    M.seasons.outlook(21).forEach(function (o) {
+      var f = o.festival, crops = o.crops.filter(function (c) { return shortIds.indexOf(c.product.id) < 0; });
+      if (!crops.length) return;
+      var aud = festiveAudience(crops);
+      out.push({ source: 'season', ptype: 'normal', score: 72 + Math.round((21 - o.daysAway) / 2), product: crops[0].product, audience: aud.length, festival: o,
+        done: S().campaigns.filter(function (c) { return c.kind === 'festive' && c.festival === f.key && c.status !== 'rejected'; })[0] || null,
+        title: f.name + ' in ' + o.daysAway + ' day' + (o.daysAway === 1 ? '' : 's') + ': ' + crops.map(function (c) { return c.product.title; }).join(', '),
+        why: f.why + ' Demand for these usually rises about ' + Math.round(f.uplift * 100) + '% in the ' + M.seasons.WINDOW_DAYS + ' days before. Open festive pre-orders at the normal price.',
+        ranking: M.promo.ranking('normal', null, { alt: ['A festive bundle', 'Pair them for the festive meal if MEOD wants a gift-style offer.'], avoid: ['A discount', 'Festive demand is coming anyway; a discount only gives margin away.'] }),
+        label: 'Draft festive message', run: function () { festiveDraft(o, crops); } });
+    });
     // 5. Short crops: say what NOT to promote.
     crops.filter(function (c) { return c.status === 'short'; }).sort(function (a, b) { return a.gap - b.gap; }).slice(0, 2).forEach(function (c) {
       out.push({ source: 'hold', ptype: 'none', score: 20, product: c.product, audience: 0, hold: true,
@@ -580,6 +592,10 @@
     ['Choosing the promotion type', 'Explainable decision rules', 'Now', 'Thresholds in RULES.promo; each card shows Suggested, Alternative and Avoid.'],
     ['Campaign messages', 'Editable templates', 'Now', 'Filled in with the product, dates and prices; staff can edit before approval.'],
     ['Campaign results', 'Recorded outcomes', 'Now', 'Orders by the people messaged, compared with what was assumed at draft.'],
+    ['Photo check on inspections', 'Leaf-colour rule (not a trained model)', 'Now', 'Suggests a condition; the worker decides. Agreement with workers is measured in Greenhouse rounds.'],
+    ['Estimate correction per crop', 'Measured from past harvests', 'Now', 'Average gap between worker estimates and real yields, once a crop has 3+ harvests.'],
+    ['Weather advice', 'NEA forecast + rules', 'Now', 'Live public forecast from data.gov.sg; rules turn heat, showers and humidity into checks and delivery warnings.'],
+    ['Festive demand', 'Calendar + illustrative uplifts', 'Now', 'Singapore festivals and the crops they lift; MEOD\'s own sales history would replace the uplifts.'],
     ['Message writing by a language model', 'Optional LLM', 'Future', 'Would rephrase the same facts; it wouldn\'t decide prices or audiences.'],
     ['Predicting which promotion works best', 'Model trained on results', 'Future', 'Needs enough recorded campaigns per type first (3+ is the minimum to compare).']
   ];
@@ -1311,6 +1327,7 @@
   }
 
   function harvestView(root) {
+    append(root, festiveSowPanel());
     var H = M.harvest;
     var upcoming = H.upcoming();
     var weekKey = M.clearance.dayKey(new Date(Date.now() + 7 * 864e5));
@@ -4309,7 +4326,7 @@
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
-    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up',
+    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up', 'market.price': 'Added a market price check',
     'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
     'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
@@ -6242,7 +6259,15 @@
       qtyNote.textContent = kgText(p, v) + ' · plan was ' + b.expectedQty + (d ? ' (' + (d > 0 ? '+' : '') + d + ', ' + (pct > 0 ? '+' : '') + pct + '%)' : ' (no change)') +
         (big ? '. The farm manager will confirm this one.' : '. Updates the harvest plan when the round is sent.');
       qtyNote.classList.toggle('warn', big);
+      // Learned from past harvests: this crop's estimates usually run high or low.
+      var cor = M.inspect.corrected(p.id, v);
+      learnNote.textContent = '';
+      if (cor && cor.value !== v) {
+        append(learnNote, h('span', { text: p.title + ' estimates have run ' + Math.abs(cor.bias.biasPct) + '% ' + (cor.bias.biasPct > 0 ? 'high' : 'low') + ' over ' + cor.bias.n + ' past harvests, so about ' + cor.value + ' is likelier. ' }),
+          h('button', { type: 'button', class: 'mini', text: 'Use ' + cor.value, onclick: function () { qty.value = String(cor.value); drawQty(); } }));
+      }
     }
+    var learnNote = h('small', { class: 'learn-note', 'aria-live': 'polite' });
     var step = function (n) { return h('button', { type: 'button', class: 'qty-btn', 'aria-label': (n > 0 ? 'Add ' : 'Take away ') + Math.abs(n), text: (n > 0 ? '+' : '−') + Math.abs(n),
       onclick: function () { qty.value = String(Math.max(0, (parseInt(qty.value, 10) || 0) + n)); drawQty(); } }); };
     qty.addEventListener('input', drawQty);
@@ -6259,7 +6284,7 @@
               mini('Fresh', function () { demo(0); }), mini('Yellowing', function () { demo(2); }), mini('Brown spots', function () { demo(3); })))),
         h('section', { class: 'insp-step' }, h('h3', { text: '2. Condition' }), condBox),
         h('section', { class: 'insp-step' }, h('h3', { text: '3. Estimated harvest' }),
-          h('div', { class: 'qty-step' }, step(-5), step(-1), qty, step(1), step(5)), qtyNote),
+          h('div', { class: 'qty-step' }, step(-5), step(-1), qty, step(1), step(5)), qtyNote, learnNote),
         h('section', { class: 'insp-step' }, h('h3', { text: '4. Notes' }),
           h('div', { class: 'filters note-chips' }, NOTE_CHIPS.map(function (t) {
             return h('button', { type: 'button', class: 'chip', text: t, onclick: function () { notes.value = (notes.value ? notes.value.replace(/\s*$/, '') + ', ' : '') + t.toLowerCase(); } });
@@ -6379,7 +6404,7 @@
     // Phones: the next step stays in reach at the bottom of the screen.
     var dock = next ? h('div', { class: 'rnd-dock' }, h('span', null, h('strong', { text: s.checked + ' of ' + s.total }), h('small', { text: ' checked' })),
       h('button', { class: 'btn btn-gold', type: 'button', text: s.checked ? 'Continue →' : 'Start round →', onclick: start })) : null;
-    return h('div', { class: 'rnd' }, hero, s.total ? chips : null, s.total ? grid : null, dock);
+    return h('div', { class: 'rnd' }, hero, weatherCard(), s.total ? chips : null, s.total ? grid : null, dock);
   }
   function roundSummary(r, showImpact) {
     var items = (r.items || []).filter(function (x) { return x.status !== 'unchecked'; });
@@ -6426,6 +6451,7 @@
       kpi('Waiting for review', String(held.length), 'estimate changes'),
       kpi('Commitment risks', String(risks.length), risks.filter(function (r) { return r.pending; }).length + ' potential · ' + risks.filter(function (r) { return !r.pending; }).length + ' confirmed'),
       kpi('Sales follow-ups', String(tasks.length), 'open tasks')));
+    append(root, healthMap());
     if (risks.length) append(root, panel(aiTitle('Harvest commitment risk'), 'Batches whose estimate is below what\'s already been promised: confirmed trade orders and the batch\'s own pre-orders, each counted once. Usual shop sales are estimates, so they\'re left out. A worker\'s estimate that\'s still waiting for review is shown as a potential shortfall, not a fact.',
       h('div', { class: 'risk-list' }, risks.map(riskCard))));
     append(root, tasksPanel(tasks));
@@ -6447,6 +6473,7 @@
         } }
       ], held, 'Nothing waiting. Every estimate from the last round is in the plan.')));
     append(root, panel('Today\'s round', 'Workers do this on their phones (worker@meod.test). Staff can check a batch here too.', roundChecklist()));
+    append(root, learningPanel());
     if (!canReview) append(root, h('p', { class: 'callout', text: 'Only the farm manager (admin) approves estimate changes. You can see them, their effect on orders, and the follow-up tasks.' }));
     var recent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 3);
     recent.forEach(function (r, idx) {
@@ -6556,6 +6583,211 @@
     dlg.showModal();
   }
 
+  /* ---------------- Weather (NEA, data.gov.sg) ----------------
+   * The live public forecast for MEOD's area (Lim Chu Kang, west region). Only a GET to
+   * data.gov.sg: nothing about MEOD or its customers is sent. Kept for 30 minutes; if it
+   * can't be reached, a clearly labelled demo forecast is used instead. */
+  var WEATHER_KEY = 'meod-weather', WEATHER_AREA = 'Lim Chu Kang';
+  var weatherNow = null, weatherLoading = false;
+  try { var wc = JSON.parse(sessionStorage.getItem(WEATHER_KEY) || 'null'); if (wc && Date.now() - wc.fetchedAt < 30 * 60e3) weatherNow = wc; } catch (e) { /* ignore */ }
+  function demoWeather() {
+    var d = new Date(); d.setHours(12, 0, 0, 0);
+    return { source: 'demo', area: WEATHER_AREA, fetchedAt: Date.now(), now: { text: 'Partly Cloudy', until: 'next 2 hours' },
+      day: { text: 'Thundery Showers', high: 33, low: 24, humHigh: 95 },
+      periods: [{ text: 'Thundery Showers', label: 'Midday to 6 pm today', start: d.toISOString(), end: new Date(d.getTime() + 6 * 3600e3).toISOString() }] };
+  }
+  function fetchJson(url) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, 6000);
+    return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+  function loadWeather() {
+    if (weatherNow || weatherLoading) return;
+    weatherLoading = true;
+    Promise.all([fetchJson('https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast'), fetchJson('https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast')])
+      .then(function (res) {
+        var rec = res[0].data.records[0], g = rec.general, two = res[1].data.items[0];
+        var here = two.forecasts.filter(function (f) { return f.area === WEATHER_AREA; })[0];
+        return { source: 'live', area: WEATHER_AREA, fetchedAt: Date.now(), updated: rec.updatedTimestamp,
+          now: here ? { text: here.forecast, until: two.valid_period.text } : null,
+          day: { text: g.forecast.text, high: g.temperature.high, low: g.temperature.low, humHigh: g.relativeHumidity.high },
+          periods: rec.periods.map(function (p) { return { text: p.regions.west.text, label: p.timePeriod.text, start: p.timePeriod.start, end: p.timePeriod.end }; }) };
+      })
+      .catch(function () { return demoWeather(); })
+      .then(function (w) {
+        weatherNow = w; weatherLoading = false;
+        try { sessionStorage.setItem(WEATHER_KEY, JSON.stringify(w)); } catch (e) { /* ignore */ }
+        document.querySelectorAll('[data-weather]').forEach(function (el) { fillWeather(el); });
+      });
+  }
+  function weatherIcon(text) { return /thunder/i.test(text) ? '⛈️' : /rain|shower/i.test(text) ? '🌧️' : /cloud|overcast/i.test(text) ? '⛅' : /haz/i.test(text) ? '🌫️' : '☀️'; }
+  var ADVICE_ICON = { heat: '🌡️', rain: '☔', humid: '💧', fair: '✅' };
+  function fillWeather(el) {
+    el.textContent = '';
+    var w = weatherNow;
+    if (!w) { append(el, h('p', { class: 'wx-loading', text: 'Getting today\'s forecast for Lim Chu Kang…' })); return; }
+    var advice = M.inspect.weatherAdvice(w);
+    append(el,
+      h('div', { class: 'wx-now' },
+        h('span', { class: 'wx-icon', 'aria-hidden': 'true', text: weatherIcon(w.now ? w.now.text : w.day.text) }),
+        h('span', { class: 'wx-main' },
+          h('small', { text: 'Today at the farm · ' + w.area }),
+          h('strong', { text: w.now ? w.now.text + ' now' : w.day.text }),
+          h('span', { class: 'wx-temps', text: w.day.low + '–' + w.day.high + '°C · humidity up to ' + w.day.humHigh + '% · ' + w.day.text.toLowerCase() + ' later' })),
+        h('span', { class: 'ptype wx-src' }, badge(w.source === 'live' ? 'Live · NEA' : 'Demo weather', w.source === 'live' ? 'green' : 'grey'))),
+      h('ul', { class: 'wx-advice' }, advice.map(function (a) {
+        return h('li', { class: 'wx-' + a.tone }, h('span', { class: 'wx-a-icon', 'aria-hidden': 'true', text: ADVICE_ICON[a.key] || '•' }),
+          h('span', null, h('strong', { text: a.title }), h('small', { text: a.text })));
+      })),
+      h('small', { class: 'wx-foot', text: w.source === 'live'
+        ? 'Forecast from NEA via data.gov.sg (west region), updated ' + new Date(w.updated).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' }) + '. The advice is rules, not a prediction.'
+        : 'data.gov.sg couldn\'t be reached, so this is demo weather. The advice rules are the same.' }));
+  }
+  function weatherCard() {
+    var el = h('section', { class: 'wx-card', 'data-weather': '', 'aria-label': 'Today\'s weather and advice' });
+    fillWeather(el);
+    loadWeather();
+    return el;
+  }
+
+  /* ---------------- Greenhouse health map ---------------- */
+  var HEALTH_LABEL = { healthy: 'Healthy', monitor: 'Monitor', review: 'Needs review' };
+  function healthMap() {
+    var tiles = M.inspect.health();
+    return panel(aiTitle('Greenhouse health map'), 'Each greenhouse takes the colour of its most serious latest inspection. A greenhouse not checked for ' + M.RULES.inspect.staleDays + '+ days fades. Tap a crop to see its history.',
+      h('div', { class: 'hm-legend' }, ['healthy', 'monitor', 'review'].map(function (k) { return h('span', { class: 'hm-key hm-' + k }, h('i'), HEALTH_LABEL[k]); }),
+        h('span', { class: 'hm-key hm-stale' }, h('i'), 'Not checked recently')),
+      h('div', { class: 'hm-grid' }, tiles.map(function (t) {
+        var state = t.condition || 'none';
+        return h('article', { class: 'hm-tile hm-' + state + (t.stale ? ' stale' : '') },
+          h('header', null, h('strong', { text: t.name }), h('span', { class: 'hm-status', text: t.condition ? HEALTH_LABEL[t.condition] : 'No check yet' })),
+          h('small', { class: 'hm-when', text: t.lastAt ? 'Checked ' + ago(t.lastAt) + (t.unchecked ? ' · ' + t.unchecked + ' not checked' : '') : 'Never checked' }),
+          t.rows.length ? h('div', { class: 'hm-crops' }, t.rows.map(function (r) {
+            var c = r.inspection ? r.inspection.condition : 'none';
+            return h('button', { type: 'button', class: 'hm-crop', title: 'History for ' + r.product.title, onclick: function () { openBatchHistory(r.batch); } }, h('i', { class: 'hm-dot hm-' + c }), r.product.title);
+          })) : h('small', { class: 'hm-empty', text: 'Nothing growing' }));
+      })));
+  }
+
+  /* ---------------- Learning from inspections ---------------- */
+  function learningPanel() {
+    var L = M.inspect.learning(), C = M.inspect.CONDITIONS, keys = Object.keys(C);
+    var minN = M.RULES.inspect.minHarvestsForBias;
+    return panel(aiTitle('What Tyllage is learning'), 'Measured, not claimed. Every time a worker confirms or overrides the photo check, it becomes a labelled example. Every harvest is compared with the last worker estimate. This is the dataset a trained model would need later.',
+      h('div', { class: 'kpis lr-kpis' },
+        kpi('Labelled photo examples', String(L.examples), L.fromDemoHistory + ' from demo history · ' + L.fromDemoPhotos + ' from demo photos'),
+        kpi('Photo check agrees with workers', L.agreementPct == null ? '—' : L.agreementPct + '%', L.agree + ' of ' + L.examples),
+        kpi('Flagged too much / too little', L.overflags + ' / ' + L.underflags, 'photo suggested worse / better than the worker'),
+        kpi('Harvests compared', String(L.harvests), 'worker estimate vs real yield')),
+      h('div', { class: 'lr-grid' },
+        h('div', null, h('h3', { class: 'hist-h', text: 'Photo suggestion vs worker decision' }),
+          h('div', { class: 'table-wrap' }, h('table', { class: 'lr-matrix' },
+            h('thead', null, h('tr', null, h('th', { text: 'Photo suggested ↓ · worker chose →' }), keys.map(function (k) { return h('th', { class: 'num', text: C[k].label }); }))),
+            h('tbody', null, keys.map(function (s) {
+              return h('tr', null, h('th', { text: C[s].label }), keys.map(function (c) { var n = L.matrix[s][c]; return h('td', { class: 'num' + (s === c ? ' lr-agree' : n ? ' lr-miss' : ''), text: String(n) }); }));
+            })))),
+          h('small', { class: 'hint', text: L.overflags > L.underflags ? 'The check flags healthy crops more often than it misses problems (e.g. strong light or purple leaves read as yellowing). Safer that way round, but workers should keep the final say.' : 'Disagreements are balanced. Keep collecting before trusting it more.' })),
+        h('div', null, h('h3', { class: 'hist-h', text: 'Estimate accuracy by crop' }),
+          table([
+            { label: 'Crop', render: function (b) { return h('strong', { text: b.product.title }); } },
+            { label: 'Harvests', num: true, render: function (b) { return String(b.n); } },
+            { label: 'Estimates run', num: true, render: function (b) { return b.biasPct === 0 ? 'on target' : Math.abs(b.biasPct) + '% ' + (b.biasPct > 0 ? 'high' : 'low'); } },
+            { label: 'Suggestion', render: function (b) {
+              return b.ok ? h('small', { text: 'Workers see a corrected figure (×' + (Math.round(b.factor * 100) / 100) + ')' })
+                : h('small', { class: 'hint', text: b.n < minN ? 'Needs ' + minN + '+ harvests' : 'Within ±5%, no correction' });
+            } }
+          ], L.crops, 'No harvests with an inspection yet.'),
+          h('small', { class: 'hint', text: 'Includes 12 weeks of demo history. Real harvests are added automatically when a batch with an inspection is marked harvested.' }))));
+  }
+
+  /* ---------------- Seasonal and festive demand ---------------- */
+  var SEASON_ACTION = { covered: ['Covered', 'green'], sow: ['Sow more', 'amber'], late: ['Too late to sow', 'red'] };
+  function festiveCropsTable(o) {
+    return table([
+      { label: 'Crop', render: function (c) { return h('span', { class: 'rw-tier-cell' }, thumbMini(c.product), h('strong', { text: c.product.title })); } },
+      { label: 'Usual / week', num: true, render: function (c) { return String(Math.round(c.weekly)); } },
+      { label: 'Festive demand', num: true, render: function (c) { return String(c.demand); } },
+      { label: 'Planned harvest', num: true, render: function (c) { return String(c.supply); } },
+      { label: 'Gap', num: true, render: function (c) { return c.gap > 0 ? h('strong', { class: 'bag-value-low', text: '−' + c.gap }) : '—'; } },
+      { label: 'What to do', render: function (c) {
+        var a = SEASON_ACTION[c.action];
+        return h('span', null, h('span', { class: 'ptype' }, badge(a[0], a[1])), h('br'), h('small', { text: c.action === 'sow' ? 'Sow ' + c.gap + ' more by ' + shortWeekday(M.clearance.parseDayKey(c.sowBy).toISOString()) + ' (' + c.growDays + ' days to grow)'
+          : c.action === 'late' ? 'Lean on pre-orders and other crops' : 'Planned harvests cover it' }));
+      } }
+    ], o.crops, '');
+  }
+  function seasonsView(root) {
+    var list = M.seasons.outlook(160);
+    append(root, h('p', { class: 'callout', text: 'Festival dates follow Singapore\'s public holidays (Hari Raya dates depend on the moon sighting). The demand uplifts are illustrative until MEOD\'s own sales from past festivals replace them.' }));
+    append(root, panel(aiTitle('Festive demand ahead'), 'For each festival: how much more of each crop people usually buy in the ' + M.seasons.WINDOW_DAYS + ' days before, what\'s planned to be harvested then, and when to sow to close the gap. Campaign Advisor suggests a festive pre-order message 3 weeks before.',
+      list.length ? h('div', { class: 'fest-list' }, list.map(function (o) {
+        var f = o.festival;
+        return h('article', { class: 'fest-card' + (o.daysAway <= 21 ? ' soon' : '') },
+          h('header', { class: 'fest-head' },
+            h('span', { class: 'fest-date' }, h('strong', { text: String(M.clearance.parseDayKey(f.date).getDate()) }), h('small', { text: M.clearance.parseDayKey(f.date).toLocaleDateString('en-SG', { month: 'short' }) })),
+            h('span', { class: 'fest-name' }, h('strong', { text: f.name + (f.approx ? ' (approx.)' : '') }), h('small', { text: 'In ' + o.daysAway + ' days · usually +' + Math.round(f.uplift * 100) + '% · ' + f.why })),
+            o.short.length ? h('span', { class: 'ptype' }, badge(o.short.length + ' crop(s) short', 'amber')) : h('span', { class: 'ptype' }, badge('Covered', 'green'))),
+          festiveCropsTable(o));
+      })) : h('p', { class: 'empty', text: 'No festivals in the next few months.' })));
+    append(root, marketPricePanel());
+  }
+  // Supermarket price checks: where MEOD's price sits.
+  var POSITION = { premium: ['Premium', 'blue'], at: ['At market', 'green'], below: ['Below market', 'amber'] };
+  function marketPricePanel() {
+    var rows = M.seasons.compare(30);
+    var prod = h('select', { 'aria-label': 'Product' }, S().products.filter(function (p) { return p.category !== 'farm-more'; }).map(function (p) { return h('option', { value: p.id, text: p.title }); }));
+    var store = h('select', { 'aria-label': 'Store' }, M.seasons.STORES.map(function (s) { return h('option', { value: s, text: s }); }));
+    var price = h('input', { type: 'number', min: 0.01, step: 0.05, placeholder: '3.20', 'aria-label': 'Price in S$' });
+    var note = h('input', { maxlength: 80, placeholder: 'e.g. 300 g pack, imported', 'aria-label': 'Note' });
+    var f = h('form', { class: 'form-grid mp-form', novalidate: true },
+      h('label', null, 'Product', prod), h('label', null, 'Store', store), h('label', null, 'Price (S$, similar pack)', price), h('label', null, 'Note', note),
+      h('div', null, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'Add price check' })));
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var r = M.seasons.addPrice({ productId: prod.value, store: store.value, priceCents: Math.round(parseFloat(price.value) * 100), note: note.value }, session.email);
+      if (!r.ok) { toast(r.error); return; }
+      commit('market.price', r.record.productId, 'Price check saved.');
+    });
+    return panel('Market price check', 'Prices staff spot at supermarkets and markets for a similar pack, from the last 30 days, against MEOD\'s own price. MEOD sells fresher and pesticide-free, so a premium can be fine; use this with Price Advisor, not instead of it.',
+      table([
+        { label: 'Product', render: function (x) { return h('strong', { text: x.product.title }); } },
+        { label: 'MEOD', num: true, render: function (x) { return money(x.product.priceCents); } },
+        { label: 'Market (avg)', num: true, render: function (x) { return h('span', null, money(x.avgCents), h('br'), h('small', { text: money(x.minCents) + '–' + money(x.maxCents) + ' · ' + x.checks.length + ' check(s)' })); } },
+        { label: 'Difference', num: true, render: function (x) { return (x.diffPct > 0 ? '+' : '') + x.diffPct + '%'; } },
+        { label: 'Position', render: function (x) { var p = POSITION[x.position]; return h('span', { class: 'ptype' }, badge(p[0], p[1])); } },
+        { label: 'Stores', render: function (x) { return h('small', { text: x.checks.map(function (m) { return m.store + ' ' + money(m.priceCents) + (m.demo ? ' (demo)' : ''); }).join(' · ') }); } }
+      ], rows, 'No price checks in the last 30 days.'),
+      f);
+  }
+  // Harvest Planner: festivals whose sowing deadline is in the next 3 weeks.
+  function festiveSowPanel() {
+    var due = [];
+    M.seasons.outlook(160).forEach(function (o) { o.crops.forEach(function (c) { if (c.action === 'sow' && c.daysToSow <= 21) due.push({ o: o, c: c }); }); });
+    if (!due.length) return null;
+    return panel(aiTitle('Sow now for the festivals'), 'Crops whose festive demand isn\'t covered by planned harvests, with the last day to sow so they\'re ready in time.',
+      h('ul', { class: 'fest-sow' }, due.map(function (x) {
+        return h('li', null, h('strong', { text: x.c.product.title + ': sow ' + x.c.gap + ' more by ' + shortWeekday(M.clearance.parseDayKey(x.c.sowBy).toISOString()) }),
+          h('small', { text: ' for ' + x.o.festival.name + ' (' + shortWeekday(M.clearance.parseDayKey(x.o.festival.date).toISOString()) + '), ' + (x.c.daysToSow <= 0 ? 'today is the last day' : x.c.daysToSow + ' days left to sow') }));
+      })),
+      h('a', { class: 'mini', href: '#seasons', text: 'Seasonal calendar' }));
+  }
+  function festiveAudience(crops) {
+    var ids = {};
+    crops.forEach(function (c) { audienceFor(c.product.id).eligible.forEach(function (id) { ids[id] = true; }); });
+    return Object.keys(ids);
+  }
+  function festiveDraft(o, crops) {
+    var f = o.festival, id = M.nextId('CP');
+    var names = crops.map(function (c) { return c.product.title; });
+    var list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+    S().campaigns.unshift({
+      id: id, kind: 'festive', festival: f.key, productId: crops[0].product.id, title: f.name + ' — festive pre-orders', language: 'en',
+      message: f.name + ' is coming 🌱 Fresh ' + list + ' from MEOD for your festive cooking. Pre-order in your MEOD account for delivery on Tue, Thu or Sat before ' + shortWeekday(M.clearance.parseDayKey(f.date).toISOString()) + '. Reply STOP to opt out.',
+      audience: festiveAudience(crops), status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
+    });
+    commit('campaign.submitted', id, f.name + ' message drafted for ' + festiveAudience(crops).length + ' opted-in buyer(s) — waiting for admin approval.');
+  }
+
   var NAV = {
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
@@ -6568,6 +6800,8 @@
       { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
       { id: 'twin', group: 'Farm ops', label: 'Decision twin', perm: 'allocation', title: 'Farm Decision Twin', sub: 'What if the harvest, demand or buyers change? Compare responses before deciding.', render: twinView },
       { id: 'rounds', group: 'Farm ops', label: 'Greenhouse rounds', perm: 'inspect', title: 'Greenhouse rounds', sub: 'Workers\' inspections, straight into the harvest plan. Big changes wait for you.', render: roundsAdminView, count: function () { return M.inspect.held().length + (S().tasks || []).filter(function (t) { return t.status === 'open'; }).length; } },
+      { id: 'seasons', group: 'Farm ops', label: 'Seasonal calendar', perm: 'harvest', title: 'Seasonal calendar', sub: 'Singapore festivals ahead, the greens they lift, when to sow, and how MEOD\'s prices compare.', render: seasonsView,
+        count: function () { return M.seasons.outlook(160).reduce(function (n, o) { return n + o.crops.filter(function (c) { return c.action === 'sow' && c.daysToSow <= 21; }).length; }, 0); } },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },

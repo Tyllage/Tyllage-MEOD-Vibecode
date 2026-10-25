@@ -62,7 +62,17 @@ Set these as environment variables on the **backend** host, never in the repo. G
 - `PUBLIC_SITE_URL`, `CORS_ORIGIN`
 - Delivery provider credentials, if MEOD uses a courier or driver app (for example `DELIVERY_API_KEY`, `DELIVERY_WEBHOOK_SECRET`)
 
-## Rules for contributors
+## Reports from outside the team
+
+We welcome responsible security reports from anyone. Reporting a vulnerability does not give you any right to use, copy or modify the code (see [LICENSE](LICENSE)). Please:
+
+- test only against your own local copy or the public demo, never against MEOD's real systems or data;
+- don't access, change or keep anyone else's data;
+- don't publish details until we've fixed the issue or agreed a date with you.
+
+There is no bug bounty.
+
+## Rules for team members
 
 - Never commit real names, phone numbers, addresses, emails or order data. Use the `+65 8000 00xx` range and `.test` emails.
 - Render user or data content with `textContent`. Only fixed icon or illustration markup written in the code may go through `innerHTML`.

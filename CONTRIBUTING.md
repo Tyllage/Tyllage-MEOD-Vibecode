@@ -1,11 +1,18 @@
 # Contributing
 
-Thanks for helping build the Tyllage × MEOD Farm prototype. This is a vibecoding project: move fast, but keep it tidy and keep it safe.
+> **This is a closed project. We do not accept outside contributions.**
+> Only members of the Tyllage team may contribute. Pull requests, patches and issues from anyone outside the team will be closed without review. The code is proprietary (see [LICENSE](LICENSE)); you may not copy, fork for reuse, modify or redistribute it.
+
+This guide is for **Tyllage team members** working on the Tyllage × MEOD Farm prototype. This is a vibecoding project: move fast, but keep it tidy and keep it safe.
+
+## Ownership of your work
+
+Everything you commit to this repository is owned by Tyllage. Don't commit code, images or text you don't have the right to give to Tyllage, and don't copy code from other projects unless its licence allows it and the team has agreed. Note any third-party code and its licence in the pull request.
 
 ## Getting started
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Tyllage/Tyllage-Vibecode.git
 cd Tyllage-Vibecode
 py -m http.server 5173
 ```
@@ -56,6 +63,6 @@ To start with fresh data, use **Portal → (admin) Settings → Reset demo data*
 
 ## Reporting bugs and ideas
 
-Open an issue with steps to reproduce, the expected vs actual result, browser, and a screenshot. For security issues, follow [SECURITY.md](SECURITY.md) instead.
+Team members: open an issue with steps to reproduce, the expected vs actual result, browser, and a screenshot. For security issues, follow [SECURITY.md](SECURITY.md) instead. Outside the team, the only reports we accept are security reports through [SECURITY.md](SECURITY.md).
 
-By contributing you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+By contributing you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md) and confirm that your work belongs to Tyllage under the [LICENSE](LICENSE).

@@ -8,6 +8,8 @@ It has two parts:
 
 Built with plain **HTML, CSS and vanilla JavaScript**. There's no framework, no build step and no backend.
 
+> 🔒 **Proprietary. © 2026 Tyllage. All rights reserved.** This repository may be publicly visible, but it is **not open source**. You may not copy, reuse, modify, redistribute or deploy any part of it without written permission from Tyllage. Outside contributions are not accepted. See [LICENSE](LICENSE).
+
 > ⚠️ **Prototype only.** All data is synthetic and lives in the visitor's browser (`localStorage`). Sign-in runs in the browser and is **not secure**. Every "AI" feature is rule-based: no data is sent to an AI service. Don't put real customer data in this repo. See [SECURITY.md](SECURITY.md) and [audit.md](audit.md).
 
 ---
@@ -244,6 +246,10 @@ The proposal's target stack is **Node/Express + PostgreSQL + Shopify Admin API +
 | `js/auth.js` | Server-side auth and role checks on every request |
 
 See [audit.md](audit.md) for the full gap list and open questions for MEOD.
+
+## Licence and ownership
+
+© 2026 Tyllage. All rights reserved. This is proprietary software, not open source: no licence is granted to anyone outside the Tyllage team. Being able to see or fork this repository on GitHub does not give you the right to use, copy, modify or redistribute it. The MEOD name, logo, photos and copy belong to MEOD Farm. For permission requests, contact the Tyllage project lead. Full terms are in [LICENSE](LICENSE).
 
 ## Docs
 

@@ -2,7 +2,7 @@
 
 ## Our pledge
 
-We, the contributors and maintainers of this project, want everyone who takes part to have a respectful, harassment-free experience. That holds whatever your age, body size, disability, ethnicity, gender identity or expression, level of experience, education, nationality, appearance, race, religion, or sexual identity and orientation.
+We, the Tyllage team members who build and maintain this project, want everyone who takes part to have a respectful, harassment-free experience. That holds whatever your age, body size, disability, ethnicity, gender identity or expression, level of experience, education, nationality, appearance, race, religion, or sexual identity and orientation.
 
 ## Expected behaviour
 

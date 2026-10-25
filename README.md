@@ -182,6 +182,15 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 
 - **Campaign Studio:** messages only go to customers who opted in, need sign-off from a *different* admin, and re-check consent at send time.
 - **Buy to Clear:** candidates with plain-English reasons, a listing form (admin-only minimum price), End early, the Surprise Bag panel with **Approve contents** (reserves real stock or fails closed) and a WhatsApp alert that only drafts a Campaign Studio message.
+- **Surprise Bags: should we?** (Harvest Rescue). Tyllage decides *whether* a mixed bag is the right way to move surplus.
+  - **Spare stock:** pooled across harvested batches for the next bag day. That's unsold stock that stays within its sell-by date through that day, minus what usual sales should take.
+  - **Household-sized bags:** each bag is filled until it meets its "worth at least" promise, but never beyond 6 items (Small) or 9 (Regular), with at most 2 of one crop. Bags stay within the 15-a-day cap and the 10pm cutoff.
+  - **Contribution check:** contribution = price − produce cost − packaging − extra handling, checked against Margin Guard's minimum margin.
+  - **Compared on the same cost basis** with individual Buy to Clear, a trade buyer offer and no bag. Bags are suggested only when expected to earn at least as much as selling the items one by one.
+  - **It can say no, with the reason:** too few crops, one crop dominates, not enough for 2 bags, the worth promise can't be met, below the minimum margin, or individual sales earn more. With the demo costs, for example, a S$12 Small bag needs 6 items (about S$10 of produce, packing and handling) to keep its S$18 promise, so it falls below the 15% minimum margin.
+  - **Plans:** staff propose a plan, and someone else approves it. An approved plan only sets how many bags customers can order that day and which crops they draw on. **Nothing is reserved** until each order's contents are approved in Buy to Clear, which rechecks stock and skips the customer's excluded category.
+  - **Scorecard:** Surprise Bags vs Buy to Clear over 30 days (orders, items, revenue, contribution, repeat buyers, packing time). Waste is reported in three separate tiers: items sold through bags (measured), items that would otherwise have gone unsold (estimated, from approved plans), and waste actually avoided (not claimed without a disposal baseline).
+  - Costs and sell-through assumptions are editable in **Settings → Surprise Bags**.
 - **Group buys:** commission ledger and a **leader finder** for neighbourhoods with regular buyers but no leader.
 - **Data import:** Excel (`.xlsx`) or CSV sales and harvest records, with automatic column and product matching, a preview and skipped-row reasons.
 - **Pilot metrics:** conversion, sell-through, unsold stock, campaign margin, lost demand and time saved vs a recorded baseline, with CSV export.

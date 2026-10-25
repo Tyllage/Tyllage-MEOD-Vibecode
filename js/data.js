@@ -76,6 +76,21 @@
     restockCooldownDays: 14,        // don't suggest the same reminder to someone again within this
     preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
     preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
+    // Surprise Bag decisions (Harvest Rescue). Costs and sell-through rates are illustrative;
+    // MEOD to confirm. A bag holds a household-sized mix, never everything left over.
+    bag: {
+      // A bag is filled until it meets its "worth at least" promise, up to a household-sized
+      // maximum of items (about 1.2 kg small, 1.8 kg regular). More than that risks waste at home.
+      maxItemsSmall: 6, maxItemsRegular: 9,
+      maxPerCrop: 2,                    // at most 2 of one crop in a bag
+      minCrops: 3,                      // a mix needs 3+ crops with spare stock
+      packCents: 60,                    // bag, label and liner per bag
+      fulfilCents: 120,                 // extra packing and handling per bag (delivery runs anyway)
+      packMinutes: 4,                   // staff time to pack one bag (for the scorecard; estimated)
+      clearPrice: 0.7,                  // individual Buy to Clear price, as a share of normal
+      bagSellThrough: 0.85,             // share of offered bags expected to be ordered
+      clearSellThrough: 0.6             // share of small individual clearance leftovers expected to sell
+    },
     // Greenhouse rounds: workers inspect each growing batch and estimate its harvest. Small
     // changes update the batch straight away; big ones wait for the farm manager. Illustrative.
     inspect: {
@@ -1286,8 +1301,11 @@
   function bagOrdersForDay(dayKey) {
     return state.orders.filter(function (o) { return o.bagSize && o.deliveryDay === dayKey && o.status !== 'cancelled'; });
   }
+  // An approved Surprise Bag plan sets that day's number of bags (never above the daily cap).
   function bagsLeftForDay(dayKey) {
-    return Math.max(0, state.harvestBag.limitPerDay - bagOrdersForDay(dayKey).length);
+    var plan = ((state.harvestBag.plans || {})[dayKey]) || null;
+    var cap = plan && plan.status === 'approved' ? Math.min(state.harvestBag.limitPerDay, plan.bags) : state.harvestBag.limitPerDay;
+    return Math.max(0, cap - bagOrdersForDay(dayKey).length);
   }
   // Likely-inside preview: active clearance stock, skipping the customer's excluded category.
   function clearanceLikelyInside(excludeCategory, limit) {
@@ -1302,6 +1320,25 @@
   function proposeBagContents(order) {
     var exclude = order.excludedCategory;
     var picked = [], seen = {};
+    // An approved plan for this delivery day: draw on its spare crops first until the bag meets
+    // its worth promise (household-sized, at most 2 of a crop, skipping the excluded category).
+    // Nothing is reserved until the contents are approved.
+    var plan = ((state.harvestBag.plans || {})[order.deliveryDay]) || null;
+    if (plan && plan.status === 'approved') {
+      var sz = (state.harvestBag.sizes.filter(function (s) { return s.key === order.bagSize; })[0]) || state.harvestBag.sizes[0];
+      var maxItems = bagMaxItems(sz.key), items = 0, value = 0;
+      for (var round = 0; round < RULES.bag.maxPerCrop && value < sz.worthCents && items < maxItems; round++) {
+        plan.crops.forEach(function (c) {
+          var p = byId('products', c.productId);
+          if (!p || value >= sz.worthCents || items >= maxItems || p.category === exclude || !stockStatus(p).known || p.stock.qty <= 0) return;
+          var have = picked.filter(function (x) { return x.productId === p.id; })[0];
+          if (have) { if (have.qty >= RULES.bag.maxPerCrop || p.stock.qty <= have.qty) return; have.qty++; }
+          else { picked.push({ productId: p.id, title: p.title, qty: 1 }); seen[p.id] = true; }
+          items++; value += p.priceCents;
+        });
+      }
+      if (value >= sz.worthCents) return picked;
+    }
     clearanceListActive().forEach(function (l) {
       if (picked.length >= 4) return;
       var p = byId('products', l.productId);
@@ -2107,6 +2144,10 @@
     { key: 'b2bPriceRate', group: 'Pricing & margins', label: 'Trade price', unit: '% of retail', min: 50, max: 100, pct: true, usedBy: ['B2B buyers'], note: 'What restaurants, cafés and offices pay for standing orders.' },
     { key: 'radarTolerance', group: 'Demand', label: 'Balanced band', unit: '± % of demand', min: 0, max: 30, pct: true, usedBy: ['Demand Radar', 'Price Advisor', 'Weekly briefing'], note: 'A gap between supply and demand within this band counts as balanced, not short or surplus.' },
     { key: 'promoLiftPer10', group: 'Demand', label: 'Sales lift per 10% off', unit: '% more sales', min: 0, max: 100, pct: true, usedBy: ['Promotion simulator', 'Price Advisor'], note: 'How much extra a 10% discount is assumed to sell. Compare with real campaign results over time.' },
+    { key: 'bag.packCents', group: 'Surprise Bags', label: 'Packaging per bag', unit: 'cents', min: 0, max: 500, usedBy: ['Harvest Rescue', 'Buy to Clear'], note: 'Bag, label and liner. Counted in every bag\'s contribution.' },
+    { key: 'bag.fulfilCents', group: 'Surprise Bags', label: 'Extra handling per bag', unit: 'cents', min: 0, max: 1000, usedBy: ['Harvest Rescue', 'Buy to Clear'], note: 'Extra packing and handling a bag adds (delivery runs anyway).' },
+    { key: 'bag.bagSellThrough', group: 'Surprise Bags', label: 'Bags expected to be ordered', unit: '% of offered', min: 5, max: 100, pct: true, usedBy: ['Harvest Rescue'], note: 'Used to compare bags with selling items one by one. Check against real bag orders.' },
+    { key: 'bag.clearSellThrough', group: 'Surprise Bags', label: 'Small leftovers that sell one by one', unit: '% of units', min: 5, max: 100, pct: true, usedBy: ['Harvest Rescue'], note: 'Share of small individual Buy to Clear leftovers expected to sell before the sell-by date.' },
     { key: 'promo.assumedResponse', group: 'Demand', label: 'Expected campaign response', unit: '% of people messaged', min: 1, max: 100, pct: true, usedBy: ['Campaign Studio', 'Campaign results'], note: 'Saved with each campaign when it\'s drafted, then compared with how many people actually ordered.' }
   ].concat(Object.keys(CAT_LABELS).map(function (c) {
     return { key: 'shelfDays.' + c, group: 'Harvest & freshness', label: CAT_LABELS[c] + ' shelf life', unit: 'days', min: 1, max: 21, usedBy: ['Harvest Rescue', 'Price Advisor'], note: 'Days after harvest a batch should be sold by.' };
@@ -3108,6 +3149,155 @@
     var out = [];
     (state.rounds || []).forEach(function (r) { (r.items || []).forEach(function (it) { if (it.status === 'held') out.push({ round: r, item: it, batch: byId('batches', it.batchId), inspection: byId('inspections', it.inspectionId) }); }); });
     return out.filter(function (x) { return x.batch && batchStage(x.batch) === 'growing'; });
+  }
+
+  /* ---------- Surprise Bag decisions (part of Harvest Rescue) ----------
+   * When several crops each have a little spare stock, a mixed bag can move it in one go.
+   * Tyllage works out whether it should: it pools the spare stock across harvested batches,
+   * sizes household bags within the daily cap, checks each bag's contribution margin on the
+   * same cost basis as the alternatives, and ranks bags against individual Buy to Clear,
+   * trade buyers and doing nothing. It can say "No Surprise Bag", with the reason.
+   * A recommendation reserves nothing: an approved plan only sets how many bags are offered
+   * for a delivery day. Stock is reserved by the existing "Approve contents" step, which
+   * rechecks it then. */
+  function bagSlotsUsed(dayKey) { return bagOrdersForDay(dayKey).length; }
+  function bagPlanFor(dayKey) { return ((state.harvestBag.plans || {})[dayKey]) || null; }
+  // Spare stock per crop for a delivery day: unsold harvested stock that stays within its
+  // sell-by date through that day, minus what normal shop sales should take by then.
+  function bagSurplus(dayKey) {
+    var day = parseDayKey(dayKey);
+    return rescueBatches().filter(function (x) {
+      return x.stockKnown && x.level !== 'expired' && parseDayKey(x.batch.sellBy).getTime() >= day.getTime() && x.product.category !== 'farm-more';
+    }).map(function (x) {
+      var daysToSellBy = Math.max(0, Math.round((parseDayKey(x.batch.sellBy) - day) / 864e5) + 1);
+      var usual = Math.round(weeklySales(x.product.id) / 7 * daysToSellBy);
+      return { product: x.product, batch: x.batch, unsold: x.unsold, usualSales: usual, spare: Math.max(0, x.unsold - usual), sellBy: x.batch.sellBy, daysLeft: x.daysLeft };
+    }).filter(function (x) { return x.spare > 0; });
+  }
+  // Fill bags round-robin (at most maxPerCrop of a crop) until each meets its worth promise;
+  // a bag that hits the household maximum first can't keep the promise, so it isn't made.
+  function bagMaxItems(sizeKey) { return sizeKey === 'regular' ? RULES.bag.maxItemsRegular : RULES.bag.maxItemsSmall; }
+  function composeBags(crops, worthCents, maxItems, maxBags) {
+    var B = RULES.bag, left = {}, bags = [], short = false;
+    crops.forEach(function (c) { left[c.product.id] = c.spare; });
+    for (var n = 0; n < maxBags; n++) {
+      var bag = [], count = {}, value = 0;
+      for (var round = 0; round < B.maxPerCrop && value < worthCents && bag.length < maxItems; round++) {
+        crops.forEach(function (c) {
+          if (value >= worthCents || bag.length >= maxItems || left[c.product.id] <= 0 || (count[c.product.id] || 0) >= B.maxPerCrop) return;
+          left[c.product.id]--; count[c.product.id] = (count[c.product.id] || 0) + 1; bag.push(c.product); value += c.product.priceCents;
+        });
+      }
+      if (value < worthCents) { bag.forEach(function (p) { left[p.id]++; }); short = bag.length >= maxItems || n === 0; break; }
+      bags.push(bag);
+    }
+    bags.cannotKeepPromise = short && !bags.length;
+    return bags;
+  }
+  function bagEconomics(size, bags) {
+    var B = RULES.bag;
+    if (!bags.length) return null;
+    var one = bags[0];
+    var worth = one.reduce(function (s, p) { return s + p.priceCents; }, 0);
+    var produce = one.reduce(function (s, p) { return s + unitCost(p.id).totalCents; }, 0);
+    var contribution = size.priceCents - produce - B.packCents - B.fulfilCents;
+    var floor = Math.ceil((produce + B.packCents + B.fulfilCents) / (1 - RULES.minMarginRate));
+    return { worthCents: worth, produceCents: produce, packCents: B.packCents, fulfilCents: B.fulfilCents, contributionCents: contribution,
+      marginPct: Math.round(contribution / size.priceCents * 100), floorCents: floor, guardOk: size.priceCents >= floor, worthOk: worth >= size.worthCents };
+  }
+  function bagRecommendation() {
+    var B = RULES.bag, cut = nextBagCutoff(), dayKey = bagDayKey(cut.deliveryDay);
+    var crops = bagSurplus(dayKey).sort(function (a, b) { return a.daysLeft - b.daysLeft || b.spare - a.spare; });
+    var total = crops.reduce(function (s, c) { return s + c.spare; }, 0);
+    var slots = Math.max(0, state.harvestBag.limitPerDay - bagSlotsUsed(dayKey));
+    var plan = bagPlanFor(dayKey);
+    var biggest = crops.slice().sort(function (a, b) { return b.spare - a.spare; })[0];
+    // Each size: how many full household bags the spare stock makes, and what one earns.
+    var sizes = state.harvestBag.sizes.map(function (sz) {
+      var bags = composeBags(crops, sz.worthCents, bagMaxItems(sz.key), slots), ec = bagEconomics(sz, bags);
+      var units = bags.reduce(function (s, b) { return s + b.length; }, 0);
+      return { size: sz, perBag: bags[0] ? bags[0].length : bagMaxItems(sz.key), bags: bags.length, composition: bags[0] || [], units: units, econ: ec, cannotKeepPromise: bags.cannotKeepPromise,
+        expectedCents: ec ? Math.round(ec.contributionCents * bags.length * B.bagSellThrough) : 0,
+        ok: Boolean(ec) && ec.guardOk && ec.worthOk && bags.length >= 2 };
+    });
+    var best = sizes.filter(function (s) { return s.ok; }).sort(function (a, b) { return b.expectedCents - a.expectedCents; })[0] || null;
+    // The same spare units sold one by one on Buy to Clear, on the same cost basis.
+    var used = best ? best.units : Math.min(total, B.maxItemsSmall * Math.max(2, slots));
+    var avgPrice = crops.length ? crops.reduce(function (s, c) { return s + c.product.priceCents * c.spare; }, 0) / Math.max(1, total) : 0;
+    var avgCost = crops.length ? crops.reduce(function (s, c) { return s + unitCost(c.product.id).totalCents * c.spare; }, 0) / Math.max(1, total) : 0;
+    var clearUnit = Math.round(avgPrice * B.clearPrice - avgCost);
+    var clear = { key: 'clear', label: 'Individual Buy to Clear', units: used, contributionCents: Math.round(clearUnit * used), expectedCents: Math.round(clearUnit * used * B.clearSellThrough),
+      note: Math.round((1 - B.clearPrice) * 100) + '% off each item, listed one by one. Assumes about ' + Math.round(B.clearSellThrough * 100) + '% of small leftovers sell.' };
+    var tradeBuyers = b2bStore().accounts.filter(function (a) { return a.status === 'active' && crops.some(function (c) { return (a.usual || []).some(function (u) { var up = byId('products', u.productId); return up && up.category === c.product.category; }); }); });
+    var trade = tradeBuyers.length ? { key: 'trade', label: 'Offer to ' + tradeBuyers.length + ' trade buyer(s)', units: used, contributionCents: Math.round((avgPrice * RULES.b2bPriceRate - avgCost) * used), expectedCents: null,
+      note: 'Trade price (' + Math.round(RULES.b2bPriceRate * 100) + '% of retail) to buyers who already take these categories. Depends on them wanting it this week.' } : null;
+    // Reasons not to suggest bags, in the order a person would check them.
+    var reason = null;
+    if (crops.length < B.minCrops) reason = 'Only ' + crops.length + ' crop(s) have spare stock for ' + shortDayLabel(dayKey) + '. A surprise bag needs a mix of ' + B.minCrops + ' or more.';
+    else if (biggest && biggest.spare >= total * 0.6 && biggest.spare > 15) reason = 'Most of the spare stock is ' + biggest.product.title + ' (' + biggest.spare + ' of ' + total + '). A single Harvest Rescue offer or a trade buyer fits better than bags.';
+    else if (!slots) reason = 'All ' + state.harvestBag.limitPerDay + ' bags for ' + shortDayLabel(dayKey) + ' are already taken.';
+    else if (!best) {
+      var s0 = sizes.filter(function (s) { return s.econ; })[0];
+      var promise = sizes.filter(function (s) { return s.cannotKeepPromise; })[0];
+      reason = !s0 && promise ? 'These crops can\'t reach the "worth at least ' + money(promise.size.worthCents) + '" promise within a household-sized ' + promise.size.label + ' bag (' + bagMaxItems(promise.size.key) + ' items).'
+        : !s0 || s0.bags < 2 ? 'Not enough spare stock to make 2 full household bags.'
+        : 'A bag wouldn\'t keep the ' + Math.round(RULES.minMarginRate * 100) + '% minimum margin after produce, packing and handling (needs at least ' + money(s0.econ.floorCents) + ').';
+    } else if (clear.expectedCents > best.expectedCents) reason = 'Selling the items one by one on Buy to Clear is expected to earn more (' + money(clear.expectedCents) + ' vs ' + money(best.expectedCents) + ').';
+    var options = [];
+    if (best) options.push({ key: 'bag', label: best.bags + ' ' + best.size.label + ' bag(s) at ' + money(best.size.priceCents), units: best.units, contributionCents: best.econ.contributionCents * best.bags, expectedCents: best.expectedCents,
+      note: money(best.econ.contributionCents) + ' contribution a bag after produce ' + money(best.econ.produceCents) + ', packing ' + money(best.econ.packCents) + ' and handling ' + money(best.econ.fulfilCents) + '. Assumes about ' + Math.round(B.bagSellThrough * 100) + '% of bags are ordered.' });
+    options.push(clear);
+    if (trade) options.push(trade);
+    options.push({ key: 'none', label: 'No Surprise Bag', units: 0, contributionCents: 0, expectedCents: 0, note: 'Keep normal prices; Harvest Rescue handles each batch on its own.' });
+    var suggested = reason ? (crops.length ? (trade && trade.contributionCents > clear.expectedCents ? 'trade' : 'clear') : 'none') : 'bag';
+    if (!total) suggested = 'none';
+    options.forEach(function (o) { o.suggested = o.key === suggested; });
+    return { dayKey: dayKey, cutoff: cut.cutoff.toISOString(), crops: crops, totalSpare: total, slots: slots, plan: plan, sizes: sizes, best: reason ? null : best,
+      reason: reason, options: options, suggested: suggested, leftover: best && !reason ? total - best.units : total };
+  }
+  // A plan only sets how many bags are offered that day (never above the daily cap) and which
+  // crops the bags should draw on. It reserves nothing.
+  function bagPlanPropose(rec, actor) {
+    if (!rec.best) return { ok: false, error: 'There\'s no bag recommendation to propose.' };
+    state.harvestBag.plans = state.harvestBag.plans || {};
+    var p = { dayKey: rec.dayKey, bags: Math.min(rec.best.bags, state.harvestBag.limitPerDay), size: rec.best.size.key, perBag: rec.best.perBag,
+      crops: rec.crops.map(function (c) { return { productId: c.product.id, spare: c.spare }; }), status: 'proposed', proposedBy: actor, proposedAt: new Date().toISOString(),
+      estimate: { spareUnits: rec.totalSpare, bagUnits: rec.best.units, contributionCents: rec.best.econ.contributionCents } };
+    state.harvestBag.plans[rec.dayKey] = p;
+    return { ok: true, plan: p };
+  }
+  function bagPlanDecide(dayKey, approve, actor) {
+    var p = bagPlanFor(dayKey);
+    if (!p || p.status !== 'proposed') return { ok: false, error: 'No bag plan waiting for that day.' };
+    if (approve && p.proposedBy === actor) return { ok: false, error: 'Someone other than the proposer must approve it.' };
+    p.status = approve ? 'approved' : 'rejected'; p.decidedBy = actor; p.decidedAt = new Date().toISOString();
+    return { ok: true, plan: p };
+  }
+  // Bags vs individual Buy to Clear over the last N days. Sold units are measured; "would
+  // otherwise have gone unsold" is an estimate from the plans; waste avoided isn't claimed.
+  function bagScorecard(days) {
+    var B = RULES.bag, since = Date.now() - (days || 30) * 864e5;
+    var bag = { orders: 0, units: 0, revenueCents: 0, contributionCents: 0, buyers: {}, repeat: 0, packMinutes: 0, unapproved: 0 };
+    var clear = { orders: 0, units: 0, revenueCents: 0, contributionCents: 0, buyers: {}, repeat: 0 };
+    state.orders.forEach(function (o) {
+      if (o.status === 'cancelled' || o.status === 'refunded' || new Date(o.createdAt).getTime() < since) return;
+      if (o.bagSize) {
+        bag.orders++; bag.revenueCents += o.netCents || 0; bag.buyers[o.customerId] = (bag.buyers[o.customerId] || 0) + 1; bag.packMinutes += B.packMinutes;
+        if (!o.bagContentsApproved) { bag.unapproved++; return; }
+        (o.bagContents || []).forEach(function (it) { bag.units += it.qty; bag.contributionCents -= unitCost(it.productId).totalCents * it.qty; });
+        bag.contributionCents += (o.netCents || 0) - B.packCents - B.fulfilCents;
+      }
+      var hit = false;
+      o.items.forEach(function (i) {
+        if (!i.clearanceListingId) return;
+        hit = true; clear.units += i.qty; clear.revenueCents += i.qty * i.priceCents; clear.contributionCents += i.qty * (i.priceCents - unitCost(i.productId).totalCents);
+      });
+      if (hit) { clear.orders++; clear.buyers[o.customerId] = (clear.buyers[o.customerId] || 0) + 1; }
+    });
+    [bag, clear].forEach(function (x) { var ids = Object.keys(x.buyers); x.buyerCount = ids.length; x.repeat = ids.filter(function (id) { return x.buyers[id] > 1; }).length; });
+    var plans = Object.keys(state.harvestBag.plans || {}).map(function (k) { return state.harvestBag.plans[k]; }).filter(function (p) { return p.status === 'approved' && new Date(p.proposedAt).getTime() >= since; });
+    var disposed = (state.rescueLog || []).filter(function (r) { return new Date(r.at).getTime() >= since && (r.action === 'compost' || r.action === 'donate'); }).reduce(function (s, r) { return s + r.qty; }, 0);
+    return { days: days || 30, bag: bag, clear: clear, plans: plans.length, estimatedOtherwiseUnsold: plans.reduce(function (s, p) { return s + Math.min(p.estimate.bagUnits, p.estimate.spareUnits); }, 0), disposedUnits: disposed };
   }
 
   /* ---------- Greenhouse health map ----------
@@ -4384,7 +4574,8 @@
     copilot: { ask: copilotAsk },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },
-    rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear },
+    rescue: { batches: rescueBatches, options: rescueOptions, log: rescueLogOutcome, listOnClear: rescueListOnClear,
+      bagAdvice: bagRecommendation, bagPropose: bagPlanPropose, bagDecide: bagPlanDecide, bagPlan: bagPlanFor, bagScorecard: bagScorecard },
     b2b: {
       TYPES: B2B_TYPES, STAGES: LEAD_STAGES, WEEKDAY: WEEKDAY, store: b2bStore, stats: b2bAccountStats, insights: b2bInsights,
       createUsualOrder: b2bCreateUsualOrder, logContact: b2bLogContact, moveLead: b2bMoveLead, addLead: b2bAddLead, ordersOf: b2bOrdersOf

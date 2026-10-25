@@ -2043,6 +2043,13 @@ a.pill-btn { text-decoration: none; }
 .dz-card.dz-good { border-color: #cfe6c4; }
 .dz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .dz-actions .btn { flex: 1; justify-content: center; min-height: 44px; }
+/* Surprise Bag decision (Harvest Rescue) */
+.bag-compose { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.bag-compose small { color: var(--muted); }
+.bag-plan { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: #f6faf3; border: 1.5px solid #cfe6c4; }
+.bag-plan.pending { background: #fffcf3; border-color: #f0dca8; }
+.bag-plan small { color: var(--muted); }
+.waste-basis { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: .86rem; }
 /* Weather card */
 .wx-card { display: grid; gap: 12px; padding: 18px 20px; border-radius: 18px; background: linear-gradient(135deg, #eef5fb 0%, #fff 70%); border: 1.5px solid #d9e6f2; }
 .wx-loading { margin: 0; color: var(--muted); }

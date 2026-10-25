@@ -2796,6 +2796,7 @@
       kpi('Unsold', String(list.reduce(function (s, x) { return s + x.unsold; }, 0)), 'units from recent harvests'),
       kpi('Value at risk', money(at.reduce(function (s, x) { return s + x.valueCents; }, 0)), 'at normal price, at-risk batches'),
       kpi('Rescued · 30 days', money(rescuedCents), rescuedUnits + ' units sold, processed or donated')));
+    append(root, bagDecisionPanel());
 
     var shelf = M.RULES.shelfDays;
     append(root, panel(aiTitle('Batches to rescue'), 'Recent harvests with unsold stock, soonest sell-by first. Options are ranked: full-price trade sales before discounts. Shelf life (illustrative): ' +
@@ -2837,6 +2838,93 @@
       { label: 'Qty', num: true, render: function (r) { return r.qty ? String(r.qty) : '—'; } },
       { label: 'Recovered', num: true, render: function (r) { return r.valueCents ? money(r.valueCents) : '—'; } }
     ], log.slice(0, 30), 'Nothing rescued yet — actions you take above are recorded here.')));
+    append(root, bagScorecardPanel());
+  }
+
+  /* ---- Surprise Bags, as a Harvest Rescue decision ----
+   * Tyllage pools small spare stock across batches and decides whether household bags beat
+   * selling items one by one, a trade offer or doing nothing. Proposing sets how many bags are
+   * offered that day; a different person approves; stock is reserved later, per order, by the
+   * existing "Approve contents" step (which rechecks it). */
+  var BAG_OPTION_ROLE = { bag: 'Surprise Bags', clear: 'Buy to Clear', trade: 'Trade offer', none: 'No Surprise Bag' };
+  function bagDecisionPanel() {
+    var r = M.rescue.bagAdvice(), day = shortWeekday(M.clearance.parseDayKey(r.dayKey).toISOString());
+    var plan = r.plan, canApprove = M.auth.can(session, 'campaigns.approve');
+    var head = r.best
+      ? h('p', { class: 'callout green', text: 'Suggested: ' + r.best.bags + ' ' + r.best.size.label + ' bag(s) for ' + day + ', using ' + r.best.units + ' of the ' + r.totalSpare + ' spare items. The other ' + r.leftover + ' stay in stock for normal sales.' })
+      : h('p', { class: 'callout', text: 'No Surprise Bag for ' + day + '. ' + (r.reason || 'There\'s no spare stock to bag.') });
+    var planBox = null;
+    if (plan && plan.status === 'proposed') {
+      planBox = h('div', { class: 'bag-plan pending' }, h('strong', { text: 'Waiting for approval: ' + plan.bags + ' ' + plan.size + ' bag(s) for ' + day }), h('small', { text: 'Proposed by ' + plan.proposedBy + '. Nothing is reserved; approving sets how many bags customers can order that day.' }),
+        canApprove ? h('div', { class: 'actions' },
+          mini('Approve', function () { var x = M.rescue.bagDecide(r.dayKey, true, session.email); if (!x.ok) { toast(x.error); return; } commit('bag.approved', r.dayKey, plan.bags + ' bag(s) open for ' + day + '. Stock is reserved per order when you approve each bag\'s contents.'); }),
+          mini('Reject', function () { var x = M.rescue.bagDecide(r.dayKey, false, session.email); if (!x.ok) { toast(x.error); return; } commit('bag.rejected', r.dayKey, 'Bag plan rejected.'); }, { danger: true })) : h('small', { class: 'hint', text: 'An admin approves it.' }));
+    } else if (plan && plan.status === 'approved') {
+      planBox = h('div', { class: 'bag-plan' }, h('strong', { text: 'Approved: ' + plan.bags + ' ' + plan.size + ' bag(s) for ' + day + ' (' + M.clearance.bagsLeftForDay(r.dayKey) + ' still open)' }),
+        h('small', { text: 'Approved by ' + plan.decidedBy + '. Each order\'s contents come from the planned crops and are reserved when staff approve them in Buy to Clear.' }));
+    }
+    var rows = r.options.map(function (o) {
+      return { o: o, role: o.suggested ? 'Suggested' : o.key === 'none' && r.best ? 'Fallback' : o.expectedCents != null && r.best && o.expectedCents < r.best.expectedCents * 0.7 ? 'Avoid' : 'Alternative' };
+    });
+    return panel(aiTitle('Surprise Bags: should we?'), 'Spare stock across all harvested batches for the next bag day (' + day + ', orders close ' + cutoffText(new Date(r.cutoff)) + '): unsold stock that stays fresh through that day, minus what normal sales should take. Each bag is filled until it meets its "worth at least" promise, but never beyond a household size (' + M.RULES.bag.maxItemsSmall + ' items small, ' + M.RULES.bag.maxItemsRegular + ' regular, at most ' + M.RULES.bag.maxPerCrop + ' of a crop). Capped at ' + S().harvestBag.limitPerDay + ' bags a day.',
+      head,
+      r.crops.length ? table([
+        { label: 'Crop', render: function (c) { return h('span', { class: 'rw-tier-cell' }, thumbMini(c.product), h('strong', { text: c.product.title })); } },
+        { label: 'Unsold', num: true, render: function (c) { return String(c.unsold); } },
+        { label: 'Usual sales by then', num: true, render: function (c) { return String(c.usualSales); } },
+        { label: 'Spare', num: true, render: function (c) { return h('strong', { text: String(c.spare) }); } },
+        { label: 'Sell by', render: function (c) { return shortWeekday(M.clearance.parseDayKey(c.sellBy).toISOString()); } }
+      ], r.crops, '') : null,
+      r.best ? h('div', { class: 'bag-compose' }, h('small', { text: 'One ' + r.best.size.label + ' bag would hold: ' }),
+        r.best.composition.map(function (p) { return h('span', { class: 'mini-chip', text: p.title }); }),
+        h('small', { text: ' · normal value ' + money(r.best.econ.worthCents) + ' (promise: worth at least ' + money(r.best.size.worthCents) + ')' })) : null,
+      h('h3', { class: 'hist-h', text: 'Options compared (same cost basis)' }),
+      table([
+        { label: 'Option', render: function (x) { return h('span', null, h('span', { class: 'ptype' }, badge(x.role, x.role === 'Suggested' ? 'green' : x.role === 'Avoid' ? 'red' : 'grey')), ' ', h('strong', { text: x.o.label })); } },
+        { label: 'Items', num: true, render: function (x) { return x.o.units ? String(x.o.units) : '—'; } },
+        { label: 'Contribution if all sell', num: true, render: function (x) { return money(x.o.contributionCents); } },
+        { label: 'Expected', num: true, render: function (x) { return x.o.expectedCents == null ? 'depends' : money(x.o.expectedCents); } },
+        { label: 'Why', render: function (x) { return h('small', { text: x.o.note }); } }
+      ], rows, ''),
+      r.sizes.filter(function (s) { return s.econ; }).length ? h('details', { class: 'cp-vs' }, h('summary', { text: 'Bag maths' }),
+        table([
+          { label: 'Size', render: function (s) { return h('strong', { text: s.size.label + ' · ' + money(s.size.priceCents) }); } },
+          { label: 'Bags', num: true, render: function (s) { return String(s.bags); } },
+          { label: 'Produce cost', num: true, render: function (s) { return money(s.econ.produceCents); } },
+          { label: 'Pack + handling', num: true, render: function (s) { return money(s.econ.packCents + s.econ.fulfilCents); } },
+          { label: 'Contribution / bag', num: true, render: function (s) { return money(s.econ.contributionCents) + ' (' + s.econ.marginPct + '%)'; } },
+          { label: 'Checks', render: function (s) { return h('small', { text: [s.econ.guardOk ? 'Margin Guard ✓' : 'Below Margin Guard (needs ' + money(s.econ.floorCents) + ')', s.econ.worthOk ? 'worth promise ✓' : 'under the worth promise'].join(' · ') }); } }
+        ], r.sizes.filter(function (s) { return s.econ; }), '')) : null,
+      planBox,
+      r.best && (!plan || plan.status === 'rejected') ? h('div', { class: 'actions' }, h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Propose ' + r.best.bags + ' bag(s) for ' + day, onclick: function () {
+        var x = M.rescue.bagPropose(r, session.email);
+        if (!x.ok) { toast(x.error); return; }
+        commit('bag.proposed', r.dayKey, 'Bag plan proposed for ' + day + '. Nothing is reserved until each order\'s contents are approved.');
+      } })) : null);
+  }
+  function bagScorecardPanel() {
+    var s = M.rescue.bagScorecard(30), B = M.RULES.bag;
+    var row = function (label, bag, clear, note) { return { label: label, bag: bag, clear: clear, note: note }; };
+    var rows = [
+      row('Orders', String(s.bag.orders), String(s.clear.orders), 'Measured'),
+      row('Items sold', String(s.bag.units) + (s.bag.unapproved ? ' (+' + s.bag.unapproved + ' bag(s) not packed yet)' : ''), String(s.clear.units), 'Measured'),
+      row('Revenue', money(s.bag.revenueCents), money(s.clear.revenueCents), 'Measured'),
+      row('Contribution', money(s.bag.contributionCents), money(s.clear.contributionCents), 'After produce cost; bags also after packing and handling'),
+      row('Repeat buyers', s.bag.repeat + ' of ' + s.bag.buyerCount, s.clear.repeat + ' of ' + s.clear.buyerCount, 'Measured: bought this way more than once'),
+      row('Packing time', Math.round(s.bag.packMinutes) + ' min', '—', 'Estimated at ' + B.packMinutes + ' min a bag')
+    ];
+    return panel('Surprise Bags vs Buy to Clear · 30 days', 'The experiment the decision needs: how each way of moving surplus actually performs.' +
+        (!s.bag.orders && !s.clear.orders ? ' No bag or Buy to Clear orders in the last 30 days yet, so there\'s nothing to compare. It fills in as orders come in.' : ''),
+      table([
+        { label: 'Measure', render: function (x) { return h('strong', { text: x.label }); } },
+        { label: 'Surprise Bags', num: true, render: function (x) { return x.bag; } },
+        { label: 'Buy to Clear', num: true, render: function (x) { return x.clear; } },
+        { label: 'Basis', render: function (x) { return h('small', { class: 'hint', text: x.note }); } }
+      ], rows, ''),
+      h('ul', { class: 'waste-basis' },
+        h('li', null, h('strong', { text: 'Sold through bags: ' }), s.bag.units + ' items. Measured.'),
+        h('li', null, h('strong', { text: 'Would otherwise have gone unsold: ' }), 'about ' + s.estimatedOtherwiseUnsold + ' items across ' + s.plans + ' approved bag plan(s). Estimated, from the spare stock left after usual sales.'),
+        h('li', null, h('strong', { text: 'Waste actually avoided: ' }), 'not claimed. It needs a disposal baseline to compare with. In this period ' + s.disposedUnits + ' items were recorded as composted or donated.')));
   }
 
   /* ---------------- B2B Buyer Growth (staff + admin) ----------------
@@ -4326,7 +4414,7 @@
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
-    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up', 'market.price': 'Added a market price check', 'signal.tested': 'Recorded a greenhouse signal check',
+    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan', 'task.done': 'Closed a sales follow-up', 'market.price': 'Added a market price check', 'signal.tested': 'Recorded a greenhouse signal check', 'bag.proposed': 'Proposed a Surprise Bag plan', 'bag.approved': 'Approved a Surprise Bag plan', 'bag.rejected': 'Rejected a Surprise Bag plan',
     'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
     'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',

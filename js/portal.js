@@ -6293,37 +6293,93 @@
     drawPhoto(); drawCond(); drawQty();
   }
 
-  // The checklist, grouped by greenhouse. Shared by the worker's page and the staff page.
+  // The round, as greenhouse cards. Shared by the worker's page and the staff page:
+  // a hero with a progress ring and the next batch, filter chips, then one card per greenhouse.
+  function daysToHarvest(b) { return Math.round((M.clearance.parseDayKey(b.harvestDate) - new Date().setHours(0, 0, 0, 0)) / 864e5); }
+  function progressRing(done, total) {
+    var r = 42, c = 2 * Math.PI * r, pct = total ? done / total : 0;
+    var el = h('div', { class: 'rnd-ring', role: 'img', 'aria-label': done + ' of ' + total + ' batches checked' });
+    el.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="' + r + '" class="ring-bg"/>' +
+      '<circle cx="50" cy="50" r="' + r + '" class="ring-fg" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - pct)).toFixed(1) + '"/></svg>';
+    append(el, h('span', { class: 'ring-num' }, h('strong', { text: String(done) }), h('small', { text: 'of ' + total })));
+    return el;
+  }
+  var ROUND_FILTERS = [['all', 'All'], ['todo', 'To check'], ['done', 'Checked'], ['soon', 'Harvest ≤ 2 days']];
   function roundChecklist() {
     var s = M.inspect.status(M.inspect.openRound());
-    var bar = h('span', { class: 'po-bar grow' }, h('span', { class: 'po-fill' + (s.complete ? ' full' : '') }));
-    bar.firstChild.style.width = (s.total ? Math.round(s.checked / s.total * 100) : 0) + '%';
-    var groups = {};
-    s.rows.forEach(function (r) { (groups[r.greenhouse] = groups[r.greenhouse] || []).push(r); });
+    var st = roundChecklist.state || (roundChecklist.state = { filter: 'all' });
     var next = s.rows.filter(function (r) { return !r.inspection; })[0];
-    return h('div', { class: 'rnd' },
-      h('div', { class: 'rnd-hero' },
-        h('div', { class: 'rnd-head' }, h('strong', { text: s.checked + ' of ' + s.total + ' batches checked' }),
-          next ? h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: s.checked ? 'Continue round' : 'Start round', onclick: function () { openInspect(next); } }) : null),
-        bar,
-        h('small', { text: 'Checking the last batch sends the round. Changes within ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '% update the harvest plan straight away; bigger ones go to the farm manager.' }),
-        s.checked && !s.complete ? h('button', { class: 'mini', type: 'button', text: 'Send now (' + (s.total - s.checked) + ' not checked keep their plan)', onclick: function () {
-          if (!confirm('Send the round now? ' + (s.total - s.checked) + ' batch(es) not checked will keep their current plan.')) return;
-          var r = M.inspect.submit(s.round.id, session.email);
-          if (!r.ok) { toast(r.error); return; }
-          commit('inspect.sent', s.round.id, 'Round sent: ' + r.applied + ' estimate(s) updated' + (r.held ? ', ' + r.held + ' waiting for the farm manager' : '') + '.');
-        } }) : null),
-      s.total ? Object.keys(groups).sort().map(function (g) {
-        return h('section', { class: 'gh-group' }, h('h3', null, h('span', { class: 'gh-tag', text: g }), h('small', { text: groups[g].filter(function (r) { return r.inspection; }).length + ' of ' + groups[g].length + ' checked' })),
+    var soon = s.rows.filter(function (r) { return daysToHarvest(r.batch) <= 2; });
+    var flagged = s.rows.filter(function (r) { return r.inspection && r.inspection.condition !== 'healthy'; });
+    var hour = new Date().getHours();
+    var hello = (hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') + (session.role === 'worker' ? ', ' + session.name.split(' ')[0] : '');
+    var start = function () { if (next) openInspect(next); };
+
+    var hero = h('section', { class: 'rnd-hero2' + (s.complete ? ' done' : '') },
+      progressRing(s.checked, s.total),
+      h('div', { class: 'rnd-hero-text' },
+        h('span', { class: 'rnd-eyebrow', text: new Date().toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · Greenhouse round' }),
+        h('h2', { text: hello + ' 🌱' }),
+        next ? h('p', { class: 'rnd-next' }, h('span', { text: s.checked ? 'Next up: ' : 'First up: ' }), h('strong', { text: next.greenhouse + ' · ' + next.product.title }), h('span', { text: ', harvest ' + harvestInText(next.batch) }))
+          : h('p', { class: 'rnd-next', text: s.total ? 'Every batch is checked. Nice work!' : 'Nothing is growing right now.' }),
+        h('ul', { class: 'rnd-stats' },
+          h('li', null, h('strong', { text: String(s.total) }), h('span', { text: ' batches' })),
+          h('li', null, h('strong', { text: String(Object.keys(s.rows.reduce(function (o, r) { o[r.greenhouse] = 1; return o; }, {})).length) }), h('span', { text: ' greenhouses' })),
+          h('li', { class: soon.length ? 'warm' : '' }, h('strong', { text: String(soon.length) }), h('span', { text: ' harvest within 2 days' })),
+          flagged.length ? h('li', { class: 'alert' }, h('strong', { text: String(flagged.length) }), h('span', { text: flagged.length === 1 ? ' needs attention' : ' need attention' })) : null),
+        h('div', { class: 'rnd-actions' },
+          next ? h('button', { class: 'btn btn-gold rnd-cta', type: 'button', onclick: start }, s.checked ? 'Continue round' : 'Start round', h('span', { 'aria-hidden': 'true', text: ' →' })) : null,
+          s.checked && !s.complete ? h('button', { class: 'btn btn-ghost rnd-send', type: 'button', text: 'Send now', title: (s.total - s.checked) + ' not checked keep their plan', onclick: function () {
+            if (!confirm('Send the round now? ' + (s.total - s.checked) + ' batch(es) not checked will keep their current plan.')) return;
+            var r = M.inspect.submit(s.round.id, session.email);
+            if (!r.ok) { toast(r.error); return; }
+            commit('inspect.sent', s.round.id, 'Round sent: ' + r.applied + ' estimate(s) updated' + (r.held ? ', ' + r.held + ' waiting for the farm manager' : '') + '.');
+          } }) : null),
+        h('small', { class: 'rnd-rule', text: 'The round sends itself when the last batch is checked. Changes within ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '% go straight into the harvest plan; bigger ones go to the farm manager.' })));
+
+    var count = { all: s.rows.length, todo: s.total - s.checked, done: s.checked, soon: soon.length };
+    var keep = function (r) { return st.filter === 'all' || (st.filter === 'todo' ? !r.inspection : st.filter === 'done' ? Boolean(r.inspection) : daysToHarvest(r.batch) <= 2); };
+    var grid = h('div', { class: 'gh-grid' });
+    function drawGrid() {
+      grid.textContent = '';
+      var groups = {};
+      s.rows.filter(keep).forEach(function (r) { (groups[r.greenhouse] = groups[r.greenhouse] || []).push(r); });
+      var keys = Object.keys(groups).sort();
+      if (!keys.length) { append(grid, h('p', { class: 'empty', text: st.filter === 'todo' ? 'Nothing left to check. 🎉' : 'Nothing here.' })); return; }
+      keys.forEach(function (g) {
+        var all = s.rows.filter(function (r) { return r.greenhouse === g; }), doneN = all.filter(function (r) { return r.inspection; }).length;
+        append(grid, h('section', { class: 'gh-card' + (doneN === all.length ? ' complete' : '') },
+          h('header', { class: 'gh-card-head' },
+            h('span', { class: 'gh-name' }, h('small', { text: 'Greenhouse' }), h('strong', { text: g })),
+            h('span', { class: 'gh-dots', 'aria-label': doneN + ' of ' + all.length + ' checked' }, all.map(function (r) { return h('i', { class: r.inspection ? 'on' : '' }); })),
+            doneN === all.length ? h('span', { class: 'gh-done', text: '✓ Done' }) : h('span', { class: 'gh-count', text: doneN + '/' + all.length })),
           groups[g].map(function (r) {
-            var i = r.inspection;
-            return h('button', { type: 'button', class: 'gh-row' + (i ? ' done' : ''), onclick: function () { openInspect(r); } },
-              i && i.photo ? h('img', { class: 'gh-thumb', src: i.photo.url, alt: '' }) : h('span', { class: 'gh-thumb' }, thumbMini(r.product)),
-              h('span', { class: 'gh-main' }, h('strong', { text: r.product.title }),
-                h('small', { text: 'Harvest ' + harvestInText(r.batch) + ' · plan ' + r.batch.expectedQty + (i ? ' → ' + i.estQty : '') })),
-              i ? conditionBadge(i.condition) : h('span', { class: 'gh-todo', text: 'Check' }));
-          }));
-      }) : h('p', { class: 'empty', text: 'Nothing is growing right now.' }));
+            var i = r.inspection, d = daysToHarvest(r.batch);
+            var when = h('span', { class: 'gh-when' + (d <= 0 ? ' now' : d <= 2 ? ' soon' : '') }, h('small', { text: 'Harvest' }), h('strong', { text: d <= 0 ? 'Today' : d === 1 ? '1 day' : d + ' days' }));
+            return h('button', { type: 'button', class: 'gh-batch' + (i ? ' checked' : ''), 'aria-label': (i ? 'Redo ' : 'Check ') + r.product.title + ' in ' + g, onclick: function () { openInspect(r); } },
+              h('span', { class: 'gh-pic' }, i && i.photo ? h('img', { src: i.photo.url, alt: '' }) : thumb(r.product), i ? h('span', { class: 'gh-tick', 'aria-hidden': 'true', text: '✓' }) : null),
+              h('span', { class: 'gh-info' },
+                h('strong', { text: r.product.title }),
+                h('small', { text: 'Plan ' + r.batch.expectedQty + ' · ' + kgText(r.product, r.batch.expectedQty) }),
+                i ? h('span', { class: 'gh-result' }, conditionBadge(i.condition), h('small', { text: i.estQty === r.batch.expectedQty ? 'On plan' : 'Estimate ' + i.estQty })) : null),
+              when,
+              h('span', { class: 'gh-go' + (i ? ' redo' : ''), text: i ? 'Redo' : 'Check' }));
+          })));
+      });
+    }
+    var chips = h('div', { class: 'filters rnd-filters', role: 'toolbar', 'aria-label': 'Filter batches' });
+    function drawChips() {
+      chips.textContent = '';
+      ROUND_FILTERS.forEach(function (f) {
+        append(chips, h('button', { type: 'button', class: 'chip' + (st.filter === f[0] ? ' active' : ''), 'aria-pressed': String(st.filter === f[0]),
+          onclick: function () { st.filter = f[0]; drawChips(); drawGrid(); } }, f[1] + ' ', h('span', { class: 'chip-count', text: String(count[f[0]]) })));
+      });
+    }
+    drawChips(); drawGrid();
+    // Phones: the next step stays in reach at the bottom of the screen.
+    var dock = next ? h('div', { class: 'rnd-dock' }, h('span', null, h('strong', { text: s.checked + ' of ' + s.total }), h('small', { text: ' checked' })),
+      h('button', { class: 'btn btn-gold', type: 'button', text: s.checked ? 'Continue →' : 'Start round →', onclick: start })) : null;
+    return h('div', { class: 'rnd' }, hero, s.total ? chips : null, s.total ? grid : null, dock);
   }
   function roundSummary(r, showImpact) {
     var items = (r.items || []).filter(function (x) { return x.status !== 'unchecked'; });
@@ -6351,7 +6407,7 @@
       append(root, panel('Today\'s round is sent', 'Thanks! The harvest plan and sales planning now use your numbers. Start another round if you check the greenhouses again today.',
         roundSummary(last, false)));
     }
-    append(root, panel(null, null, roundChecklist()));
+    append(root, roundChecklist());
   }
   function pastRoundsView(root) {
     var rounds = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 10);

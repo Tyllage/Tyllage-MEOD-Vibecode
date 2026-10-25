@@ -975,11 +975,13 @@
       // Greenhouse rounds: every batch gets a greenhouse, and there's a farm-worker account.
       var gh = 0;
       s.batches.forEach(function (b) { if (!b.greenhouse) b.greenhouse = greenhouseName(gh++); });
-      if (!s.users.some(function (u) { return u.email === 'worker@meod.test'; })) s.users.push({ email: 'worker@meod.test', name: 'Farm Worker', role: 'worker' });
+      if (!s.users.some(function (u) { return u.email === 'worker@meod.test'; })) s.users.push({ email: 'worker@meod.test', name: 'Siti Aminah', role: 'worker' });
       s.inspections = s.inspections || [];
       s.rounds = s.rounds || [];
       s.migrations.inspectV1 = true;
     }
+    // The demo farm worker gets a person's name (the greeting reads "Good morning, Siti").
+    s.users.forEach(function (u) { if (u.email === 'worker@meod.test' && u.name === 'Farm Worker') u.name = 'Siti Aminah'; });
     // Commitment-risk follow-up tasks and the log of every estimate change.
     s.tasks = s.tasks || [];
     s.estimateLog = s.estimateLog || [];

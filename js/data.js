@@ -76,6 +76,13 @@
     restockCooldownDays: 14,        // don't suggest the same reminder to someone again within this
     preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
     preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
+    // Greenhouse rounds: workers inspect each growing batch and estimate its harvest. Small
+    // changes update the batch straight away; big ones wait for the farm manager. Illustrative.
+    inspect: {
+      greenhouses: 8,               // demo greenhouses GH-01 … GH-08
+      autoApplyPct: 0.2,            // estimate changes within ±20% apply automatically
+      thumbSide: 96                 // photos are kept as a small thumbnail only
+    },
     // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
     growDays: { 'asian-greens': 30, lettuces: 40, fungi: 14, herbs: 45 },
     // Days a harvest stays at its best for sale (Harvest Rescue sell-by). Illustrative — MEOD to set.
@@ -964,8 +971,18 @@
       });
       s.migrations.rewardsV1 = true;
     }
+    if (!s.migrations.inspectV1) {
+      // Greenhouse rounds: every batch gets a greenhouse, and there's a farm-worker account.
+      var gh = 0;
+      s.batches.forEach(function (b) { if (!b.greenhouse) b.greenhouse = greenhouseName(gh++); });
+      if (!s.users.some(function (u) { return u.email === 'worker@meod.test'; })) s.users.push({ email: 'worker@meod.test', name: 'Farm Worker', role: 'worker' });
+      s.inspections = s.inspections || [];
+      s.rounds = s.rounds || [];
+      s.migrations.inspectV1 = true;
+    }
     return s;
   }
+  function greenhouseName(i) { var n = i % RULES.inspect.greenhouses + 1; return 'GH-' + (n < 10 ? '0' : '') + n; }
 
   /* ---------- Product reviews + AI review summary ----------
    * Star ratings and short reviews from customers who bought the product (verified by their
@@ -1386,6 +1403,7 @@
     state.batches.push({
       id: id, productId: data.productId, sowDate: data.sowDate, harvestDate: data.harvestDate,
       expectedQty: data.expectedQty, preorderCap: data.preorderCap, preorderPriceCents: data.preorderPriceCents,
+      greenhouse: data.greenhouse || greenhouseName(state.batches.length),
       status: 'planned', createdBy: actorEmail, createdAt: new Date().toISOString()
     });
     return { ok: true, id: id };
@@ -2481,10 +2499,11 @@
       var spots = openable ? batchLeft(b) : 0, dropQty = Math.min(qty, spots), overLimit = qty - dropQty;
       var live = (state.campaigns || []).filter(function (c) { return c.drop && c.drop.batchId === b.id && c.status !== 'rejected'; })[0] || null;
       var options = dropQty > 0 ? dropOptions(p, dropQty) : [];
-      var rec, reason, capped = false;
+      var rec, reason, capped = false, flagged = false;
       if (x.shortBy > 0) { rec = 'none'; reason = 'Demand is already ' + x.shortBy + ' more than this harvest. Keep the normal price and don\'t promote it.'; }
       else if (!qty) { rec = 'none'; reason = 'Trade orders, pre-orders and usual sales already cover the harvest. A promotion would only give margin away.'; }
       else if (!openable) { rec = 'none'; reason = 'Pre-orders for this harvest have closed. Use Harvest Rescue after picking if any is left.'; }
+      else if (b.health && b.health.condition === 'review' && !b.health.reviewed) { rec = 'none'; flagged = true; reason = 'A worker flagged this batch for review in ' + batchGreenhouse(b) + '. Hold promotions until the farm manager has looked at it in Greenhouse rounds.'; }
       else if (!dropQty) { rec = 'none'; capped = true; reason = qty + ' uncommitted, but all ' + b.preorderCap + ' pre-order spots are taken. Opening more is a Harvest Planner decision; otherwise plan Harvest Rescue after picking.'; }
       else if (sg.key === 'strong' || sg.key === 'sold_out' || share <= P.dropBundleShare) { rec = 'normal'; reason = 'Only ' + Math.round(share * 100) + '% of the harvest is uncommitted' + (sg.key === 'strong' ? ' and pre-orders are filling fast' : '') + ', so a normal-price pre-order should be enough. No discount needed.'; }
       else {
@@ -2496,9 +2515,9 @@
       if (rec !== 'none' && overLimit > 0) reason += ' The drop is sized to the ' + dropQty + ' pre-order spots left; the other ' + overLimit + ' would need the pre-order limit raised in Harvest Planner.';
       options.forEach(function (o) { o.recommended = o.key === rec; });
       return { batch: b, product: p, supply: x.supply, committed: committed, b2b: x.wanted.b2b, preordered: x.wanted.preorder, expectedSales: expected,
-        uncommitted: qty, dropQty: dropQty, spotsLeft: spots, overLimit: overLimit, capped: capped, shortBy: x.shortBy, sharePct: Math.round(share * 100),
+        uncommitted: qty, dropQty: dropQty, spotsLeft: spots, overLimit: overLimit, capped: capped, flagged: flagged, shortBy: x.shortBy, sharePct: Math.round(share * 100),
         kg: Math.round(qty * kgPerUnit(p) * 10) / 10, signal: sg, openable: openable, options: options, recommended: rec, reason: reason,
-        ranking: dropRanking(rec, reason, options, p, x, capped), campaign: live };
+        ranking: flagged ? flaggedRanking(reason) : dropRanking(rec, reason, options, p, x, capped), campaign: live };
     });
   }
   // Suggested / Alternative / Avoid for one harvest, built from its own options.
@@ -2693,6 +2712,105 @@
       x.enough = x.campaigns >= 3;
       return x;
     }).sort(function (a, b) { return b.netCents - a.netCents; });
+  }
+
+  /* ---------- Greenhouse rounds (worker inspections) ----------
+   * Workers keep walking their usual rounds; there's no drone. For each growing batch they
+   * take a photo (leafy crops get the leaf-colour check from grade.js), confirm its condition
+   * and estimate the harvest. When every batch is checked, the round is sent automatically:
+   * estimates within ±RULES.inspect.autoApplyPct update the batch straight away, so Demand
+   * Radar, Harvest Drops and Campaign Advisor recalculate. Bigger changes, and anything
+   * marked "Needs review", wait for the farm manager. The photo check judges looks only. */
+  var CONDITIONS = {
+    healthy: { label: 'Healthy', tone: 'green', note: 'Normal growth.' },
+    monitor: { label: 'Monitor', tone: 'amber', note: 'Possible stress. Check again next round.' },
+    review: { label: 'Needs review', tone: 'red', note: 'The farm manager should look at it.' }
+  };
+  var GRADE_CONDITION = { A: 'healthy', cosmetic: 'monitor', check: 'review' };
+  function batchGreenhouse(b) { return b.greenhouse || greenhouseName(state.batches.indexOf(b)); }
+  // Growing batches only: planned ones aren't sown yet, and due ones are being harvested.
+  function inspectableBatches() {
+    return state.batches.filter(function (b) { return batchStage(b) === 'growing'; }).sort(function (a, b) {
+      var ga = batchGreenhouse(a), gb = batchGreenhouse(b);
+      return ga < gb ? -1 : ga > gb ? 1 : a.harvestDate < b.harvestDate ? -1 : 1;
+    });
+  }
+  function openRound() { return (state.rounds || []).filter(function (r) { return r.status === 'open'; })[0] || null; }
+  function roundInspections(roundId) {
+    var latest = {};
+    (state.inspections || []).forEach(function (i) { if (i.roundId === roundId) latest[i.batchId] = i; });
+    return latest;
+  }
+  // Today's checklist: every growing batch, with this round's inspection if there is one.
+  function roundStatus(round) {
+    var done = round ? roundInspections(round.id) : {};
+    var rows = inspectableBatches().map(function (b) { return { batch: b, product: byId('products', b.productId), greenhouse: batchGreenhouse(b), inspection: done[b.id] || null }; });
+    var checked = rows.filter(function (r) { return r.inspection; }).length;
+    return { round: round, rows: rows, checked: checked, total: rows.length, complete: rows.length > 0 && checked === rows.length };
+  }
+  function inspectionSave(data, actor) {
+    var b = byId('batches', data.batchId);
+    if (!b || batchStage(b) !== 'growing') return { ok: false, error: 'That batch isn\'t growing any more.' };
+    if (!CONDITIONS[data.condition]) return { ok: false, error: 'Choose the crop\'s condition.' };
+    var est = Math.round(Number(data.estQty));
+    if (!(est >= 0) || est > b.expectedQty * 3 + 20) return { ok: false, error: 'Enter an estimated harvest between 0 and ' + (b.expectedQty * 3 + 20) + '.' };
+    state.inspections = state.inspections || []; state.rounds = state.rounds || [];
+    var round = openRound();
+    if (!round) { round = { id: nextId('GR'), dayKey: bagDayKey(new Date()), status: 'open', startedAt: new Date().toISOString(), startedBy: actor }; state.rounds.unshift(round); }
+    var rec = { id: nextId('IN'), roundId: round.id, batchId: b.id, greenhouse: batchGreenhouse(b), at: new Date().toISOString(), by: actor,
+      condition: data.condition, estQty: est, expectedBefore: b.expectedQty, notes: String(data.notes || '').trim().slice(0, 280),
+      photo: data.photo || null };
+    state.inspections.push(rec);
+    var st = roundStatus(round);
+    // The last batch checked sends the whole round.
+    var sent = st.complete ? roundSubmit(round.id, actor) : null;
+    return { ok: true, inspection: rec, round: round, status: st, sent: sent };
+  }
+  function applyEstimate(b, qty, rec) {
+    var pre = batchPreordered(b);
+    b.expectedQty = qty;
+    // Pre-order spots never exceed the new estimate, and never drop below what's already taken.
+    b.preorderCap = Math.max(pre, Math.min(b.preorderCap, qty));
+    return { preordered: pre, atRisk: Math.max(0, pre - qty) };
+  }
+  function roundSubmit(roundId, actor) {
+    var round = byId('rounds', roundId);
+    if (!round || round.status !== 'open') return { ok: false, error: 'This round has already been sent.' };
+    var latest = roundInspections(roundId), items = [];
+    inspectableBatches().forEach(function (b) {
+      var i = latest[b.id];
+      if (!i) { items.push({ batchId: b.id, status: 'unchecked', from: b.expectedQty, to: b.expectedQty }); return; }
+      var from = b.expectedQty, change = from ? Math.abs(i.estQty - from) / from : 1;
+      var held = i.condition === 'review' || change > RULES.inspect.autoApplyPct;
+      var it = { batchId: b.id, inspectionId: i.id, condition: i.condition, from: from, to: i.estQty, changePct: Math.round((i.estQty - from) / (from || 1) * 100),
+        status: held ? 'held' : i.estQty === from ? 'same' : 'applied', reason: i.condition === 'review' ? 'Marked "Needs review"' : held ? 'Changes the estimate by more than ' + Math.round(RULES.inspect.autoApplyPct * 100) + '%' : null };
+      if (!held && i.estQty !== from) it.atRisk = applyEstimate(b, i.estQty, i).atRisk;
+      b.health = { condition: i.condition, at: i.at, by: i.by, inspectionId: i.id };
+      items.push(it);
+    });
+    round.status = 'submitted'; round.submittedAt = new Date().toISOString(); round.submittedBy = actor; round.items = items;
+    return { ok: true, round: round, applied: items.filter(function (x) { return x.status === 'applied'; }).length, held: items.filter(function (x) { return x.status === 'held'; }).length };
+  }
+  // The farm manager approves a held estimate (it updates the batch) or keeps the old one.
+  function roundReview(roundId, batchId, approve, actor) {
+    var round = byId('rounds', roundId), it = round && (round.items || []).filter(function (x) { return x.batchId === batchId && x.status === 'held'; })[0];
+    var b = byId('batches', batchId);
+    if (!it || !b) return { ok: false, error: 'Nothing waiting for review here.' };
+    if (approve) it.atRisk = applyEstimate(b, it.to, null).atRisk;
+    if (b.health) b.health.reviewed = true;
+    it.status = approve ? 'approved' : 'kept'; it.reviewedBy = actor; it.reviewedAt = new Date().toISOString();
+    return { ok: true, item: it, batch: b };
+  }
+  // A flagged batch's suggestion reads "Hold promotions" rather than "No promotion needed".
+  function flaggedRanking(reason) {
+    var r = promoRanking('none', reason, { alt: ['Review it in Greenhouse rounds', 'Approve or keep the worker\'s estimate; Tyllage then re-ranks this harvest.'], avoid: ['Promoting it now', 'If the crop has a problem, a promotion would sell produce that may not be up to standard.'] });
+    r[0].label = 'Hold promotions';
+    return r;
+  }
+  function heldEstimates() {
+    var out = [];
+    (state.rounds || []).forEach(function (r) { (r.items || []).forEach(function (it) { if (it.status === 'held') out.push({ round: r, item: it, batch: byId('batches', it.batchId), inspection: byId('inspections', it.inspectionId) }); }); });
+    return out.filter(function (x) { return x.batch && batchStage(x.batch) === 'growing'; });
   }
 
   /* ---------- Data import (Excel / CSV) ----------
@@ -3770,6 +3888,10 @@
     decisions: { log: ledgerLog, decide: ledgerDecide, outcome: ledgerOutcome, list: ledgerRefresh, find: ledgerFind, explainRadar: explainRadar, explainPrice: explainPrice },
     quotes: { parse: quoteParse, options: quoteOptions, create: quoteCreate, decide: quoteDecide, spare: spareWeekly, kgPerUnit: kgPerUnit, commitmentUnits: commitmentUnits },
     twin: { simulate: twinSimulate },
+    inspect: {
+      CONDITIONS: CONDITIONS, GRADE_CONDITION: GRADE_CONDITION, greenhouse: batchGreenhouse, batches: inspectableBatches, openRound: openRound,
+      status: roundStatus, save: inspectionSave, submit: roundSubmit, review: roundReview, held: heldEstimates
+    },
     copilot: { ask: copilotAsk },
     pricing: { cost: unitCost, guard: marginGuard, suggestions: priceSuggestions, propose: proposePrice, decide: decidePrice },
     feedback: { THEMES: FEEDBACK_THEMES, SOURCES: FEEDBACK_SOURCES, classify: feedbackClassify, batchFor: feedbackBatchFor, items: feedbackItems, clusters: feedbackClusters, trends: feedbackTrends, add: feedbackAdd, log: feedbackLog, resolve: feedbackResolve, resolvedList: feedbackResolvedList, reopen: feedbackReopen, flagBatch: feedbackFlagBatch },

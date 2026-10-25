@@ -78,6 +78,7 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 |---|---|---|
 | **Admin** | `admin@meod.test` | Everything in the staff sidebar below, plus **Users**, **Audit log** and **Settings** (editable AI assumptions and unit costs). Admins approve campaigns and price changes proposed by someone else, and set clearance minimum prices |
 | **Sales staff** | `sales@meod.test` | The staff sidebar below, minus Users / Audit log / Settings. Customer names and phones are **masked**, campaigns and price proposals need an admin's approval, and only an admin can set a clearance **minimum price** (staff see it, read-only) |
+| **Farm worker** | `worker@meod.test` | Phone-first **Greenhouse round** (photo, condition and harvest estimate per batch, grouped by greenhouse) and **Past rounds**. Nothing else |
 | **Group leader** | `leader@meod.test`, `leader2@meod.test` | Own group buys and share link, members' orders (**masked**), commission ledger with a worked example |
 | **Customer** | `customer@meod.test` | Home with **Smart picks** and a rewards card, Shop (incl. **Buy to Clear**, the Surprise Harvest Bag and **harvest pre-orders**), My orders with **delivery tracking**, **Rewards**, Group buy, Preferences (**profile editing**), Ask MEOD |
 
@@ -86,7 +87,7 @@ Sign in at `portal.html`. There are one-click demo accounts for each role. The s
 | Group | Screens |
 |---|---|
 | **Today** | SalesDesk **Overview**, **Ask Tyllage**, **Weekly briefing**, **Pilot metrics**, **AI decision ledger** |
-| **Farm ops** | **Lost demand**, **Demand Radar**, **Harvest allocation**, **Decision twin**, **Harvest Planner**, **Harvest Rescue**, Stock |
+| **Farm ops** | **Lost demand**, **Demand Radar**, **Harvest allocation**, **Decision twin**, **Greenhouse rounds**, **Harvest Planner**, **Harvest Rescue**, Stock |
 | **Sales** | Orders, **Content studio**, **B2B buyers**, **Quotations**, Campaigns, **Price Advisor**, Buy to Clear, **Rewards**, Group buys, **Visits** |
 | **Customers** | Inbox, **Feedback**, Customers |
 | **Admin** | **Data import**, Users, Audit log, Settings |
@@ -116,6 +117,11 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 - **Lost demand.** Unmet requests, "Notify me" on sold-out products and crops MEOD doesn't grow, grouped per crop with a verdict, a substitute in stock and notify-when-back drafts.
 - **Harvest allocation** and **Decision twin.** Where each upcoming harvest goes (trade, pre-orders, group buys, shop), and a 2-week what-if model with sliders and stress tests comparing five responses.
 - **Harvest Planner** (with **photo grading** of harvest photos into Grade A / Cosmetic / Check) and **Harvest Rescue** (sell-by deadlines per batch and ranked rescue options).
+- **Greenhouse rounds** (no drones or sensors). Workers keep doing their normal inspection walk; the phone records it.
+  - **For each growing batch:** a photo (or a demo photo: fresh, yellowing or brown spots). Leafy crops get the same leaf-colour check as Harvest Planner, which suggests Healthy, Monitor or Needs review. The worker confirms the condition, adjusts the harvest estimate with −5/−1/+1/+5 buttons and can add a note. **Save & next** moves on to the next batch.
+  - **Checking the last batch sends the round automatically.** Estimate changes within ±20% update the batch straight away, so Demand Radar, Harvest Drops and Campaign Advisor recalculate. Bigger changes, and anything marked "Needs review", wait for the farm manager in **Greenhouse rounds**, which shows what approving would do (for example, uncommitted 29 → 11). The worker can also send a part-finished round.
+  - **A batch flagged "Needs review"** shows as **Hold promotions** in Campaign Advisor until the manager approves or keeps the estimate.
+  - A lower estimate never takes pre-order spots below what's already reserved, and any pre-orders at risk are flagged. Photos are kept only as small thumbnails, and the colour check judges looks only, never food safety.
 - **Price Advisor with Margin Guard** and a **Promotion simulator**: discount, bundle or bulk-trade suggestions checked against a price floor; no surge pricing.
 - **Campaign Studio**: a ranked list of recommended campaigns, AI-drafted messages per language, and **restock reminders**.
 - **Promotion Intelligence** (inside Campaign Studio): every recommendation is ranked as **Suggested**, **Alternative** and **Avoid**, each with a reason. The suggested option names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
@@ -166,6 +172,7 @@ All of these live in `RULES` in `js/data.js`. Admins can change the AI assumptio
 - **Harvest Rescue:** sell-by dates come from a shelf life per category (4–7 days).
 - **Rewards:** 1 point per S$1; 100 points = S$5 voucher (S$20 minimum on full-price items, valid 90 days); 2× points on anti-waste lines; four tiers (Seedling, Sprout, Harvester, Farm Friend). Points come from orders, so refunds reverse them.
 - **Visits:** up to 200 guests, 40 per session, 3 sessions a day; 5% of a visit group's orders goes to its fund; the farm-shop code stays open 7 days.
+- **Greenhouse rounds (`RULES.inspect`):** 8 demo greenhouses (GH-01 to GH-08). Every batch belongs to one; new batches are assigned automatically. Only growing batches are inspected. Changes within ±20% apply automatically; anything bigger, or marked "Needs review", needs the farm manager (admin or staff).
 - **Ask MEOD** detects language (EN / 中文 / BM; Tamil falls back to English) and what the customer is asking about. Complaints, refunds, payment and food-safety messages **create a ticket and hand over to a person**, and the reply is honest about after-hours wait times.
 
 ### Delivery tracking (mock adapter)

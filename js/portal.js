@@ -426,7 +426,7 @@
    * It also warns against promoting crops that are short, and skips anything already drafted
    * in the last 7 days. Every "Draft it" still goes through admin approval. */
   var ADVISOR_SOURCE = { rescue: ['Harvest Rescue', 'red'], drop: ['Harvest allocation', 'green'], radar: ['Demand Radar', 'green'], preorder: ['Harvest Planner', 'green'], restock: ['Restock', 'blue'], rewards: ['Rewards', 'amber'],
-    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'], limit: ['Pre-order limit', 'grey'] };
+    group: ['Group buys', 'blue'], visit: ['Visits', 'blue'], hold: ['Hold off', 'grey'], none: ['Keep the price', 'grey'], limit: ['Pre-order limit', 'grey'], flag: ['Greenhouse rounds', 'red'] };
   var REWARD_PTYPE = { preorder: 'drop', surplus: 'rescue', tier: 'repeat', points: 'repeat', winback: 'reactivate' };
   function recentlyDrafted(productId, kinds) {
     var weekAgo = Date.now() - 7 * 864e5;
@@ -460,12 +460,13 @@
         why: 'Harvest ' + shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString()) + '. ' + d.reason,
         label: 'Compare options', run: function () { openDropCompare(d); } });
     });
-    // Harvests at their pre-order limit first: someone has to decide in Harvest Planner.
-    covered.sort(function (a, b) { return (b.capped ? 1 : 0) - (a.capped ? 1 : 0); }).slice(0, 2).forEach(function (d) {
+    // Batches a worker flagged, then harvests at their pre-order limit: someone has to decide.
+    var urgency = function (d) { return d.flagged ? 2 : d.capped ? 1 : 0; };
+    covered.sort(function (a, b) { return urgency(b) - urgency(a); }).slice(0, 3).forEach(function (d) {
       var day = shortWeekday(M.clearance.parseDayKey(d.batch.harvestDate).toISOString());
-      out.push({ source: d.capped ? 'limit' : 'none', ptype: 'none', score: 19, product: d.product, audience: 0, hold: true, ranking: d.ranking,
-        title: (d.capped ? 'Pre-order limit reached: ' : 'No promotion needed: ') + d.product.title + ' on ' + day,
-        why: d.capped ? d.reason : 'All ' + d.supply + ' expected are covered by trade orders, pre-orders and usual sales. Keep the normal price.' });
+      out.push({ source: d.flagged ? 'flag' : d.capped ? 'limit' : 'none', ptype: 'none', score: 19 + urgency(d), product: d.product, audience: 0, hold: true, ranking: d.ranking,
+        title: (d.flagged ? 'Hold promotions: ' : d.capped ? 'Pre-order limit reached: ' : 'No promotion needed: ') + d.product.title + ' on ' + day,
+        why: d.flagged || d.capped ? d.reason : 'All ' + d.supply + ' expected are covered by trade orders, pre-orders and usual sales. Keep the normal price.' });
     });
     // 2. Demand Radar: crops with more supply than demand.
     crops.filter(function (c) { return c.status === 'surplus'; }).sort(function (a, b) { return b.gap - a.gap; }).slice(0, 2).forEach(function (c) {
@@ -532,7 +533,7 @@
     var rest = adv.filter(function (x) { return first.indexOf(x) < 0; });
     var grid = function (list) { return h('div', { class: 'ops-brief adv-list aligned', style: '--rows:4' }, list.map(function (x) {
         var src = ADVISOR_SOURCE[x.source];
-        var link = { none: ['#allocation', 'Harvest allocation'], limit: ['#harvest', 'Harvest Planner'] }[x.source] || ['#radar', 'Demand Radar'];
+        var link = { none: ['#allocation', 'Harvest allocation'], limit: ['#harvest', 'Harvest Planner'], flag: ['#rounds', 'Greenhouse rounds'] }[x.source] || ['#radar', 'Demand Radar'];
         return h('article', { class: 'ops-card' + (x.hold ? ' adv-hold' : /^(rescue|drop|radar|preorder)$/.test(x.source) ? ' farm' : '') + (x.done ? ' adv-done' : '') },
           h('div', { class: 'ops-card-head' },
             x.product ? h('span', { class: 'rw-tier-cell' }, thumbMini(x.product)) : iconCircle(ICONS.users, 'soft'),
@@ -543,7 +544,7 @@
             h('p', { text: x.why }),
             rankList(adviceRanking(x))),
           h('div', { class: 'ops-foot' },
-            h('small', { text: x.source === 'none' ? 'Keep the normal price' : x.source === 'limit' ? 'A Harvest Planner decision' : x.hold ? 'Pause promotions' : x.audience + ' opted-in ' + (x.audience === 1 ? 'person' : 'people') + ' · farm approval required' }),
+            h('small', { text: x.source === 'none' ? 'Keep the normal price' : x.source === 'limit' ? 'A Harvest Planner decision' : x.source === 'flag' ? 'Waiting for the farm manager' : x.hold ? 'Pause promotions' : x.audience + ' opted-in ' + (x.audience === 1 ? 'person' : 'people') + ' · farm approval required' }),
             x.hold ? h('a', { class: 'mini', href: link[0], text: link[1] })
               : x.done ? h('small', { class: 'pending-note', text: 'Drafted ' + ago(x.done.createdAt) })
               : !x.audience ? h('small', { class: 'hint', text: 'Nobody opted in yet' })
@@ -4175,6 +4176,7 @@
   var ROLE_META = {
     admin: { label: 'Admin', tone: 'red' },
     staff: { label: 'Sales staff', tone: 'blue' },
+    worker: { label: 'Farm worker', tone: 'green' },
     leader: { label: 'Group leader', tone: 'amber' },
     customer: { label: 'Customer', tone: 'green' }
   };
@@ -4307,6 +4309,7 @@
   };
   var AUDIT_LABELS = {
     'auth.sign_in': 'Signed in', 'auth.sign_out': 'Signed out',
+    'inspect.saved': 'Inspected a batch', 'inspect.sent': 'Sent a greenhouse round', 'inspect.approved': 'Approved a harvest estimate', 'inspect.kept': 'Kept a harvest plan',
     'order.created': 'Placed an order', 'order.paid': 'Marked order paid', 'order.fulfilled': 'Fulfilled order',
     'order.refunded': 'Refunded order', 'order.cancelled': 'Cancelled order',
     'campaign.submitted': 'Submitted a campaign', 'campaign.approved': 'Approved a campaign',
@@ -6147,6 +6150,255 @@
   }
 
   /* ---------------- routing ---------------- */
+  /* ---------------- Greenhouse rounds (farm workers, staff, admin) ----------------
+   * Workers keep doing their normal inspection walk; the phone just records it. For each
+   * growing batch: a photo (leafy crops get the leaf-colour check from grade.js, looks only),
+   * the condition and an estimated harvest. "Save & next" moves through the round, and the
+   * last batch sends it: small changes update the harvest plan at once, big ones wait for the
+   * farm manager here. Everything downstream (Demand Radar, Harvest Drops, Campaign Advisor)
+   * reads the batch's expected quantity, so it recalculates by itself. */
+  var NOTE_CHIPS = ['Pests seen', 'Wilting', 'Uneven growth', 'Ready early', 'Ready late', 'Watering issue'];
+  function harvestInText(b) {
+    var n = Math.round((M.clearance.parseDayKey(b.harvestDate) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+    return n <= 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days';
+  }
+  function kgText(p, qty) { return '≈' + Math.round(qty * M.quotes.kgPerUnit(p) * 10) / 10 + ' kg'; }
+  function conditionBadge(key) { var c = M.inspect.CONDITIONS[key]; return h('span', { class: 'ptype' }, badge(c.label, c.tone)); }
+  // What Campaign Advisor says about a batch now (after any estimate change).
+  function promoNow(batchId) {
+    var d = M.promo.drops().filter(function (x) { return x.batch.id === batchId; })[0];
+    if (!d) return 'Harvest is more than 2 weeks away';
+    return d.ranking[0].label + (d.shortBy ? ' · short by ' + d.shortBy : d.uncommitted ? ' · ' + d.uncommitted + ' uncommitted' : ' · fully covered');
+  }
+  function thumbFrom(source) {
+    var side = M.RULES.inspect.thumbSide, w = source.naturalWidth || source.width, hh = source.naturalHeight || source.height, s = Math.min(1, side / Math.max(w, hh));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(hh * s));
+    c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
+  }
+
+  function openInspect(row, onDone) {
+    document.querySelectorAll('.insp-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
+    var b = row.batch, p = row.product, prev = row.inspection;
+    var gradable = Boolean(M.grade) && M.grade.canGrade(p);
+    var st = { condition: prev ? prev.condition : null, photo: prev ? prev.photo : null, grade: prev && prev.photo ? prev.photo.grade : null, est: prev ? prev.estQty : b.expectedQty };
+    var dlg = h('dialog', { class: 'receipt-dialog insp-dialog', 'aria-labelledby': 'in-title' });
+    function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
+    var photoBox = h('div', { class: 'insp-photo' });
+    var condBox = h('div', { class: 'cond-pick', role: 'radiogroup', 'aria-label': 'Crop condition' });
+    var qty = h('input', { type: 'number', min: 0, step: 1, inputmode: 'numeric', value: String(st.est), 'aria-label': 'Estimated harvest' });
+    var qtyNote = h('small', { class: 'qty-note', 'aria-live': 'polite' });
+    var notes = h('textarea', { rows: 2, maxlength: 280, placeholder: 'Anything the manager should know (optional)', 'aria-label': 'Notes' });
+    notes.value = prev ? prev.notes : '';
+    var err = h('p', { class: 'pf-error', 'aria-live': 'polite' });
+    var file = h('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'visually-hidden', 'aria-label': 'Take a photo' });
+
+    function drawPhoto() {
+      photoBox.textContent = '';
+      if (!st.photo) {
+        append(photoBox, h('div', { class: 'insp-empty' }, iconCircle(ICONS.leaf, 'soft'),
+          h('small', { text: gradable ? 'Take a photo of a few plants. Tyllage checks leaf colour and suggests a condition.' : 'Take a photo for the record. The colour check works on leafy greens only, so choose the condition yourself.' })));
+        return;
+      }
+      var g = st.photo.grade ? M.grade.GRADES[st.photo.grade] : null;
+      append(photoBox, h('figure', { class: 'insp-fig' },
+        h('div', { class: 'gd-img' }, h('img', { src: st.photo.url, alt: 'Inspection photo' }), st.photo.overlay ? h('img', { class: 'gd-mark', src: st.photo.overlay, alt: '' }) : null),
+        h('figcaption', null,
+          g ? badge(g.label, g.tone) : badge('No colour check', 'grey'),
+          h('small', { text: st.photo.reason || 'Recorded with the inspection.' }),
+          st.photo.simulated ? h('small', { class: 'gd-sim', text: 'Demo photo (simulated)' }) : null,
+          g && M.inspect.GRADE_CONDITION[st.photo.grade] ? h('small', { class: 'insp-suggest', text: 'Suggests: ' + M.inspect.CONDITIONS[M.inspect.GRADE_CONDITION[st.photo.grade]].label + '. You decide.' }) : null)));
+    }
+    function useSource(source, label, simulated) {
+      var r = gradable ? M.grade.analyze(source) : null;
+      st.photo = { url: thumbFrom(source), overlay: r ? r.overlayUrl : null, grade: r ? r.grade : null, reason: r ? r.reason : null, simulated: simulated, label: label };
+      // Retake on an unclear photo; otherwise preselect the suggested condition (the worker can change it).
+      if (r && M.inspect.GRADE_CONDITION[r.grade]) st.condition = M.inspect.GRADE_CONDITION[r.grade];
+      drawPhoto(); drawCond();
+    }
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      var u = URL.createObjectURL(f);
+      M.grade.loadImage(u).then(function (img) { useSource(img, f.name, false); }, function () { toast('That file couldn\'t be read as a photo.'); })
+        .then(function () { URL.revokeObjectURL(u); file.value = ''; });
+    });
+    function demo(i) {
+      M.grade.demoSamples(gradable ? p.category : 'asian-greens').then(function (s) { useSource(s[i].source, s[i].label, s[i].simulated); });
+    }
+    function drawCond() {
+      condBox.textContent = '';
+      Object.keys(M.inspect.CONDITIONS).forEach(function (k) {
+        var c = M.inspect.CONDITIONS[k];
+        append(condBox, h('button', { type: 'button', role: 'radio', 'aria-checked': String(st.condition === k), class: 'cond-btn c-' + c.tone + (st.condition === k ? ' on' : ''),
+          onclick: function () { st.condition = k; drawCond(); drawQty(); } }, h('strong', { text: c.label }), h('small', { text: c.note })));
+      });
+    }
+    function drawQty() {
+      var v = parseInt(qty.value, 10); if (isNaN(v)) v = 0;
+      var d = v - b.expectedQty, pct = b.expectedQty ? Math.round(d / b.expectedQty * 100) : 0;
+      var big = Math.abs(pct) > M.RULES.inspect.autoApplyPct * 100 || st.condition === 'review';
+      qtyNote.textContent = kgText(p, v) + ' · plan was ' + b.expectedQty + (d ? ' (' + (d > 0 ? '+' : '') + d + ', ' + (pct > 0 ? '+' : '') + pct + '%)' : ' (no change)') +
+        (big ? '. The farm manager will confirm this one.' : '. Updates the harvest plan when the round is sent.');
+      qtyNote.classList.toggle('warn', big);
+    }
+    var step = function (n) { return h('button', { type: 'button', class: 'qty-btn', 'aria-label': (n > 0 ? 'Add ' : 'Take away ') + Math.abs(n), text: (n > 0 ? '+' : '−') + Math.abs(n),
+      onclick: function () { qty.value = String(Math.max(0, (parseInt(qty.value, 10) || 0) + n)); drawQty(); } }); };
+    qty.addEventListener('input', drawQty);
+
+    append(dlg,
+      h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
+      h('div', { class: 'rd-body insp-body' },
+        h('div', { class: 'rd-head' }, h('h2', { id: 'in-title', text: row.greenhouse + ' · ' + p.title }), badge('Harvest ' + harvestInText(b), 'green')),
+        h('small', { class: 'hint', text: 'Batch ' + b.id + ' · sown ' + shortDate(M.clearance.parseDayKey(b.sowDate).toISOString()) + ' · plan ' + b.expectedQty + ' (' + kgText(p, b.expectedQty) + ')' }),
+        h('section', { class: 'insp-step' }, h('h3', { text: '1. Photo' }), photoBox,
+          h('div', { class: 'insp-photo-actions' },
+            h('label', { class: 'btn btn-sm btn-forest insp-cam' }, file, svgIcon(ICONS.leaf), st.photo ? 'Retake photo' : 'Take photo'),
+            h('span', { class: 'insp-demo' }, h('small', { text: 'No plants nearby? Demo photo:' }),
+              mini('Fresh', function () { demo(0); }), mini('Yellowing', function () { demo(2); }), mini('Brown spots', function () { demo(3); })))),
+        h('section', { class: 'insp-step' }, h('h3', { text: '2. Condition' }), condBox),
+        h('section', { class: 'insp-step' }, h('h3', { text: '3. Estimated harvest' }),
+          h('div', { class: 'qty-step' }, step(-5), step(-1), qty, step(1), step(5)), qtyNote),
+        h('section', { class: 'insp-step' }, h('h3', { text: '4. Notes' }),
+          h('div', { class: 'filters note-chips' }, NOTE_CHIPS.map(function (t) {
+            return h('button', { type: 'button', class: 'chip', text: t, onclick: function () { notes.value = (notes.value ? notes.value.replace(/\s*$/, '') + ', ' : '') + t.toLowerCase(); } });
+          })), notes),
+        err),
+      h('div', { class: 'r-actions' },
+        h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Cancel', onclick: closeDialog }),
+        h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Save & next', onclick: function () {
+          if (!st.condition) { err.textContent = 'Choose the condition first.'; return; }
+          var r = M.inspect.save({ batchId: b.id, condition: st.condition, estQty: qty.value, notes: notes.value,
+            photo: st.photo ? { url: st.photo.url, grade: st.photo.grade, reason: st.photo.reason, simulated: st.photo.simulated } : null }, session.email);
+          if (!r.ok) { err.textContent = r.error; return; }
+          closeDialog();
+          M.audit(session.email, 'inspect.saved', b.id);
+          if (r.sent) {
+            M.audit(session.email, 'inspect.sent', r.sent.round.id);
+            M.save();
+            toast('Round sent: ' + r.sent.applied + ' estimate(s) updated' + (r.sent.held ? ', ' + r.sent.held + ' waiting for the farm manager' : '') + '.');
+            render();
+            return;
+          }
+          M.save();
+          render();
+          // Straight on to the next batch that hasn't been checked.
+          var next = M.inspect.status(M.inspect.openRound()).rows.filter(function (x) { return !x.inspection; })[0];
+          if (next && onDone !== false) openInspect(next);
+        } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    drawPhoto(); drawCond(); drawQty();
+  }
+
+  // The checklist, grouped by greenhouse. Shared by the worker's page and the staff page.
+  function roundChecklist() {
+    var s = M.inspect.status(M.inspect.openRound());
+    var bar = h('span', { class: 'po-bar grow' }, h('span', { class: 'po-fill' + (s.complete ? ' full' : '') }));
+    bar.firstChild.style.width = (s.total ? Math.round(s.checked / s.total * 100) : 0) + '%';
+    var groups = {};
+    s.rows.forEach(function (r) { (groups[r.greenhouse] = groups[r.greenhouse] || []).push(r); });
+    var next = s.rows.filter(function (r) { return !r.inspection; })[0];
+    return h('div', { class: 'rnd' },
+      h('div', { class: 'rnd-hero' },
+        h('div', { class: 'rnd-head' }, h('strong', { text: s.checked + ' of ' + s.total + ' batches checked' }),
+          next ? h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: s.checked ? 'Continue round' : 'Start round', onclick: function () { openInspect(next); } }) : null),
+        bar,
+        h('small', { text: 'Checking the last batch sends the round. Changes within ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '% update the harvest plan straight away; bigger ones go to the farm manager.' }),
+        s.checked && !s.complete ? h('button', { class: 'mini', type: 'button', text: 'Send now (' + (s.total - s.checked) + ' not checked keep their plan)', onclick: function () {
+          if (!confirm('Send the round now? ' + (s.total - s.checked) + ' batch(es) not checked will keep their current plan.')) return;
+          var r = M.inspect.submit(s.round.id, session.email);
+          if (!r.ok) { toast(r.error); return; }
+          commit('inspect.sent', s.round.id, 'Round sent: ' + r.applied + ' estimate(s) updated' + (r.held ? ', ' + r.held + ' waiting for the farm manager' : '') + '.');
+        } }) : null),
+      s.total ? Object.keys(groups).sort().map(function (g) {
+        return h('section', { class: 'gh-group' }, h('h3', null, h('span', { class: 'gh-tag', text: g }), h('small', { text: groups[g].filter(function (r) { return r.inspection; }).length + ' of ' + groups[g].length + ' checked' })),
+          groups[g].map(function (r) {
+            var i = r.inspection;
+            return h('button', { type: 'button', class: 'gh-row' + (i ? ' done' : ''), onclick: function () { openInspect(r); } },
+              i && i.photo ? h('img', { class: 'gh-thumb', src: i.photo.url, alt: '' }) : h('span', { class: 'gh-thumb' }, thumbMini(r.product)),
+              h('span', { class: 'gh-main' }, h('strong', { text: r.product.title }),
+                h('small', { text: 'Harvest ' + harvestInText(r.batch) + ' · plan ' + r.batch.expectedQty + (i ? ' → ' + i.estQty : '') })),
+              i ? conditionBadge(i.condition) : h('span', { class: 'gh-todo', text: 'Check' }));
+          }));
+      }) : h('p', { class: 'empty', text: 'Nothing is growing right now.' }));
+  }
+  function roundSummary(r, showImpact) {
+    var items = (r.items || []).filter(function (x) { return x.status !== 'unchecked'; });
+    var count = function (k) { return items.filter(function (x) { return x.status === k; }).length; };
+    // The callout counts unchanged batches; the table lists only what changed or needs a decision.
+    var listed = items.filter(function (x) { return x.status !== 'same' || x.condition !== 'healthy'; });
+    var STATUS = { applied: ['Updated', 'green'], same: ['No change', 'grey'], held: ['Waiting for manager', 'amber'], approved: ['Approved', 'green'], kept: ['Kept old plan', 'grey'] };
+    return h('div', { class: 'rnd-summary' },
+      h('p', { class: 'callout green', text: 'Sent ' + ago(r.submittedAt) + ' by ' + r.submittedBy + ': ' + count('applied') + ' updated, ' + count('same') + ' unchanged, ' + count('held') + ' waiting for the farm manager' +
+        ((r.items || []).length - items.length ? ', ' + ((r.items || []).length - items.length) + ' not checked' : '') + '.' }),
+      table([
+        { label: 'Batch', render: function (x) { var b = M.byId('batches', x.batchId), p = b && M.byId('products', b.productId); return h('span', null, h('strong', { text: p ? p.title : x.batchId }), h('br'), h('small', { text: (b ? M.inspect.greenhouse(b) : '') + ' · ' + x.batchId })); } },
+        { label: 'Condition', render: function (x) { return conditionBadge(x.condition); } },
+        { label: 'Estimate', num: true, render: function (x) { return x.from === x.to ? String(x.to) : x.from + ' → ' + x.to + ' (' + (x.changePct > 0 ? '+' : '') + x.changePct + '%)'; } },
+        { label: 'Status', render: function (x) { return h('span', { class: 'ptype' }, badge(STATUS[x.status][0], STATUS[x.status][1]), x.atRisk ? h('small', { class: 'bag-value-low', text: ' ' + x.atRisk + ' pre-orders at risk' }) : null); } },
+        showImpact ? { label: 'Campaign Advisor now', render: function (x) { return h('small', { text: promoNow(x.batchId) }); } } : null
+      ].filter(Boolean), listed, items.length ? 'Every batch checked was healthy and on plan.' : 'No batches were checked in this round.'));
+  }
+
+  // Farm worker: today's round, and what happened to the last one.
+  function roundView(root) {
+    var last = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; })[0];
+    if (last && !M.inspect.openRound() && M.clearance.dayKey(new Date(last.submittedAt)) === M.clearance.dayKey(new Date())) {
+      append(root, panel('Today\'s round is sent', 'Thanks! The harvest plan and sales planning now use your numbers. Start another round if you check the greenhouses again today.',
+        roundSummary(last, false)));
+    }
+    append(root, panel(null, null, roundChecklist()));
+  }
+  function pastRoundsView(root) {
+    var rounds = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 10);
+    if (!rounds.length) { append(root, panel(null, null, h('p', { class: 'empty', text: 'No rounds sent yet.' }))); return; }
+    rounds.forEach(function (r) { append(root, panel(shortWeekday(r.submittedAt), null, roundSummary(r, false))); });
+  }
+
+  // Staff / admin: estimates waiting for review, today's round, and recent rounds with their effect on sales.
+  function roundsAdminView(root) {
+    var s = M.inspect.status(M.inspect.openRound()), held = M.inspect.held();
+    var canReview = M.auth.can(session, 'inspect.review');
+    var lastSent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; })[0];
+    append(root, h('div', { class: 'kpis' },
+      kpi('Today\'s round', s.checked + ' of ' + s.total, 'batches checked'),
+      kpi('Waiting for review', String(held.length), 'estimate changes'),
+      kpi('Last round sent', lastSent ? ago(lastSent.submittedAt) : '—', lastSent ? 'by ' + lastSent.submittedBy : 'none yet')));
+    append(root, panel('Waiting for your review', 'Estimates that change a batch by more than ±' + Math.round(M.RULES.inspect.autoApplyPct * 100) + '%, or that the worker marked "Needs review". Approving updates the harvest plan, and Demand Radar, Harvest Drops and Campaign Advisor follow.',
+      table([
+        { label: 'Batch', render: function (x) { var p = M.byId('products', x.batch.productId); return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: M.inspect.greenhouse(x.batch) + ' · harvest ' + harvestInText(x.batch) })); } },
+        { label: 'Inspection', render: function (x) {
+          var i = x.inspection;
+          return h('span', { class: 'rv-insp' }, i && i.photo ? h('img', { class: 'gh-thumb', src: i.photo.url, alt: 'Inspection photo' }) : null,
+            h('span', null, conditionBadge(x.item.condition), h('br'), h('small', { text: (i && i.photo && i.photo.reason ? i.photo.reason + ' ' : '') + (i && i.notes ? '“' + i.notes + '”' : '') })));
+        } },
+        { label: 'Change', num: true, render: function (x) { return h('span', null, h('strong', { text: x.item.from + ' → ' + x.item.to }), h('br'), h('small', { text: (x.item.changePct > 0 ? '+' : '') + x.item.changePct + '% · ' + x.item.reason })); } },
+        { label: 'If approved', render: function (x) { return h('small', { text: impactIfApproved(x) }); } },
+        { label: 'Actions', render: function (x) {
+          if (!canReview) return h('small', { text: 'Waiting for the farm manager' });
+          return h('div', { class: 'actions' },
+            mini('Approve', function () { var r = M.inspect.review(x.round.id, x.batch.id, true, session.email); if (!r.ok) { toast(r.error); return; } commit('inspect.approved', x.batch.id, 'Estimate updated to ' + x.item.to + (r.item.atRisk ? '. ' + r.item.atRisk + ' pre-order(s) at risk: contact those customers.' : '.')); }),
+            mini('Keep old plan', function () { var r = M.inspect.review(x.round.id, x.batch.id, false, session.email); if (!r.ok) { toast(r.error); return; } commit('inspect.kept', x.batch.id, 'Kept the plan of ' + x.item.from + '.'); }));
+        } }
+      ], held, 'Nothing waiting. Every estimate from the last round is in the plan.')));
+    append(root, panel('Today\'s round', 'Workers do this on their phones (worker@meod.test). Staff can check a batch here too.', roundChecklist()));
+    var recent = (S().rounds || []).filter(function (r) { return r.status === 'submitted'; }).slice(0, 3);
+    recent.forEach(function (r, idx) {
+      append(root, panel(idx ? 'Round ' + shortWeekday(r.submittedAt) : 'Last round', 'What the workers found, and what Campaign Advisor suggests for each harvest now.', roundSummary(r, true)));
+    });
+  }
+  // A held estimate's effect on the harvest's commitments, before anyone approves it.
+  function impactIfApproved(x) {
+    var d = M.promo.drops().filter(function (y) { return y.batch.id === x.batch.id; })[0];
+    if (!d) return 'Harvest is more than 2 weeks away; Demand Radar picks it up later.';
+    var wanted = d.supply - d.uncommitted + d.shortBy, unc = Math.max(0, x.item.to - wanted), short = Math.max(0, wanted - x.item.to);
+    var pre = M.harvest.preordered(x.batch);
+    return 'Uncommitted ' + d.uncommitted + ' → ' + unc + (short ? ', short by ' + short + ' (hold promotions)' : '') + (pre > x.item.to ? '. ' + (pre - x.item.to) + ' pre-order(s) at risk.' : '.');
+  }
+
   var NAV = {
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
@@ -6158,6 +6410,7 @@
       { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
       { id: 'twin', group: 'Farm ops', label: 'Decision twin', perm: 'allocation', title: 'Farm Decision Twin', sub: 'What if the harvest, demand or buyers change? Compare responses before deciding.', render: twinView },
+      { id: 'rounds', group: 'Farm ops', label: 'Greenhouse rounds', perm: 'inspect', title: 'Greenhouse rounds', sub: 'Workers\' inspections, straight into the harvest plan. Big changes wait for you.', render: roundsAdminView, count: function () { return M.inspect.held().length; } },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
       { id: 'inventory', group: 'Farm ops', label: 'Stock', title: 'Stock & catalogue', sub: 'Synced from Shopify (mock).', render: inventoryView },
@@ -6178,6 +6431,10 @@
       { id: 'users', group: 'Admin', label: 'Users', perm: 'users', title: 'Users & roles', sub: 'Who can access the portal.', render: usersView },
       { id: 'audit', group: 'Admin', label: 'Audit log', perm: 'audit', title: 'Audit log', sub: 'Who did what, and when.', render: auditView },
       { id: 'settings', group: 'Admin', label: 'Settings', perm: 'settings', title: 'Settings', sub: 'Rules and demo controls.', render: settingsView }
+    ],
+    worker: [
+      { id: 'overview', label: 'Today\'s round', title: 'Greenhouse round', sub: 'Photo, condition and harvest estimate for each batch. It sends itself when you finish.', render: roundView },
+      { id: 'past', label: 'Past rounds', title: 'Past rounds', sub: 'What you sent, and what the farm manager did with it.', render: pastRoundsView }
     ],
     leader: [
       { id: 'overview', label: 'Overview', title: 'My group buys', sub: 'Share your code and see how your group is doing.', render: leaderOverview },
@@ -6219,7 +6476,7 @@
     });
     mob.appendChild(h('a', { href: 'portal.html', text: 'Sign out', onclick: function (e) { e.preventDefault(); signOut(); } }));
 
-    $('[data-role-badge]').textContent = { admin: 'Admin', staff: 'Sales staff', leader: 'Group leader', customer: 'Customer' }[session.role];
+    $('[data-role-badge]').textContent = { admin: 'Admin', staff: 'Sales staff', worker: 'Farm worker', leader: 'Group leader', customer: 'Customer' }[session.role];
     $('[data-user-name]').textContent = session.name;
     currentTitle = view.title;
     $('[data-title]').textContent = view.title;

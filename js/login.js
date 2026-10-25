@@ -25,12 +25,12 @@
   var PITCH = {
     customer: ['Track your orders and deliveries', 'Join a group buy with a leader\'s code', 'Picks based on what you\'ve bought before', 'Choose what messages you get'],
     leader: ['Share your group code and link', 'See your group\'s orders, with members\' details kept private', 'Commission worked out for you, refunds included', 'No more Excel settlements'],
-    staff: ['Stock, orders and sync status in one view', 'Inbox for tickets and farm bookings', 'Campaign Studio, with approval before anything sends', 'Group-buy settlement and audit log']
+    staff: ['Stock, orders and sync status in one view', 'Inbox for tickets and farm bookings', 'Campaign Studio, with approval before anything sends', 'Greenhouse rounds on a phone, straight into harvest plans']
   };
   var ACCOUNTS = {
     customer: [['customer@meod.test', 'Customer', 'Aster Lim']],
     leader: [['leader@meod.test', 'Group leader', 'Punggol'], ['leader2@meod.test', 'Group leader', 'Bukit Batok']],
-    staff: [['admin@meod.test', 'Admin', 'Full access'], ['sales@meod.test', 'Sales staff', 'No approvals']]
+    staff: [['admin@meod.test', 'Admin', 'Full access'], ['sales@meod.test', 'Sales staff', 'No approvals'], ['worker@meod.test', 'Farm worker', 'Greenhouse rounds']]
   };
 
   function selectRole(role) {

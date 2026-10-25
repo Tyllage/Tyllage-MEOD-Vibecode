@@ -10,7 +10,7 @@
   var M = window.MEOD;
   var KEY = 'meod-session';
 
-  var ROLE_HOME = { admin: 'staff', staff: 'staff', leader: 'leader', customer: 'customer' };
+  var ROLE_HOME = { admin: 'staff', staff: 'staff', worker: 'worker', leader: 'leader', customer: 'customer' };
 
   function current() {
     try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
@@ -40,8 +40,9 @@
 
   function can(session, permission) {
     var matrix = {
-      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'pricing.approve', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot', 'ledger', 'quotes', 'copilot'],
-      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot', 'ledger', 'quotes', 'copilot'],
+      admin: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'campaigns.approve', 'groupbuy', 'groupbuy.manage', 'customers', 'customers.pii', 'users', 'audit', 'settings', 'clearance', 'clearance.minprice', 'pricing.approve', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot', 'ledger', 'quotes', 'copilot', 'inspect', 'inspect.review'],
+      staff: ['inventory', 'orders', 'orders.update', 'inbox', 'campaigns', 'groupbuy', 'customers', 'clearance', 'harvest', 'visits', 'rewards', 'radar', 'b2b', 'rescue', 'pricing', 'feedback', 'content', 'lost', 'allocation', 'pilot', 'ledger', 'quotes', 'copilot', 'inspect', 'inspect.review'],
+      worker: ['inspect'],
       leader: ['leader'],
       customer: ['customer']
     };

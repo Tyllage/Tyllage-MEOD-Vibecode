@@ -8,7 +8,7 @@ This repository is a **prototype**. It is a static site whose sign-in, roles and
 
 Please **do not open a public issue** for security problems. Instead:
 
-- use GitHub's **private vulnerability reporting** on this repository, or
+- use GitHub's **private vulnerability reporting** on this repository ([Report a vulnerability](https://github.com/Tyllage/Tyllage-Vibecode/security/advisories/new) in the Security tab), or
 - message the Tyllage project lead directly.
 
 Include:
@@ -28,6 +28,12 @@ If you think real customer data has leaked, follow the Deployment Plan §10:
 ## Supported versions
 
 Only the latest commit on `main` is maintained.
+
+| Version | Supported |
+|---|---|
+| `main` (latest) | ✅ |
+| Older commits | ❌ |
+| Forks and copies of this repository | ❌ Not authorised. See [LICENSE](LICENSE). |
 
 ## Known limitations (by design for the prototype)
 
@@ -66,11 +72,17 @@ Set these as environment variables on the **backend** host, never in the repo. G
 
 We welcome responsible security reports from anyone. Reporting a vulnerability does not give you any right to use, copy or modify the code (see [LICENSE](LICENSE)). Please:
 
-- test only against your own local copy or the public demo, never against MEOD's real systems or data;
+- test only against the public demo, never against MEOD's real systems or data;
 - don't access, change or keep anyone else's data;
 - don't publish details until we've fixed the issue or agreed a date with you.
 
 There is no bug bounty.
+
+Security reports and testing do not grant any licence to copy, use, modify or redistribute Tyllage code.
+
+## Unauthorised copies and forks
+
+This repository is proprietary. Tyllage does not support, and has not authorised, any deployment, fork or copy of this code outside the Tyllage team. Vulnerabilities found only in someone else's copy are out of scope. If you find Tyllage code being used or hosted without permission, please tell us through the same private reporting channel.
 
 ## Rules for team members
 

@@ -8,7 +8,8 @@ It has two parts:
 
 Built with plain **HTML, CSS and vanilla JavaScript**. There's no framework, no build step and no backend.
 
-> 🔒 **Proprietary. © 2026 Tyllage. All rights reserved.** This repository may be publicly visible, but it is **not open source**. You may not copy, reuse, modify, redistribute or deploy any part of it without written permission from Tyllage. Outside contributions are not accepted. See [LICENSE](LICENSE).
+> **Proprietary software. © 2026 Tyllage LLP. All rights reserved.**
+> This repository is not open source. Being able to see it on GitHub does not give you permission to copy, use, run, modify, deploy or redistribute any part of it. Outside contributions are not accepted. See [LICENSE](LICENSE).
 
 > ⚠️ **Prototype only.** All data is synthetic and lives in the visitor's browser (`localStorage`). Sign-in runs in the browser and is **not secure**. Every "AI" feature is rule-based: no data is sent to an AI service. Don't put real customer data in this repo. See [SECURITY.md](SECURITY.md) and [audit.md](audit.md).
 
@@ -247,9 +248,15 @@ The proposal's target stack is **Node/Express + PostgreSQL + Shopify Admin API +
 
 See [audit.md](audit.md) for the full gap list and open questions for MEOD.
 
-## Licence and ownership
+## License and ownership
 
-© 2026 Tyllage. All rights reserved. This is proprietary software, not open source: no licence is granted to anyone outside the Tyllage team. Being able to see or fork this repository on GitHub does not give you the right to use, copy, modify or redistribute it. The MEOD name, logo, photos and copy belong to MEOD Farm. For permission requests, contact the Tyllage project lead. Full terms are in [LICENSE](LICENSE).
+© 2026 Tyllage LLP. All rights reserved.
+
+This prototype, including its code, designs, business rules and documentation, is proprietary to Tyllage LLP and is shared under the [Tyllage Proprietary License](LICENSE). No licence is granted to use, copy, modify, deploy or redistribute it without Tyllage's prior written permission. GitHub's Terms of Service let you view and fork public repositories on GitHub; that does not give any further right to use this code.
+
+The MEOD name, logo, photographs and website copy belong to MEOD Farm and are used here for demonstration to MEOD only. Third-party libraries loaded at runtime (SheetJS and qrcodejs) remain under their own licences.
+
+For licensing or partnership enquiries, contact the team through the [Tyllage GitHub organisation](https://github.com/Tyllage).
 
 ## Docs
 

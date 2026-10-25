@@ -2,7 +2,7 @@
 
 ## Our pledge
 
-We, the Tyllage team members who build and maintain this project, want everyone who takes part to have a respectful, harassment-free experience. That holds whatever your age, body size, disability, ethnicity, gender identity or expression, level of experience, education, nationality, appearance, race, religion, or sexual identity and orientation.
+This is a proprietary project maintained by the Tyllage team; it does not accept outside contributions (see [CONTRIBUTING.md](CONTRIBUTING.md)). We, the Tyllage team members who build and maintain it, want everyone who takes part to have a respectful, harassment-free experience. That holds whatever your age, body size, disability, ethnicity, gender identity or expression, level of experience, education, nationality, appearance, race, religion, or sexual identity and orientation.
 
 ## Expected behaviour
 
@@ -22,7 +22,7 @@ We, the Tyllage team members who build and maintain this project, want everyone 
 
 ## Scope
 
-This applies in all project spaces: the repository, issues, pull requests, chats, meetings, and client sessions with MEOD. It also applies when you represent the project in public.
+This applies to Tyllage team members in all project spaces: the repository, issues, pull requests, chats, meetings, and client sessions with MEOD. It also applies to anyone who interacts with those spaces, and when someone represents Tyllage in public.
 
 ## Enforcement
 

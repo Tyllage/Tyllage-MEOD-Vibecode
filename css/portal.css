@@ -1,4 +1,4 @@
-/* MEOD Portal — login + dashboards. Builds on style.css tokens. */
+/* Tyllage Portal — login + dashboards. Builds on style.css tokens. */
 body.portal { background: #f3f1ec; min-height: 100vh; }
 
 .demo-banner {
@@ -385,7 +385,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .no-print { display: none !important; }
 }
 
-/* ================= Customer pages (Shop, Orders, Group buy, Preferences, Ask MEOD) ================= */
+/* ================= Customer pages (Shop, Orders, Group buy, Preferences, Ask Tyllage) ================= */
 .icon-circle.bare { width: 18px; height: 18px; background: none; color: currentColor; margin: 0; }
 .icon-circle.bare svg { width: 100%; height: 100%; }
 .icon-circle.soft { width: 42px; height: 42px; margin: 0; flex: none; background: #eaf4e5; color: var(--forest); }
@@ -561,7 +561,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .privacy-list { list-style: none; margin: 8px 0 14px; padding: 0; display: grid; gap: 12px; }
 .privacy-card { background: #fbfaf6; }
 
-/* ---- Ask MEOD ---- */
+/* ---- Ask Tyllage ---- */
 .chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
 .chat-card { background: var(--white); border-radius: 20px; box-shadow: 0 8px 26px rgba(5,79,18,.08); border: 1px solid #efe9df; display: flex; flex-direction: column; height: min(680px, calc(100vh - 200px)); min-height: 460px; overflow: hidden; }
 .chat-header { display: flex; align-items: center; gap: 12px; padding: 16px 20px; color: var(--white); background: linear-gradient(120deg, var(--forest-dark), var(--forest)); }
@@ -1135,7 +1135,7 @@ a.pill-btn { text-decoration: none; }
   .table-wrap.as-cards tr { margin-bottom: 0; }
 }
 
-/* ---- Grow with MEOD rewards: built on the portal's existing look ----
+/* ---- Grow with Tyllage rewards: built on the portal's existing look ----
    Membership card uses the Smart picks gradient; everything else is panels, soft icon
    circles, the order tracker, Group buy's numbered steps and the standard table. */
 .rw-bar { display: block; height: 8px; border-radius: 999px; background: #e6dfd3; overflow: hidden; }
@@ -1290,7 +1290,7 @@ a.pill-btn { text-decoration: none; }
 .ai-note { color: var(--muted); font-size: .8rem; }
 .picks-head .rw-head { margin: 6px 0 4px; }
 .picks-head .rw-head h2 { margin: 0; }
-/* Ask MEOD: name and status stacked on the left, AI pill at the right end of the green header. */
+/* Ask Tyllage: name and status stacked on the left, AI pill at the right end of the green header. */
 .chat-head-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .chat-header .ai-pill { margin-left: auto; align-self: center; padding: 5px 12px; }
 .pd-recipe summary .ai-pill { margin-left: auto; }
@@ -1867,7 +1867,7 @@ a.pill-btn { text-decoration: none; }
 .tw-opt.blocked { opacity: .75; }
 .sim-bar.neg > span { background: #c0533f; }
 
-/* ---------- Ask Tyllage (reuses the Ask MEOD chat layout) ---------- */
+/* ---------- Ask Tyllage (reuses the Ask Tyllage chat layout) ---------- */
 .bubble-row.cp-wide { max-width: 94%; width: 100%; }
 .bubble-row.cp-wide .bubble { flex: 1; min-width: 0; display: grid; gap: 10px; }
 .bubble .table-wrap { margin: 0; font-size: .85rem; }

@@ -1,10 +1,10 @@
-# Tyllage × MEOD Farm — Vibecode Prototype
+# Tyllage × Tyllage — Vibecode Prototype
 
-A clickable prototype for **MEOD Farm** (Problem Statement 6B: *Improving Sales and Marketing Outreach Through AI*).
+A clickable prototype for **Tyllage** (Problem Statement 6B: *Improving Sales and Marketing Outreach Through AI*).
 It has two parts:
 
-1. **Public site.** A refresh of [meod.com.sg](https://meod.com.sg/) that keeps MEOD's look (forest green, gold, berry and stony palette; hand-brushed headings; MEOD's own photos and logo) and adds a searchable produce catalogue, a Farm & More showcase, community group buys, **Buy to Clear**, group learning journeys with a visitor farm shop, and the **Ask MEOD** chat assistant.
-2. **MEOD Portal.** Role-based dashboards for **admin**, **sales staff**, **group leaders** and **customers**. They're built on the modules in the proposal (SalesDesk, Sync, Assist, Recommend, Campaign Studio and GroupBuy), plus farm-ops tools that tie sales to what the farm is growing: Demand Radar, Harvest Planner, Harvest Rescue, Price Advisor, Ask Tyllage and more.
+1. **Public site.** A refresh of [meod.com.sg](https://meod.com.sg/) that keeps Tyllage's look (forest green, gold, berry and stony palette; hand-brushed headings; Tyllage's own photos and logo) and adds a searchable produce catalogue, a Farm & More showcase, community group buys, **Buy to Clear**, group learning journeys with a visitor farm shop, and the **Ask Tyllage** chat assistant.
+2. **Tyllage Portal.** Role-based dashboards for **admin**, **sales staff**, **group leaders** and **customers**. They're built on the modules in the proposal (SalesDesk, Sync, Assist, Recommend, Campaign Studio and GroupBuy), plus farm-ops tools that tie sales to what the farm is growing: Demand Radar, Harvest Planner, Harvest Rescue, Price Advisor, Ask Tyllage and more.
 
 Built with plain **HTML, CSS and vanilla JavaScript**. There's no framework, no build step and no backend.
 
@@ -56,31 +56,31 @@ Every push to `main` redeploys automatically.
 
 On every page:
 
-- **Ask MEOD** chat bubble: stock, prices, delivery, group buys, the Surprise Harvest Bag and clearance in EN / 中文 / BM. Complaints hand over to a person.
+- **Ask Tyllage** chat bubble: stock, prices, delivery, group buys, the Surprise Harvest Bag and clearance in EN / 中文 / BM. Complaints hand over to a person.
 - **Scroll-to-top** button, above the chat bubble. The portal has one too, for every role.
 - **Portal** button in the top nav.
 
 ### Where the portal entry points are (and why)
 
-- **"Portal" button in the top nav**, next to the gold *Our Store* button. It's on every page, but outlined so it doesn't compete with MEOD's main sales action.
+- **"Portal" button in the top nav**, next to the gold *Our Store* button. It's on every page, but outlined so it doesn't compete with Tyllage's main sales action.
 - **"Join with a code" on the home page's group-buy band.** Group-buy members are the customers who need the portal most.
 - **Leader invite links** (`portal.html?role=customer&code=…`) fill in the code for new members.
 
-The footer deliberately has **no** portal links, so the site reads like MEOD's real website.
+The footer deliberately has **no** portal links, so the site reads like Tyllage's real website.
 
 ---
 
-## MEOD Portal
+## Tyllage Portal
 
 Sign in at `portal.html`. There are one-click demo accounts for each role. The shared demo password is `DEMO_PASSWORD` in `js/data.js`.
 
 | Role | Demo account | Screens |
 |---|---|---|
-| **Admin** | `admin@meod.test` | Everything in the staff sidebar below, plus **Users**, **Audit log** and **Settings** (editable AI assumptions and unit costs). Admins approve campaigns and price changes proposed by someone else, and set clearance minimum prices |
-| **Sales staff** | `sales@meod.test` | The staff sidebar below, minus Users / Audit log / Settings. Customer names and phones are **masked**, campaigns and price proposals need an admin's approval, and only an admin can set a clearance **minimum price** (staff see it, read-only) |
-| **Farm worker** | `worker@meod.test` | Phone-first **Greenhouse round** (photo, condition and harvest estimate per batch, grouped by greenhouse; saved on the phone first and uploaded when there's signal), **Past rounds** and **Signal check**. Nothing else |
-| **Group leader** | `leader@meod.test`, `leader2@meod.test` | Own group buys and share link, members' orders (**masked**), commission ledger with a worked example |
-| **Customer** | `customer@meod.test` | Home with **Smart picks** and a rewards card, Shop (incl. **Buy to Clear**, the Surprise Harvest Bag and **harvest pre-orders**), My orders with **delivery tracking**, **Rewards**, Group buy, Preferences (**profile editing**), Ask MEOD |
+| **Admin** | `admin@tyllage.test` | Everything in the staff sidebar below, plus **Users**, **Audit log** and **Settings** (editable AI assumptions and unit costs). Admins approve campaigns and price changes proposed by someone else, and set clearance minimum prices |
+| **Sales staff** | `sales@tyllage.test` | The staff sidebar below, minus Users / Audit log / Settings. Customer names and phones are **masked**, campaigns and price proposals need an admin's approval, and only an admin can set a clearance **minimum price** (staff see it, read-only) |
+| **Farm worker** | `worker@tyllage.test` | Phone-first **Greenhouse round** (photo, condition and harvest estimate per batch, grouped by greenhouse; saved on the phone first and uploaded when there's signal), **Past rounds** and **Signal check**. Nothing else |
+| **Group leader** | `leader@tyllage.test`, `leader2@tyllage.test` | Own group buys and share link, members' orders (**masked**), commission ledger with a worked example |
+| **Customer** | `customer@tyllage.test` | Home with **Smart picks** and a rewards card, Shop (incl. **Buy to Clear**, the Surprise Harvest Bag and **harvest pre-orders**), My orders with **delivery tracking**, **Rewards**, Group buy, Preferences (**profile editing**), Ask Tyllage |
 
 ### Staff and admin sidebar
 
@@ -124,11 +124,11 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 | Message writing by a language model | Optional LLM | Future |
 | Predicting which promotion works best | Model trained on recorded results | Future, once each type has enough campaigns |
 
-- **Ask Tyllage** (staff): a chat, laid out like the customer's Ask MEOD, for questions in English or 中文, typed or spoken (browser speech recognition). Answers are tables of real records with "How I worked this out" and links to the page behind them. If the records can't answer, it says so.
+- **Ask Tyllage** (staff): a chat, laid out like the customer's Ask Tyllage, for questions in English or 中文, typed or spoken (browser speech recognition). Answers are tables of real records with "How I worked this out" and links to the page behind them. If the records can't answer, it says so.
 - **"Why?" panels and the AI decision ledger.** Demand Radar, Price Advisor, Campaign Advisor and Harvest allocation suggestions open a "Why?" panel: the data, calculation, assumptions, confidence, who decided and what happened. Price, campaign, quote and visit decisions are logged to the ledger.
 - **Weekly briefing.** Ranked priorities across farm ops, sales and customers, a harvest and pack summary, a sales pulse, a 7-day calendar and an editable summary to copy.
 - **Demand Radar.** Supply (stock + planned harvests) vs demand (pre-orders, confirmed trade orders, expected sales) per crop for the next 3 weeks, with a suggested next step. Also a printable **harvest & pack list** for the next 3 delivery days.
-- **Lost demand.** Unmet requests, "Notify me" on sold-out products and crops MEOD doesn't grow, grouped per crop with a verdict, a substitute in stock and notify-when-back drafts.
+- **Lost demand.** Unmet requests, "Notify me" on sold-out products and crops Tyllage doesn't grow, grouped per crop with a verdict, a substitute in stock and notify-when-back drafts.
 - **Harvest allocation** and **Decision twin.** Where each upcoming harvest goes (trade, pre-orders, group buys, shop), and a 2-week what-if model with sliders and stress tests comparing five responses.
 - **Harvest Planner** (with **photo grading** of harvest photos into Grade A / Cosmetic / Check) and **Harvest Rescue** (sell-by deadlines per batch and ranked rescue options).
 - **Greenhouse rounds** (no drones or sensors). Workers keep doing their normal inspection walk; the phone records it.
@@ -148,7 +148,7 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 
   Batch history shows the two on separate lines, "Outside (forecast)" and "Inside (thermometer)". NEA's figures are never treated as greenhouse conditions.
 - **Batch health trend.** Improving, Stable or Worsening, from the worker-confirmed condition (never the photo check), one check per round over the last 21 days. With fewer than two rounds it says **Insufficient history**, not Stable.
-- **Weather-aware daily advisory** (on the round page, for workers and staff). Today's forecast for MEOD's area (Lim Chu Kang, west region) comes live from NEA's public forecasts on data.gov.sg. Rules turn it into advice:
+- **Weather-aware daily advisory** (on the round page, for workers and staff). Today's forecast for Tyllage's area (Lim Chu Kang, west region) comes live from NEA's public forecasts on data.gov.sg. Rules turn it into advice:
   - **Hot day (33°C+):** which greenhouses' leafy greens to check first for wilting, with those already under watch first.
   - **Showers or thunder:** when they'll hit, a lightning warning, and which delivery days may run late.
   - **Very humid:** which greenhouses to check for mould or rot.
@@ -165,8 +165,8 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
   - For each crop: festive demand vs planned harvests, the gap, and the last day to sow to close it.
   - Harvest Planner shows a **Sow now for the festivals** panel when a sowing deadline is within 3 weeks.
   - Campaign Advisor suggests a normal-price festive pre-order message 3 weeks before a festival.
-  - Uplifts are illustrative until MEOD's own festive sales replace them.
-- **Market price check** (Seasonal calendar). Staff record supermarket and wet-market prices for a similar pack. Tyllage compares the last 30 days with MEOD's price: Premium, At market or Below market.
+  - Uplifts are illustrative until Tyllage's own festive sales replace them.
+- **Market price check** (Seasonal calendar). Staff record supermarket and wet-market prices for a similar pack. Tyllage compares the last 30 days with Tyllage's price: Premium, At market or Below market.
 - **Price Advisor with Margin Guard** and a **Promotion simulator**: discount, bundle or bulk-trade suggestions checked against a price floor; no surge pricing.
 - **Campaign Studio**: a ranked list of recommended campaigns, AI-drafted messages per language, and **restock reminders**.
 - **Promotion Intelligence** (inside Campaign Studio): every recommendation is ranked as **Suggested**, **Alternative** and **Avoid**, each with a reason. The suggested option names the kind of promotion that fits (Harvest Drop, Smart bundle, Rescue offer, Group-buy milestone, Learning-journey voucher, Repeat-buyer reward, Reactivation, Normal-price promo), or says **No promotion needed**.
@@ -187,8 +187,8 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 - **Shop and cart.** Live stock checks, a group-code box, a reward-voucher picker, a **free-delivery progress bar** and the delivery address. Stock is re-checked when you place the order.
 - **Harvest pre-orders.** Reserve from an upcoming batch. Pre-orders don't take stock; the harvest serves them first.
 - **Buy to Clear.** A Shop section for clearance-priced produce and the pre-order **Surprise Harvest Bag**.
-- **My orders.** Status filters, and on each order a 5-step tracker, **Track** (route map, driver or proof of delivery, timeline), a printable **Receipt**, **Reorder** and **Get help** (opens Ask MEOD with the order number filled in).
-- **Grow with MEOD rewards.** Points per S$1, growth-stage tiers counted in bunches of MEOD-grown produce, 2× points on Buy to Clear and pre-orders, tier-up vouchers, a stamp card and points history.
+- **My orders.** Status filters, and on each order a 5-step tracker, **Track** (route map, driver or proof of delivery, timeline), a printable **Receipt**, **Reorder** and **Get help** (opens Ask Tyllage with the order number filled in).
+- **Grow with Tyllage rewards.** Points per S$1, growth-stage tiers counted in bunches of Tyllage-grown produce, 2× points on Buy to Clear and pre-orders, tier-up vouchers, a stamp card and points history.
 - **Smart picks.** Each in-stock product is scored for **restock** timing, **pairs well**, **your taste** and **fresh** produce, with a reason and a % match. Turning personalisation off switches to generic fresh picks.
 - **Profile.** Photo (resized in the browser), contact email, Singapore mobile number and delivery address, all checked on Save.
 
@@ -211,23 +211,23 @@ What each part of the intelligence actually is today (also shown in Campaign Stu
 - **Settings:** business rules as cards, editable AI assumptions and per-product unit costs (each shows what uses it and previews the change), and **Reset demo data**.
 - Users, Customers and Audit log pages with filters and search. Every action is written to the Audit log.
 
-### Business rules (illustrative — MEOD to confirm)
+### Business rules (illustrative — Tyllage to confirm)
 
 All of these live in `RULES` in `js/data.js`. Admins can change the AI assumptions and unit costs in **Settings**.
 
 - **Pricing:** amounts are integer cents. Group discount is 5%. Delivery is free from S$60, otherwise S$8. Deliveries run Tue / Thu / Sat. Trade (B2B) price is 80% of retail.
 - **Commission:** 5% of net merchandise (subtotal − discount, delivery excluded). It counts once an order is paid, and a refund posts a matching negative adjustment. The ledger is rebuilt from the orders, so it always reconciles.
-- **Stock never guesses.** A sync older than 6 hours, or a failed one, shows as *Checking stock*. Those items can't be ordered, and Ask MEOD won't confirm them.
+- **Stock never guesses.** A sync older than 6 hours, or a failed one, shows as *Checking stock*. Those items can't be ordered, and Ask Tyllage won't confirm them.
 - **Buy to Clear.** A clearance price can never be below its minimum price (default 60% of normal). Clearance stock is a discounted slice of a product's own stock, so a sale decrements both. Bag pre-orders close 10pm the day before each delivery.
 - **Harvest pre-orders** close 10pm the night before harvest. 60% of a batch's expected yield opens to pre-order by default. A cancel or refund frees the spot.
 - **Margin Guard:** no price may go below max(unit cost + 15% margin, the minimum price). Short crops get "hold price", never a surge.
 - **Promotions (`RULES.promo`):** a Harvest Drop stays at the normal price when 25% or less of the harvest is uncommitted or pre-orders are filling fast. Between 25% and 50% it suggests a bundle (10% off the pair). Above 50%, with slow pre-orders, it suggests 10% off the drop spots only. A drop is sized to the smaller of the uncommitted amount and the pre-order spots left. At approval, the drop must still fit in the spots left and pass Margin Guard; if either check fails, the approval fails and nothing changes. Approval never raises a batch's pre-order limit. Uncommitted figures can't double-count across two batches of the same crop: each batch only counts trade orders, standing orders and usual sales from its own harvest day up to the next batch's, and pre-orders belong to one batch. Group goals pay S$3 per member, visit vouchers are S$5, and results count orders by recipients within 7 days of sending.
-- **Who does what:** MEOD owns the produce, sets and approves prices and offers, sends from MEOD Fresh and owns its customer relationships. Tyllage analyses, recommends, drafts and reports. It never buys or resells produce.
+- **Who does what:** Tyllage owns the produce, sets and approves prices and offers, sends from Tyllage Fresh and owns its customer relationships. Tyllage analyses, recommends, drafts and reports. It never buys or resells produce.
 - **Harvest Rescue:** sell-by dates come from a shelf life per category (4–7 days).
 - **Rewards:** 1 point per S$1; 100 points = S$5 voucher (S$20 minimum on full-price items, valid 90 days); 2× points on anti-waste lines; four tiers (Seedling, Sprout, Harvester, Farm Friend). Points come from orders, so refunds reverse them.
 - **Visits:** up to 200 guests, 40 per session, 3 sessions a day; 5% of a visit group's orders goes to its fund; the farm-shop code stays open 7 days.
 - **Greenhouse rounds (`RULES.inspect`):** 8 demo greenhouses (GH-01 to GH-08). Every batch belongs to one; new batches are assigned automatically. Only growing batches are inspected. Changes within ±20% apply automatically; anything bigger, or marked "Needs review", needs the farm manager. In the demo the admin is the farm manager: sales staff can see estimate changes, their effect on orders and the follow-up tasks, but can't approve estimates.
-- **Ask MEOD** detects language (EN / 中文 / BM; Tamil falls back to English) and what the customer is asking about. Complaints, refunds, payment and food-safety messages **create a ticket and hand over to a person**, and the reply is honest about after-hours wait times.
+- **Ask Tyllage** detects language (EN / 中文 / BM; Tamil falls back to English) and what the customer is asking about. Complaints, refunds, payment and food-safety messages **create a ticket and hand over to a person**, and the reply is honest about after-hours wait times.
 
 ### Delivery tracking (mock adapter)
 
@@ -239,7 +239,7 @@ To connect real tracking later, replace just this function. The source could be:
 - a courier API (e.g. Ninja Van, Lalamove), or
 - a driver app (e.g. Detrack).
 
-Which one depends on who does MEOD's deliveries; that's an open question in [audit.md](audit.md).
+Which one depends on who does Tyllage's deliveries; that's an open question in [audit.md](audit.md).
 
 ---
 
@@ -257,7 +257,7 @@ css/portal.css    portal styles
 js/data.js        demo data, RULES, pricing, commission, stock, smart picks, harvests,
                   Demand Radar, Margin Guard, rewards, Ask Tyllage answers,
                   delivery tracking adapter, storage + migrations
-js/assist.js      Ask MEOD rule-based assistant (shared by site and portal)
+js/assist.js      Ask Tyllage rule-based assistant (shared by site and portal)
 js/main.js        public site: nav, produce catalogue, booking form,
                   chat widget, scroll-to-top
 js/visit.js       visitor farm shop
@@ -272,7 +272,7 @@ js/pwa.js         registers the service worker, "Install app"
 sw.js             service worker: portal opens with no signal
 manifest.webmanifest  installable app (name, icons, colours)
 
-assets/           MEOD-supplied originals (logo SVG, photos)
+assets/           Tyllage-supplied originals (logo SVG, photos)
 assets/img/       optimised WebP copies the site actually loads
 ```
 
@@ -284,11 +284,11 @@ assets/img/       optimised WebP copies the site actually loads
 
 **Third-party scripts, loaded only when needed** from cdnjs: SheetJS (`xlsx` 0.18.5) when an Excel file is imported, and `qrcodejs` 1.0.0 when a visit QR code is shown. CSV import and everything else work offline. See [SECURITY.md](SECURITY.md).
 
-**Public weather data:** the round page reads NEA's 24-hour and 2-hour forecasts from `api-open.data.gov.sg` with plain GET requests. Nothing about MEOD, its staff or customers is sent. With no signal it shows the last forecast saved on the phone, labelled "Last saved · offline", or demo weather if there isn't one.
+**Public weather data:** the round page reads NEA's 24-hour and 2-hour forecasts from `api-open.data.gov.sg` with plain GET requests. Nothing about Tyllage, its staff or customers is sent. With no signal it shows the last forecast saved on the phone, labelled "Last saved · offline", or demo weather if there isn't one.
 
 ## Offline-first rounds and the installable app
 
-Signal can drop inside MEOD's greenhouses, so greenhouse rounds work without it.
+Signal can drop inside Tyllage's greenhouses, so greenhouse rounds work without it.
 
 - **Saved on the phone first.** Every inspection gets its own ID and a status shown on its batch:
   - **Saved on device:** just saved.
@@ -299,10 +299,10 @@ Signal can drop inside MEOD's greenhouses, so greenhouse rounds work without it.
 - **No duplicates.** The server remembers every ID it has accepted. Re-sending an inspection returns the same receipt and is never counted twice, and a round can't be sent twice.
 - **Signal and demo switch.** The round's hero shows the phone's signal. **Simulate no signal** fakes a dead zone so the whole save → wait → upload → receipt cycle can be shown anywhere. Uploads retry automatically when the signal returns, and every 30 seconds while anything is waiting.
 - **On this phone** card: inspections, photo and data size, the browser's storage allowance, and how much isn't received yet, with a warning not to clear browser data until it is.
-- **Signal check** (worker) and **Signal by greenhouse** (staff). Workers test the connection inside each greenhouse, either automatically (a timed request to data.gov.sg, standing in for Tyllage's server) or by tapping "No signal". Two or more tests give a verdict per greenhouse: Good, Patchy or Dead zone. Demo-mode tests are kept apart and not counted. Run this at MEOD before relying on offline sync.
+- **Signal check** (worker) and **Signal by greenhouse** (staff). Workers test the connection inside each greenhouse, either automatically (a timed request to data.gov.sg, standing in for Tyllage's server) or by tapping "No signal". Two or more tests give a verdict per greenhouse: Good, Patchy or Dead zone. Demo-mode tests are kept apart and not counted. Run this at Tyllage before relying on offline sync.
 - **Installable app (PWA).** `manifest.webmanifest`, icons in `assets/icons/`, and a service worker (`sw.js`, registered by `js/pwa.js`). The portal's own files are fetched fresh when there's signal (or within 4 seconds) and otherwise come from the copy saved on the phone, so the round page opens even with no connection. Install with **Install app** on the "On this phone" card (Chrome or Edge), or Share → Add to Home Screen on iPhone. Bump `VERSION` in `sw.js` when the list of saved files changes.
 
-**What's simulated, and what real use needs.** There's no backend, so the "server" is simulated inside the browser and its receipts are labelled as simulated. In this prototype the phone is the only copy of an inspection, so nothing is deleted after a receipt, and clearing the browser's data loses it. Before real use MEOD needs:
+**What's simulated, and what real use needs.** There's no backend, so the "server" is simulated inside the browser and its receipts are labelled as simulated. In this prototype the phone is the only copy of an inspection, so nothing is deleted after a receipt, and clearing the browser's data loses it. Before real use Tyllage needs:
 - a shared server that acknowledges each inspection ID,
 - authenticated sign-in,
 - a screen lock and device rules for work phones,
@@ -317,7 +317,7 @@ Signal can drop inside MEOD's greenhouses, so greenhouse rounds work without it.
 
 ## Images
 
-MEOD-supplied originals stay in `assets/`, and the site loads the optimised WebP copies in `assets/img/`. To add or replace a photo:
+Tyllage-supplied originals stay in `assets/`, and the site loads the optimised WebP copies in `assets/img/`. To add or replace a photo:
 
 1. Drop the original into `assets/`.
 2. Export a WebP: about 1200 px wide for full-width photos (plus a ~640 px phone version), or 600 px for product shots.
@@ -330,7 +330,7 @@ Product photos for the catalogue are mapped in `IMAGES` in `js/data.js`. Product
 | Width | What changes |
 |---|---|
 | Any width | Portal tables wider than their panel switch to labelled cards |
-| ≤ 1100 px | Portal shop, chat (Ask MEOD and Ask Tyllage) and preferences stack to one column |
+| ≤ 1100 px | Portal shop, chat (Ask Tyllage and Ask Tyllage) and preferences stack to one column |
 | ≤ 960 px | Site nav collapses to a menu button; the Portal button stays |
 | ≤ 860 px | Two-column sections stack; portal sidebar becomes a swipeable top nav |
 | ≤ 640 px | Portal tables always become labelled cards; product, shop and Farm & More grids go two-up; chat goes full width |
@@ -354,7 +354,7 @@ The proposal's target stack is **Node/Express + PostgreSQL + Shopify Admin API +
 | AI decision ledger and Audit log | Append-only server-side logs |
 | `js/auth.js` | Server-side auth and role checks on every request |
 
-See [audit.md](audit.md) for the full gap list and open questions for MEOD.
+See [audit.md](audit.md) for the full gap list and open questions for Tyllage.
 
 ## License and ownership
 
@@ -362,7 +362,7 @@ See [audit.md](audit.md) for the full gap list and open questions for MEOD.
 
 This prototype, including its code, designs, business rules and documentation, is proprietary to Tyllage LLP and is shared under the [Tyllage Proprietary License](LICENSE). No licence is granted to use, copy, modify, deploy or redistribute it without Tyllage's prior written permission. GitHub's Terms of Service let you view and fork public repositories on GitHub; that does not give any further right to use this code.
 
-The MEOD name, logo, photographs and website copy belong to MEOD Farm and are used here for demonstration to MEOD only. Third-party libraries loaded at runtime (SheetJS and qrcodejs) remain under their own licences.
+The Tyllage name, logo, photographs and website copy belong to Tyllage and are used here for demonstration to Tyllage only. Third-party libraries loaded at runtime (SheetJS and qrcodejs) remain under their own licences.
 
 For licensing or partnership enquiries, contact the team through the [Tyllage GitHub organisation](https://github.com/Tyllage).
 

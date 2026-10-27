@@ -20,7 +20,7 @@
     email = String(email || '').trim().toLowerCase();
     var user = M.state.users.filter(function (u) { return u.email === email; })[0];
     if (!user || password !== M.DEMO_PASSWORD) return { ok: false, error: 'Email or password is incorrect.' };
-    if (user.disabled) return { ok: false, error: 'This account has been disabled. Contact MEOD admin.' };
+    if (user.disabled) return { ok: false, error: 'This account has been disabled. Contact Tyllage admin.' };
     var session = {
       email: user.email, name: user.name, role: user.role,
       customerId: user.customerId || null, leaderId: user.leaderId || null,

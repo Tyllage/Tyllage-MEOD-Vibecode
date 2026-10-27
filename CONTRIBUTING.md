@@ -8,7 +8,7 @@ If you are not a member of the Tyllage team:
 - **Found a security problem?** Report it privately as described in [SECURITY.md](SECURITY.md). Do not open a public issue.
 - **Interested in licensing, a pilot or a partnership?** Contact the team through the [Tyllage GitHub organisation](https://github.com/Tyllage).
 
-The rest of this guide is for **Tyllage team members** only, working on the Tyllage × MEOD Farm prototype. This is a vibecoding project: move fast, but keep it tidy and keep it safe.
+The rest of this guide is for **Tyllage team members** only, working on the Tyllage × Tyllage prototype. This is a vibecoding project: move fast, but keep it tidy and keep it safe.
 
 ## Ownership of your work
 
@@ -56,7 +56,7 @@ To start with fresh data, use **Portal → (admin) Settings → Reset demo data*
 ## Data rules
 
 - **Synthetic data only.** Use fake names, the `+65 8000 00xx` range and `.test` emails.
-- Never paste real MEOD customer, order or WhatsApp data into the repo, issues, screenshots or AI tools.
+- Never paste real Tyllage customer, order or WhatsApp data into the repo, issues, screenshots or AI tools.
 
 ## Before you open a PR
 

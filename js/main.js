@@ -1,5 +1,5 @@
 /* Public site behaviour: nav, scroll effects, produce grid, booking form and
- * the floating Ask MEOD assistant. Depends on data.js and assist.js. */
+ * the floating Ask Tyllage assistant. Depends on data.js and assist.js. */
 (function () {
   'use strict';
   var M = window.MEOD;
@@ -89,7 +89,7 @@
     if (chips.childElementCount) body.appendChild(chips);
     var line = el('div', { class: 'price-line' });
     line.appendChild(el('span', { class: 'price' }, M.money(p.priceCents)));
-    line.appendChild(el('a', { class: 'tile-buy', href: 'https://meodfresh.com/', target: '_blank', rel: 'noopener', 'aria-label': 'Buy ' + p.title + ' on MEOD Fresh' }, 'Buy ↗'));
+    line.appendChild(el('a', { class: 'tile-buy', href: 'https://meodfresh.com/', target: '_blank', rel: 'noopener', 'aria-label': 'Buy ' + p.title + ' on Tyllage Fresh' }, 'Buy ↗'));
     body.appendChild(line);
     tile.appendChild(body);
     return tile;
@@ -385,14 +385,14 @@
     });
   }
 
-  /* ---------- Ask MEOD assistant widget ---------- */
+  /* ---------- Ask Tyllage assistant widget ---------- */
   function mountAssist() {
-    var fab = el('button', { class: 'assist-fab', type: 'button', 'aria-label': 'Open Ask MEOD chat', 'aria-expanded': 'false' });
+    var fab = el('button', { class: 'assist-fab', type: 'button', 'aria-label': 'Open Ask Tyllage chat', 'aria-expanded': 'false' });
     fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
 
-    var panel = el('div', { class: 'assist-panel', role: 'dialog', 'aria-label': 'Ask MEOD chat' });
+    var panel = el('div', { class: 'assist-panel', role: 'dialog', 'aria-label': 'Ask Tyllage chat' });
     panel.innerHTML =
-      '<div class="assist-head"><div><strong>Ask MEOD</strong><small>Stock • Delivery • Group buys • EN / 中文 / BM</small></div>' +
+      '<div class="assist-head"><div><strong>Ask Tyllage</strong><small>Stock • Delivery • Group buys • EN / 中文 / BM</small></div>' +
       '<button class="assist-close" type="button" aria-label="Close chat">&times;</button></div>' +
       '<div class="assist-log" aria-live="polite"></div>' +
       '<div class="assist-suggest"></div>' +

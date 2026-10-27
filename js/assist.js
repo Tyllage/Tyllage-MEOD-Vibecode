@@ -41,7 +41,7 @@
   // bot offers a human — matches the "fallback to human if low confidence" rule.
   var T = {
     en: {
-      hi: 'Hi! I\'m Ask MEOD 🌱 I can check stock, prices, delivery and group-buy codes. What would you like?',
+      hi: 'Hi! I\'m Ask Tyllage 🌱 I can check stock, prices, delivery and group-buy codes. What would you like?',
       inStock: function (p, q, when) { return p.title + ' (' + p.subtitle + ') is in stock — ' + q + ' available at ' + M.money(p.priceCents) + '. Last synced ' + when + '.'; },
       out: function (p) { return 'Sorry, ' + p.title + ' is sold out right now. Want me to suggest something similar?'; },
       stale: function (p) { return 'I can\'t confirm ' + p.title + ' availability right now — our stock data is being refreshed. A team member can check for you.'; },
@@ -53,12 +53,12 @@
       visit: 'Farm tours and workshops are by appointment at 13 Neo Tiew Harvest Lane. You can book on our Experiences page.',
       clearance: function (bag, when) { return 'Our Surprise Harvest Bag comes in two sizes: Small ' + M.money(bag.small.priceCents) + ' (worth at least ' + M.money(bag.small.worthCents) + ') and Regular ' + M.money(bag.regular.priceCents) + ' (worth at least ' + M.money(bag.regular.worthCents) + '). Pre-order by ' + when + '. See everything on our Buy to Clear page — prices are illustrative.'; },
       clearanceStale: 'I can\'t confirm Surprise Harvest Bag availability right now — stock data is being refreshed. Check our Buy to Clear page shortly, or a team member can help.',
-      handoverOpen: 'I\'m sorry about this. I\'ve created ticket {id} and a MEOD team member will reply shortly. I won\'t try to resolve this myself.',
+      handoverOpen: 'I\'m sorry about this. I\'ve created ticket {id} and a Tyllage team member will reply shortly. I won\'t try to resolve this myself.',
       handoverClosed: 'I\'m sorry about this. I\'ve created ticket {id}. Our team is offline now (Mon–Sat 9am–6pm) and will reply when they\'re back.',
       unknown: 'I\'m not sure I understood. I can help with stock, prices, delivery, group buys or farm visits — or connect you to a person.'
     },
     zh: {
-      hi: '您好！我是 MEOD 小助手 🌱 可以帮您查库存、价格、配送和团购。',
+      hi: '您好！我是 Tyllage 小助手 🌱 可以帮您查库存、价格、配送和团购。',
       inStock: function (p, q, when) { return p.title + '（' + p.subtitle + '）有货，现有 ' + q + ' 份，价格 ' + M.money(p.priceCents) + '。库存更新于 ' + when + '。'; },
       out: function (p) { return '抱歉，' + p.title + ' 目前已售完。需要我推荐类似的蔬菜吗？'; },
       stale: function (p) { return '目前无法确认 ' + p.title + ' 的库存，数据正在更新中。我们的同事可以帮您确认。'; },
@@ -75,7 +75,7 @@
       unknown: '抱歉我不太明白。我可以帮您查库存、价格、配送、团购或参观，也可以为您转接人工。'
     },
     ms: {
-      hi: 'Hai! Saya Ask MEOD 🌱 Saya boleh semak stok, harga, penghantaran dan kod beli berkumpulan.',
+      hi: 'Hai! Saya Ask Tyllage 🌱 Saya boleh semak stok, harga, penghantaran dan kod beli berkumpulan.',
       inStock: function (p, q, when) { return p.title + ' ada stok — ' + q + ' unit pada ' + M.money(p.priceCents) + '. Dikemas kini ' + when + '.'; },
       out: function (p) { return 'Maaf, ' + p.title + ' telah habis dijual.'; },
       stale: function (p) { return 'Saya tidak dapat mengesahkan stok ' + p.title + ' sekarang. Kakitangan kami boleh semak untuk anda.'; },
@@ -151,7 +151,7 @@
         out.text = t.clearance({ small: bag.sizes[0], regular: bag.sizes[1] }, when);
       }
       // Let the UI add a tappable "Go to Buy to Clear" link — its href depends on whether
-      // this is the public chat widget or the portal's own Ask MEOD page.
+      // this is the public chat widget or the portal's own Ask Tyllage page.
       out.showClearanceLink = true;
     }
     else if (intent === 'delivery') out.text = t.delivery;

@@ -9,7 +9,7 @@ This is a proprietary project maintained by the Tyllage team; it does not accept
 - Be kind and patient, especially with teammates who are learning.
 - Give and accept constructive feedback on code, not on people.
 - Credit others' work and ideas.
-- Respect client confidentiality: MEOD's business information, data and unreleased plans stay within the project.
+- Respect client confidentiality: Tyllage's business information, data and unreleased plans stay within the project.
 - Take responsibility for mistakes and fix them openly.
 
 ## Unacceptable behaviour
@@ -22,7 +22,7 @@ This is a proprietary project maintained by the Tyllage team; it does not accept
 
 ## Scope
 
-This applies to Tyllage team members in all project spaces: the repository, issues, pull requests, chats, meetings, and client sessions with MEOD. It also applies to anyone who interacts with those spaces, and when someone represents Tyllage in public.
+This applies to Tyllage team members in all project spaces: the repository, issues, pull requests, chats, meetings, and client sessions with Tyllage. It also applies to anyone who interacts with those spaces, and when someone represents Tyllage in public.
 
 ## Enforcement
 

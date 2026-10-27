@@ -8,14 +8,14 @@
  *   - browning    dark orange-brown pixels
  * The share of yellow/brown among plant pixels sets a suggested grade. It judges LOOKS
  * ONLY — never food safety — and staff confirm every grade. A trained image model
- * (e.g. Teachable Machine on MEOD's own photos) could replace analyze() later without
+ * (e.g. Teachable Machine on Tyllage's own photos) could replace analyze() later without
  * changing the portal UI, as long as it returns the same shape.
  */
 (function () {
   'use strict';
   var M = window.MEOD;
 
-  // Illustrative thresholds — to be calibrated on MEOD's real produce during the pilot.
+  // Illustrative thresholds — to be calibrated on Tyllage's real produce during the pilot.
   var RULES = {
     cosmeticAt: 0.05,   // ≥ 5% yellow/brown leaf area → Cosmetic
     checkAt: 0.18,      // ≥ 18% → Check (a person should look at it)
@@ -155,7 +155,7 @@
     return c;
   }
 
-  // Demo photos for when no real harvest photos are at hand: MEOD's own product shots,
+  // Demo photos for when no real harvest photos are at hand: Tyllage's own product shots,
   // plus copies with yellowing or brown spots painted on (clearly labelled as simulated).
   function demoSamples(category) {
     var src = category === 'lettuces' ? 'assets/img/veg-mesclun.webp'

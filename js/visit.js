@@ -49,7 +49,7 @@
     var form = el('form', { class: 'form vs-code-form' },
       el('h1', { class: 'section-title', text: 'Visitor farm shop' }),
       message ? el('p', { class: 'form-error', text: message }) : null,
-      el('p', { class: 'lead', text: 'Visiting MEOD Farm with a school, company or community group? Enter the code your guide gave you, or scan the QR code.' }),
+      el('p', { class: 'lead', text: 'Visiting Tyllage with a school, company or community group? Enter the code your guide gave you, or scan the QR code.' }),
       el('label', null, 'Visit code', input),
       el('button', { class: 'btn btn-forest', type: 'submit', text: 'Open my group\'s shop' }));
     form.addEventListener('submit', function (e) { e.preventDefault(); location.search = '?code=' + encodeURIComponent(input.value.trim().toUpperCase()); });
@@ -69,7 +69,7 @@
     el('span', { class: 'eyebrow dark', text: 'Visitor farm shop' }),
     el('h1', { class: 'section-title', text: 'Welcome, ' + orgName }),
     el('p', { class: 'lead', text: !booking ? 'Take the farm home with your group\'s code.'
-      : (M.clearance.parseDayKey(booking.date).getTime() > Date.now() ? 'See you at MEOD Farm on ' + longDate(booking.date) + '. ' : 'Thanks for visiting MEOD Farm on ' + longDate(booking.date) + '. ') +
+      : (M.clearance.parseDayKey(booking.date).getTime() > Date.now() ? 'See you at Tyllage on ' + longDate(booking.date) + '. ' : 'Thanks for visiting Tyllage on ' + longDate(booking.date) + '. ') +
         'Take the farm home: everything here was grown pesticide-free in Kranji.' }),
     el('ul', { class: 'vs-chips' },
       el('li', null, el('strong', { text: Math.round(M.RULES.groupDiscountRate * 100) + '% off' }), ' with code ', el('code', { text: ev.code })),
@@ -79,7 +79,7 @@
   if (!open) {
     root.textContent = '';
     add(root, head, el('div', { class: 'form' },
-      el('p', { class: 'lead', text: 'Your group\'s farm shop has closed, but you can still buy MEOD produce any time.' }),
+      el('p', { class: 'lead', text: 'Your group\'s farm shop has closed, but you can still buy Tyllage produce any time.' }),
       el('a', { class: 'btn btn-forest', href: 'produce.html', text: 'See our produce' })));
     return;
   }
@@ -151,10 +151,10 @@
       el('label', null, 'Your name', nameIn),
       el('label', null, 'WhatsApp / phone', phoneIn),
       el('label', null, 'Preferred language', langSel),
-      el('label', { class: 'vs-consent' }, consent, el('span', { text: 'Send me harvest updates, recipes and offers from MEOD on WhatsApp. I can stop anytime by replying STOP.' })),
+      el('label', { class: 'vs-consent' }, consent, el('span', { text: 'Send me harvest updates, recipes and offers from Tyllage on WhatsApp. I can stop anytime by replying STOP.' })),
       errorBox,
       el('button', { class: 'btn btn-forest vs-submit', type: 'button', disabled: !ls.length, text: ls.length ? 'Place order · ' + money(t.totalCents) : 'Place order', onclick: submit }),
-      el('p', { class: 'form-note', text: 'Prototype: your order and details are saved in this browser only. In the live version you\'d pay securely on MEOD Fresh.' }));
+      el('p', { class: 'form-note', text: 'Prototype: your order and details are saved in this browser only. In the live version you\'d pay securely on Tyllage Fresh.' }));
   }
   function draw() { drawGrid(); drawSummary(); }
 

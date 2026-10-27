@@ -1,4 +1,4 @@
-/* MEOD Portal — role-based dashboards (Tyllage SalesDesk, GroupBuy,
+/* Tyllage Portal — role-based dashboards (Tyllage SalesDesk, GroupBuy,
  * Campaign Studio, customer self-service). Depends on data.js, assist.js
  * and auth.js. All rendering goes through h(), which sets text with
  * textContent, so demo data can never inject HTML. */
@@ -251,7 +251,7 @@
       table([
         { label: 'Product', render: function (p) { return h('span', null, h('strong', { text: p.title }), h('br'), h('small', { text: p.subtitle })); } },
         { label: 'Category', render: function (p) { return M.CATEGORIES[p.category].label; } },
-        { label: 'Type', render: function (p) { return p.category === 'farm-more' ? 'Made by MEOD' : 'Fresh harvest'; } },
+        { label: 'Type', render: function (p) { return p.category === 'farm-more' ? 'Made by Tyllage' : 'Fresh harvest'; } },
         { label: 'Price', num: true, render: function (p) { return money(p.priceCents); } },
         { label: 'Qty', num: true, render: function (p) { return M.stockStatus(p).known ? String(p.stock.qty) : '—'; } },
         // Part of Qty that is listed on Buy to Clear: units left at the clearance price, plus
@@ -482,9 +482,9 @@
   /* ---- Restock reminders: suggested from purchase history, drafted per language ---- */
   // {first_name} and {days} are filled in per recipient when the campaign is sent.
   var RESTOCK_DRAFTS = {
-    en: function (p, next, tip) { return 'Hi {first_name} 🌱 It\'s been {days} days since your last ' + p.title + '. Fresh ' + p.title + ' is in stock for our next delivery (' + next + ') — reorder in one tap from your MEOD account. ' + (tip ? tip + ' ' : '') + 'Reply STOP to opt out.'; },
-    zh: function (p, next, tip) { return '{first_name} 您好 🌱 距离您上次购买 ' + p.title + ' 已经 {days} 天了。新鲜 ' + p.title + ' 现已有货，下次配送：' + next + '。在 MEOD 账户中一键回购。' + (tip || '') + '回复 STOP 取消订阅。'; },
-    ms: function (p, next, tip) { return 'Hai {first_name} 🌱 Sudah {days} hari sejak anda membeli ' + p.title + '. ' + p.title + ' segar kini ada stok untuk penghantaran seterusnya (' + next + ') — pesan semula dalam akaun MEOD anda. ' + (tip ? tip + ' ' : '') + 'Balas STOP untuk berhenti.'; }
+    en: function (p, next, tip) { return 'Hi {first_name} 🌱 It\'s been {days} days since your last ' + p.title + '. Fresh ' + p.title + ' is in stock for our next delivery (' + next + ') — reorder in one tap from your Tyllage account. ' + (tip ? tip + ' ' : '') + 'Reply STOP to opt out.'; },
+    zh: function (p, next, tip) { return '{first_name} 您好 🌱 距离您上次购买 ' + p.title + ' 已经 {days} 天了。新鲜 ' + p.title + ' 现已有货，下次配送：' + next + '。在 Tyllage 账户中一键回购。' + (tip || '') + '回复 STOP 取消订阅。'; },
+    ms: function (p, next, tip) { return 'Hai {first_name} 🌱 Sudah {days} hari sejak anda membeli ' + p.title + '. ' + p.title + ' segar kini ada stok untuk penghantaran seterusnya (' + next + ') — pesan semula dalam akaun Tyllage anda. ' + (tip ? tip + ' ' : '') + 'Balas STOP untuk berhenti.'; }
   };
   var LANG_SHORT = { en: 'English', zh: '中文', ms: 'Melayu' };
   function restockLang(c) { return RESTOCK_DRAFTS[c.language] ? c.language : 'en'; }
@@ -591,7 +591,7 @@
         done: S().campaigns.filter(function (c) { return c.kind === 'festive' && c.festival === f.key && c.status !== 'rejected'; })[0] || null,
         title: f.name + ' in ' + o.daysAway + ' day' + (o.daysAway === 1 ? '' : 's') + ': ' + crops.map(function (c) { return c.product.title; }).join(', '),
         why: f.why + ' Demand for these usually rises about ' + Math.round(f.uplift * 100) + '% in the ' + M.seasons.WINDOW_DAYS + ' days before. Open festive pre-orders at the normal price.',
-        ranking: M.promo.ranking('normal', null, { alt: ['A festive bundle', 'Pair them for the festive meal if MEOD wants a gift-style offer.'], avoid: ['A discount', 'Festive demand is coming anyway; a discount only gives margin away.'] }),
+        ranking: M.promo.ranking('normal', null, { alt: ['A festive bundle', 'Pair them for the festive meal if Tyllage wants a gift-style offer.'], avoid: ['A discount', 'Festive demand is coming anyway; a discount only gives margin away.'] }),
         label: 'Draft festive message', run: function () { festiveDraft(o, crops); } });
     });
     // 5. Short crops: say what NOT to promote.
@@ -668,7 +668,7 @@
     ['Photo check on inspections', 'Leaf-colour rule (not a trained model)', 'Now', 'Suggests a condition; the worker decides. Agreement with workers is measured in Greenhouse rounds.'],
     ['Estimate correction per crop', 'Measured from past harvests', 'Now', 'Average gap between worker estimates and real yields, once a crop has 3+ harvests.'],
     ['Weather advice', 'NEA forecast + rules', 'Now', 'Live public forecast from data.gov.sg; rules turn heat, showers and humidity into checks and delivery warnings.'],
-    ['Festive demand', 'Calendar + illustrative uplifts', 'Now', 'Singapore festivals and the crops they lift; MEOD\'s own sales history would replace the uplifts.'],
+    ['Festive demand', 'Calendar + illustrative uplifts', 'Now', 'Singapore festivals and the crops they lift; Tyllage\'s own sales history would replace the uplifts.'],
     ['Message writing by a language model', 'Optional LLM', 'Future', 'Would rephrase the same facts; it wouldn\'t decide prices or audiences.'],
     ['Predicting which promotion works best', 'Model trained on results', 'Future', 'Needs enough recorded campaigns per type first (3+ is the minimum to compare).']
   ];
@@ -683,7 +683,7 @@
         { label: 'How it works', render: function (r) { return h('span', null, r[1], h('br'), h('small', { class: 'hint', text: r[3] })); } },
         { label: 'Status', render: function (r) { return badge(r[2], r[2] === 'Now' ? 'green' : 'grey'); } }
       ], INTEL_LAYERS)),
-      h('small', { class: 'hint', text: 'Tyllage recommends and drafts. MEOD sets prices, approves every offer and sends it from MEOD Fresh to customers who opted in.' }));
+      h('small', { class: 'hint', text: 'Tyllage recommends and drafts. Tyllage sets prices, approves every offer and sends it from Tyllage Fresh to customers who opted in.' }));
   }
   // The card shows the four allocation figures; the dialog (wide) adds the pre-order spots left.
   function dropStats(d, wide) {
@@ -693,9 +693,9 @@
       wide ? cell('Pre-order spots left', d.spotsLeft + ' of ' + d.batch.preorderCap) : null);
   }
   var DROP_MSG = {
-    normal: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' are open for pre-order at ' + money(o.priceCents) + '. Reserve yours by ' + by + ' in your MEOD account and earn 2× reward points. Reply STOP to opt out.'; },
+    normal: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' are open for pre-order at ' + money(o.priceCents) + '. Reserve yours by ' + by + ' in your Tyllage account and earn 2× reward points. Reply STOP to opt out.'; },
     bundle: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. Pair it with ' + o.partner.title + ': both for ' + money(o.bundlePriceCents) + ' (usually ' + money(d.product.priceCents + o.partner.priceCents) + '), for the first ' + d.dropQty + ' orders before ' + by + '. Reply STOP to opt out.'; },
-    discount: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' Harvest Drop spots at ' + money(o.priceCents) + ' (usually ' + money(d.product.priceCents) + '), only until ' + by + '. Reserve in your MEOD account. Reply STOP to opt out.'; }
+    discount: function (d, o, day, by) { return 'Harvest Drop 🌱 We\'re picking ' + d.product.title + ' on ' + day + '. ' + d.dropQty + ' Harvest Drop spots at ' + money(o.priceCents) + ' (usually ' + money(d.product.priceCents) + '), only until ' + by + '. Reserve in your Tyllage account. Reply STOP to opt out.'; }
   };
   function draftDrop(d, o) {
     var p = d.product, a = audienceFor(p.id), id = M.nextId('CP');
@@ -742,7 +742,7 @@
               text: 'Draft for approval', onclick: function () { closeDialog(); draftDrop(d, o); } }));
         })),
         h('small', { class: 'rd-disclaimer', text: '*If all ' + d.dropQty + ' drop spots sell at that price. This is a scenario, not a sales forecast: actual sales may be zero. Contribution is after the unit cost in Settings; delivery and fixed costs aren\'t included.' }),
-        h('small', { class: 'hint', text: 'Goes out as MEOD Fresh on WhatsApp to ' + a.eligible.length + ' opted-in past buyer(s) of ' + M.CATEGORIES[p.category].label.toLowerCase() + '. Customers order in MEOD\'s own shop. The drop uses ' + d.dropQty + ' of the ' + d.spotsLeft + ' pre-order spots already open; it never opens more.' +
+        h('small', { class: 'hint', text: 'Goes out as Tyllage Fresh on WhatsApp to ' + a.eligible.length + ' opted-in past buyer(s) of ' + M.CATEGORIES[p.category].label.toLowerCase() + '. Customers order in Tyllage\'s own shop. The drop uses ' + d.dropQty + ' of the ' + d.spotsLeft + ' pre-order spots already open; it never opens more.' +
           (d.overLimit ? ' The other ' + d.overLimit + ' uncommitted would need the pre-order limit raised in Harvest Planner.' : '') })),
       h('div', { class: 'r-actions' }, h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: closeDialog })));
     dlg.addEventListener('close', function () { dlg.remove(); });
@@ -758,7 +758,7 @@
     var aud = m.members.filter(function (cid) { var cu = customer(cid); return cu && cu.consentMarketing; });
     S().campaigns.unshift({
       id: id, kind: 'group-milestone', productId: null, title: ev.title + ' — group goal', language: 'en',
-      message: 'Group goal 🌱 If ' + ev.title + ' orders ' + m.target + ' items from MEOD together in the next ' + m.days + ' days, everyone who ordered gets a ' + money(m.voucherCents) + ' voucher. Use code ' + ev.code + ' at checkout. Reply STOP to opt out.',
+      message: 'Group goal 🌱 If ' + ev.title + ' orders ' + m.target + ' items from Tyllage together in the next ' + m.days + ' days, everyone who ordered gets a ' + money(m.voucherCents) + ' voucher. Use code ' + ev.code + ' at checkout. Reply STOP to opt out.',
       audience: aud, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0,
       milestone: { eventId: ev.id, target: m.target, days: m.days, voucherCents: m.voucherCents }
     });
@@ -770,7 +770,7 @@
     var b = x.booking, id = M.nextId('CP');
     S().campaigns.unshift({
       id: id, kind: 'visit-voucher', productId: null, bookingId: b.id, voucherCents: x.voucherCents, title: (b.org || b.name) + ' — thank-you voucher', language: 'en',
-      message: 'Thanks for visiting MEOD Farm 🌱 Here\'s ' + money(x.voucherCents) + ' off your next order of fresh greens (min ' + money(M.RULES.rewards.voucherMinSpendCents) + ' of full-price produce). It\'s already in your MEOD account. Reply STOP to opt out.',
+      message: 'Thanks for visiting Tyllage 🌱 Here\'s ' + money(x.voucherCents) + ' off your next order of fresh greens (min ' + money(M.RULES.rewards.voucherMinSpendCents) + ' of full-price produce). It\'s already in your Tyllage account. Reply STOP to opt out.',
       audience: x.audience, status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
     });
     var used = Math.round(x.audience.length * M.RULES.promo.assumedResponse);
@@ -922,7 +922,7 @@
                 var r = M.promo.onApprove(c);
                 if (!r.ok) { toast(r.error); return; }
                 c.status = 'approved'; c.approvedBy = session.email;
-                commit('campaign.approved', c.id, c.kind === 'harvest-drop' ? 'Harvest Drop approved — ' + c.drop.qty + ' pre-order spots open' + (c.drop.option === 'discount' ? ' at ' + money(c.drop.priceCents) : '') + (c.drop.option === 'bundle' ? '. Publish the bundle in MEOD Fresh' : '') + '.'
+                commit('campaign.approved', c.id, c.kind === 'harvest-drop' ? 'Harvest Drop approved — ' + c.drop.qty + ' pre-order spots open' + (c.drop.option === 'discount' ? ' at ' + money(c.drop.priceCents) : '') + (c.drop.option === 'bundle' ? '. Publish the bundle in Tyllage Fresh' : '') + '.'
                   : c.kind === 'group-milestone' ? 'Group goal approved — progress shows to the group from now.' : 'Campaign approved.');
               }, { disabled: own, title: own ? 'You can\'t approve your own campaign' : null }),
               mini('Reject', function () { c.status = 'rejected'; commit('campaign.rejected', c.id, 'Campaign rejected.'); }, { danger: true }));
@@ -1055,7 +1055,7 @@
       h('label', null, 'Min price (S$)', minField),
       h('label', null, 'Reason', reasonSel),
       h('label', null, 'Available until', untilInput),
-      !canEditMin ? h('small', { class: 'pf-hint', style: 'grid-column:1/-1', text: 'Example minimum (MEOD to confirm) — only an admin can change this.' }) : null,
+      !canEditMin ? h('small', { class: 'pf-hint', style: 'grid-column:1/-1', text: 'Example minimum (Tyllage to confirm) — only an admin can change this.' }) : null,
       h('div', { style: 'grid-column:1/-1' }, errorBox),
       h('div', { style: 'grid-column:1/-1' }, h('button', { class: 'btn btn-sm btn-forest', type: 'submit', text: 'List for clearance' })));
 
@@ -1189,7 +1189,7 @@
       })) : null));
 
     /* ---- f. Money breakdown ---- */
-    append(root, panel('Money breakdown', 'Example numbers — MEOD to confirm real costs.',
+    append(root, panel('Money breakdown', 'Example numbers — Tyllage to confirm real costs.',
       h('div', { class: 'clearance-table' }, table([
         { label: 'Product', render: function (l) { var p = M.byId('products', l.productId); return p ? p.title : '—'; } },
         { label: 'Listed qty', num: true, render: function (l) { return String(l.qty); } },
@@ -1555,7 +1555,7 @@
       var p = M.byId('products', data.productId);
       commit('harvest.planned', r.id, p.title + ' batch added — ' + data.preorderCap + ' spots open for pre-order.');
     });
-    append(root, panel('Plan a new batch', 'The harvest date is suggested from typical growing time and snapped to a delivery day (Tue, Thu, Sat). Growing times are illustrative — MEOD to confirm.',
+    append(root, panel('Plan a new batch', 'The harvest date is suggested from typical growing time and snapped to a delivery day (Tue, Thu, Sat). Growing times are illustrative — Tyllage to confirm.',
       planHint, form));
 
     /* ---- d. Pre-orders to pack, by harvest day ---- */
@@ -1662,10 +1662,10 @@
       if (!r.ok) { toast(r.error); return; }
       var p = M.byId('products', pp.productId);
       commit('pricing.' + (approve ? 'approved' : 'rejected'), pp.id, approve
-        ? (pp.kind === 'discount' ? p.title + ' listed on Buy to Clear at ' + money(pp.toCents) + '.' : 'Bundle approved — publish it in MEOD Fresh.')
+        ? (pp.kind === 'discount' ? p.title + ' listed on Buy to Clear at ' + money(pp.toCents) + '.' : 'Bundle approved — publish it in Tyllage Fresh.')
         : 'Proposal for ' + p.title + ' rejected.');
     }
-    append(root, panel('Price proposals', 'Approved discounts become Buy to Clear listings (checked again by Margin Guard at that moment). Approved bundles are recorded for MEOD Fresh to publish.', table([
+    append(root, panel('Price proposals', 'Approved discounts become Buy to Clear listings (checked again by Margin Guard at that moment). Approved bundles are recorded for Tyllage Fresh to publish.', table([
       { label: 'Proposal', render: function (pp) {
         var p = M.byId('products', pp.productId), q = pp.partnerId ? M.byId('products', pp.partnerId) : null;
         return h('span', null, h('strong', { text: p.title + (q ? ' + ' + q.title : '') }), h('br'), h('small', { text: pp.reason }));
@@ -1712,7 +1712,7 @@
     priceIn.addEventListener('input', check);
     priceIn.value = (M.byId('products', sel.value).priceCents * 0.8 / 100).toFixed(2);
     check();
-    append(root, panel('Margin Guard checker', 'Try any price before proposing it. Costs are illustrative — MEOD would enter real growing, packaging and handling costs.',
+    append(root, panel('Margin Guard checker', 'Try any price before proposing it. Costs are illustrative — Tyllage would enter real growing, packaging and handling costs.',
       h('div', { class: 'guard-layout' },
         h('div', { class: 'guard-left' }, h('div', { class: 'form-grid guard-form' }, h('label', null, 'Product', sel), h('label', null, 'Price (S$)', priceIn)), out),
         costsOut)));
@@ -1748,7 +1748,7 @@
       : g.batch ? 'We\'ve traced it to one harvest batch and are checking how it was cooled and packed.' : 'We\'re looking into what went wrong.';
     var body = h('textarea', { rows: 8, 'aria-label': 'Message' });
     body.value = 'Hi {first_name},\n\nSorry about ' + what + ' — thank you for telling us. ' + fix +
-      '\n\nWe\'d like to make it right: reply here and we\'ll replace it on your next delivery, free.\n\n— The MEOD Farm team';
+      '\n\nWe\'d like to make it right: reply here and we\'ll replace it on your next delivery, free.\n\n— The Tyllage team';
     var dlg = h('dialog', { class: 'receipt-dialog reply-dialog fb-dialog', 'aria-labelledby': 'fb-title' });
     function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
     append(dlg,
@@ -2028,7 +2028,7 @@
       }))));
 
     /* ---- Support-local library ---- */
-    append(root, panel(aiTitle('Support local library'), 'Ready-made education posts about why local farms matter and Singapore\'s goal to grow more of its own food by 2035. They only use facts MEOD already states on its website.',
+    append(root, panel(aiTitle('Support local library'), 'Ready-made education posts about why local farms matter and Singapore\'s goal to grow more of its own food by 2035. They only use facts Tyllage already states on its website.',
       h('ul', { class: 'cs-library' }, M.content.LEARN.map(function (l) {
         var x = M.content.learnIdea(l);
         x.dayKey = M.content.nextDay(M.content.TYPES.learn.day); x.time = M.content.TYPES.learn.time;
@@ -2049,7 +2049,7 @@
 
   /* ---------------- Lost Demand Intelligence (staff + admin) ----------------
    * What people asked for and couldn't get: enquiries we couldn't fill, "Notify me" taps on
-   * sold-out products, and crops MEOD doesn't grow. Grouped per crop with a reason and what
+   * sold-out products, and crops Tyllage doesn't grow. Grouped per crop with a reason and what
    * to do, so a crop that sold out isn't mistaken for one nobody wants. */
   function lostWho(x) {
     if (x.customerId) return customerLabel(x.customerId);
@@ -2062,7 +2062,7 @@
     var body = h('textarea', { rows: 7, 'aria-label': 'Message' });
     body.value = 'Hi {first_name} 🌱\n\nYou asked us about ' + g.product.title + ' — good news, it\'s back' +
       (g.radar && g.radar.openBatch ? ' and you can pre-order it from the ' + shortWeekday(M.clearance.parseDayKey(g.radar.openBatch.harvestDate).toISOString()) + ' harvest' : '') +
-      '. Reply here or order on MEOD Fresh.\n\n— The MEOD Farm team';
+      '. Reply here or order on Tyllage Fresh.\n\n— The Tyllage team';
     var dlg = h('dialog', { class: 'receipt-dialog reply-dialog ld-dialog', 'aria-labelledby': 'ld-title' });
     function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
     append(dlg,
@@ -2092,7 +2092,7 @@
     var notGrown = ins.filter(function (g) { return !g.product; });
     append(root, h('div', { class: 'kpis' },
       kpi('Asked for, not sold', String(units), 'units across ' + open.length + ' request(s) · 30 days'),
-      kpi('Missed sales', money(value), 'at normal price, MEOD-grown crops'),
+      kpi('Missed sales', money(value), 'at normal price, Tyllage-grown crops'),
       kpi('Top missed crop', ins[0] ? (ins[0].product ? ins[0].product.title : ins[0].name) : '—', ins[0] ? ins[0].units + ' units · ' + ins[0].peopleCount + ' people' : 'nothing yet'),
       kpi('Crops we don\'t grow', String(notGrown.length), notGrown.length ? notGrown.map(function (g) { return g.name; }).slice(0, 2).join(', ') : 'no requests')));
 
@@ -2330,7 +2330,7 @@
     kindSel.addEventListener('change', function () { st.kind = kindSel.value; st.preview = null; show(); });
     file.addEventListener('change', function () { if (file.files[0]) readFile(file.files[0]); });
     show();
-    append(root, panel(aiTitle('Import from Excel'), 'Upload the spreadsheets MEOD already keeps — no new software to learn. Column names and product names are matched for you (including names like "Bok Choy" or "kailan"); dates can be day/month/year.',
+    append(root, panel(aiTitle('Import from Excel'), 'Upload the spreadsheets Tyllage already keeps — no new software to learn. Column names and product names are matched for you (including names like "Bok Choy" or "kailan"); dates can be day/month/year.',
       h('div', { class: 'form-grid im-form' },
         h('label', null, 'What are you importing?', kindSel),
         h('label', null, 'File (.xlsx or .csv)', file),
@@ -2345,7 +2345,7 @@
   }
 
   /* ---------------- Pilot metrics (staff + admin) ----------------
-   * What a pilot with MEOD would measure, from the portal's own records, against a recorded
+   * What a pilot with Tyllage would measure, from the portal's own records, against a recorded
    * baseline. No promises: each number says how it's worked out. */
   function pilotView(root) {
     var m = M.pilot.metrics(30), bl = (S().pilotBaselines || [])[0] || null;
@@ -2378,7 +2378,7 @@
         } }
       ], rows, ''),
       h('div', { class: 'pm-foot' },
-        h('small', { class: 'hint', text: 'Prototype figures from demo data. In a real pilot these come from MEOD\'s own orders, harvests and enquiries over the same weeks.' }),
+        h('small', { class: 'hint', text: 'Prototype figures from demo data. In a real pilot these come from Tyllage\'s own orders, harvests and enquiries over the same weeks.' }),
         h('div', { class: 'actions' },
           mini('Export CSV', function () {
             var csv = 'Measure,Baseline,Now\n' + rows.map(function (r) { return '"' + r.label + '",' + (bl ? bl[r.key] : '') + ',' + m[r.key]; }).join('\n');
@@ -2414,7 +2414,7 @@
       h('button', { class: 'pd-close', type: 'button', 'aria-label': 'Close', onclick: closeDialog }, iconCircle(ICONS.x, 'bare')),
       h('div', { class: 'rd-body why-body' },
         h('div', { class: 'rd-head' }, h('h2', { id: 'why-title', text: 'Why: ' + title }), aiPill()),
-        h('p', { class: 'why-lead', text: 'Worked out from MEOD\'s own records with fixed rules — no hidden model. A person decides; the AI only recommends.' }),
+        h('p', { class: 'why-lead', text: 'Worked out from Tyllage\'s own records with fixed rules — no hidden model. A person decides; the AI only recommends.' }),
         sec('Data used', h('ul', { class: 'why-data' }, (ex.inputs || []).map(function (r) { return h('li', null, h('span', { text: r[0] }), h('strong', { text: String(r[1]) })); }))),
         sec('Calculation', h('ol', { class: 'why-calc' }, (ex.calc || []).map(function (c) { return h('li', { text: c }); }))),
         sec('Assumptions', h('ul', { class: 'why-list' }, (ex.assumptions || []).map(function (a) { return h('li', { text: a }); }))),
@@ -2528,7 +2528,7 @@
       body.value = 'Hi ' + first + ',\n\nThanks for your enquiry about ' + q.product.title + '. Here\'s what we can offer:\n\n' +
         '• ' + o.kgWeek + ' kg a week' + (o.coverage < 100 ? ' (to start — we can grow into the full ' + q.qty + ' ' + q.unit + ')' : '') + '\n' +
         '• ' + money(o.kgPrice) + ' per kg, delivered ' + (q.days.filter(function (d) { return [2, 4, 6].indexOf(d) > -1; }).length ? q.days.map(function (d) { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]; }).join(' & ') : 'Tue, Thu or Sat') + '\n' +
-        '• Harvested the same morning in Kranji, pesticide-free\n• ' + q.termWeeks + '-week agreement, payment Net 14\n\nShall we put it in place from next week?\n\n— MEOD Farm (trade sales)';
+        '• Harvested the same morning in Kranji, pesticide-free\n• ' + q.termWeeks + '-week agreement, payment Net 14\n\nShall we put it in place from next week?\n\n— Tyllage (trade sales)';
       var dlg = h('dialog', { class: 'receipt-dialog reply-dialog qt-dialog', 'aria-labelledby': 'qt-title' });
       function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
       append(dlg,
@@ -2633,7 +2633,7 @@
     [sel, lose, cancel].forEach(function (el) { el.addEventListener('change', draw); });
     [hr, dr].forEach(function (el) { el.addEventListener('input', draw); });
     draw();
-    append(root, panel(aiTitle('Try a what-if'), 'A model of the next 2 weeks for one crop — MEOD\'s orders, harvests and buyers, not the greenhouse. Move the sliders or run a stress test, and compare what each response would earn.',
+    append(root, panel(aiTitle('Try a what-if'), 'A model of the next 2 weeks for one crop — Tyllage\'s orders, harvests and buyers, not the greenhouse. Move the sliders or run a stress test, and compare what each response would earn.',
       h('div', { class: 'tw-controls' },
         h('label', null, 'Crop', sel),
         h('label', { class: 'tw-range' }, h('span', null, 'Harvest ', hrOut), hr),
@@ -2646,13 +2646,13 @@
   /* ---------------- Ask Tyllage: Ops Copilot (staff + admin) ----------------
    * Questions in English or 中文, typed or spoken. Answers are tables of real records, with how
    * they were worked out and links to the pages behind them — or "I can't answer that yet".
-   * Laid out like the customer's Ask MEOD chat. */
+   * Laid out like the customer's Ask Tyllage chat. */
   var COPILOT_EXAMPLES = ['Which vegetables are selling slower this week?', 'What enquiries haven\'t been answered?', 'What\'s at risk of going to waste?', 'What is waiting for approval?', '哪些询问还没回复？', '哪些蔬菜卖得慢？', 'How is Kai Lan doing?'];
   var MIC_ICON = '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>';
   var COPILOT_PLACEHOLDER = 'Ask about sales, stock, harvests, enquiries… (English or 中文)';
   function copilotView(root) {
     var st = copilotView.state || (copilotView.state = { history: [
-      { who: 'bot', text: 'Hi ' + String(session.name || 'there').split(' ')[0] + '! I\'m Tyllage 🌱 Ask me about sales, stock, harvests, enquiries or approvals, in English or 中文. I answer from MEOD\'s records and show my working.', at: new Date().toISOString() }
+      { who: 'bot', text: 'Hi ' + String(session.name || 'there').split(' ')[0] + '! I\'m Tyllage 🌱 Ask me about sales, stock, harvests, enquiries or approvals, in English or 中文. I answer from Tyllage\'s records and show my working.', at: new Date().toISOString() }
     ] });
     var log = h('div', { class: 'chat-log', 'aria-live': 'polite' });
     var input = h('input', { placeholder: COPILOT_PLACEHOLDER, maxlength: 200, 'aria-label': 'Ask Tyllage', autocomplete: 'off' });
@@ -2709,7 +2709,7 @@
         h('header', { class: 'chat-header' },
           h('span', { class: 'avatar av-bot big', 'aria-hidden': 'true', text: 'T' }),
           h('div', { class: 'chat-head-text' }, h('strong', { text: 'Ask Tyllage' }),
-            h('small', null, h('span', { class: 'status-dot on', text: 'Answers from MEOD\'s records' }), ' · English / 中文')),
+            h('small', null, h('span', { class: 'status-dot on', text: 'Answers from Tyllage\'s records' }), ' · English / 中文')),
           aiPill()),
         log, chips, form),
       h('aside', { class: 'chat-side' },
@@ -2726,7 +2726,7 @@
           h('label', { class: 'cp-lang' }, h('small', { text: 'Voice language' }), lang)),
         h('section', { class: 'panel human-card' },
           h('h2', { text: 'No guessing' }),
-          h('p', { class: 'hint', text: 'Every answer comes from MEOD\'s records, shows how it was worked out and links to the page behind it. If the records can\'t answer, Tyllage says so.' })))));
+          h('p', { class: 'hint', text: 'Every answer comes from Tyllage\'s records, shows how it was worked out and links to the page behind it. If the records can\'t answer, Tyllage says so.' })))));
   }
 
   /* ---- Small add-ons: substitutes, learning-journey packages, re-invites ---- */
@@ -2791,7 +2791,7 @@
     var upcomingOrgs = S().bookings.filter(function (b) { return b.status !== 'declined' && M.clearance.parseDayKey(String(b.date).slice(0, 10)).getTime() >= now; }).map(function (b) { return b.org; });
     var cands = past.filter(function (b) { return upcomingOrgs.indexOf(b.org) < 0; });
     var invited = S().visitInvites || [];
-    return panel(aiTitle('Invite past groups back'), 'Organisations that visited before and have nothing booked. Only those who agreed to hear from MEOD again can be invited.',
+    return panel(aiTitle('Invite past groups back'), 'Organisations that visited before and have nothing booked. Only those who agreed to hear from Tyllage again can be invited.',
       cands.length ? table([
         { label: 'Organisation', render: function (b) { return h('span', null, h('strong', { text: b.org || b.name }), h('br'), h('small', { text: b.experience + ' · ' + b.pax + ' guests' })); } },
         { label: 'Last visit', render: function (b) { return shortDate(M.clearance.parseDayKey(String(b.date).slice(0, 10)).toISOString()); } },
@@ -2801,7 +2801,7 @@
           if (!b.consentFollowUp) return h('small', { class: 'hint', text: 'Can\'t contact' });
           if (invited.some(function (x) { return x.bookingId === b.id; })) return h('small', { class: 'pending-note', text: 'Invited' });
           return mini('Draft invite', function () {
-            var msg = prompt('Invite message (simulated send):', 'Hi ' + firstName(b.name) + ', thank you for visiting MEOD Farm with ' + (b.org || 'your group') + '! We\'d love to host ' + (b.groupType === 'school' ? 'another class' : 'you') + ' again — new this season: a hands-on harvest session. Reply to pick a date.');
+            var msg = prompt('Invite message (simulated send):', 'Hi ' + firstName(b.name) + ', thank you for visiting Tyllage with ' + (b.org || 'your group') + '! We\'d love to host ' + (b.groupType === 'school' ? 'another class' : 'you') + ' again — new this season: a hands-on harvest session. Reply to pick a date.');
             if (msg === null) return;
             S().visitInvites = invited.concat([{ bookingId: b.id, at: new Date().toISOString(), by: session.email, message: msg }]);
             commit('booking.reinvite', b.id, 'Invite sent to ' + (b.org || b.name) + ' (simulated).');
@@ -2813,12 +2813,12 @@
   /* ---------------- Harvest Rescue (staff + admin) ----------------
    * Harvested batches nearing (or past) their sell-by date, with unsold units and value at
    * risk, AI-ranked rescue options (trade buyers first — full price — then customer alerts,
-   * Buy to Clear within the minimum price, or processing into MEOD products), and a log of
+   * Buy to Clear within the minimum price, or processing into Tyllage products), and a log of
    * what was done. Past the sell-by date, quality and food safety are a staff decision. */
   var RESCUE_LEVEL = {
     expired: ['Past sell-by', 'red'], urgent: ['Sell by tomorrow', 'red'], soon: ['2 days left', 'amber'], ok: ['On track', 'green']
   };
-  var RESCUE_ACTION = { clear: 'Listed on Buy to Clear', offer: 'Offered to trade buyer', alert: 'Customer alert drafted', process: 'Processed into MEOD product', donate: 'Donated', compost: 'Composted' };
+  var RESCUE_ACTION = { clear: 'Listed on Buy to Clear', offer: 'Offered to trade buyer', alert: 'Customer alert drafted', process: 'Processed into Tyllage product', donate: 'Donated', compost: 'Composted' };
   function rescueLevelLabel(x) {
     if (x.level === 'ok') return [x.daysLeft + ' days left', 'green'];
     if (x.level === 'urgent' && x.daysLeft === 0) return ['Sell by today', 'red'];
@@ -3025,21 +3025,21 @@
       caterer: 'Bulk Asian greens on a fixed schedule, with pre-orders so event quantities are guaranteed.',
       school: 'Canteen greens grown 20 minutes away, linked to a learning journey for students.',
       hotel: 'Local, pesticide-free produce for a sustainability story — helping Singapore grow more of its own food by 2035.'
-    }[l.type] || 'Fresh, pesticide-free MEOD produce at trade price.';
+    }[l.type] || 'Fresh, pesticide-free Tyllage produce at trade price.';
     return t + (plenty ? ' In good supply now: ' + plenty + '.' : '');
   }
   function b2bDraft(kind, x) {
     var a = x.account, l = x.lead, name = firstName(a ? a.contact : l ? l.name : '');
-    var sign = '\n\nThank you,\nMEOD Farm Trade Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
+    var sign = '\n\nThank you,\nTyllage Trade Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
     if (kind === 'missing') return { subject: 'Your usual order for ' + b2bDay(x.dayKey), body: 'Hi ' + name + ',\n\nJust checking in on your usual order for ' + b2bDay(x.dayKey) + '. Shall we prepare the same as usual (' + usualList(a) + ')?\n\nReply to confirm, or let us know any changes and we\'ll adjust.' + sign };
     if (kind === 'declining') return { subject: 'How are the greens working for you?', body: 'Hi ' + name + ',\n\nWe noticed your recent orders have been a little lighter, and wanted to check everything is going well — with the produce, deliveries or your menu.\n\nWe\'re happy to adjust quantities, change your delivery days, or suggest what\'s in season.' + sign };
-    if (kind === 'lapsed') return { subject: 'We\'ve missed you at MEOD Farm', body: 'Hi ' + name + ',\n\nWe haven\'t seen your order for a few weeks and wanted to check in. Your usual (' + usualList(a) + ') is growing well this week.\n\nWould you like us to restart your standing order, or adjust it?' + sign };
+    if (kind === 'lapsed') return { subject: 'We\'ve missed you at Tyllage', body: 'Hi ' + name + ',\n\nWe haven\'t seen your order for a few weeks and wanted to check in. Your usual (' + usualList(a) + ') is growing well this week.\n\nWould you like us to restart your standing order, or adjust it?' + sign };
     if (kind === 'offer') {
       var p = x.product, tp = Math.round(p.priceCents * M.RULES.b2bPriceRate), next = M.b2b.stats(a).upcoming[0];
       return { subject: 'Plenty of ' + p.title + ' this week', body: 'Hi ' + name + ',\n\nWe have an excellent harvest of ' + p.title + ' this week — ' + money(tp) + ' per unit at trade price. Would you like us to add some to your next order' + (next ? ' on ' + b2bDay(next.dayKey) : '') + '?\n\nJust reply with the quantity.' + sign };
     }
     if (kind === 'lead') return { subject: 'Fresh local greens for ' + l.name.replace(/\s*\(demo\)\s*/i, ''), body: 'Hi there,\n\nFollowing up on our chat — ' + leadPitch(l) + '\n\nCould we send a free sample box, or arrange a quick farm visit to show you what we grow?' + sign };
-    return { subject: 'Hello from MEOD Farm', body: 'Hi ' + name + ',\n\n' + sign };
+    return { subject: 'Hello from Tyllage', body: 'Hi ' + name + ',\n\n' + sign };
   }
   function openB2BMessage(kind, x, onSent) {
     document.querySelectorAll('.b2b-dialog').forEach(function (d) { if (d.open) d.close(); d.remove(); });
@@ -3279,7 +3279,7 @@
     return { thisWk: thisWk, lastWk: lastWk, change: lastWk.cents ? Math.round((thisWk.cents - lastWk.cents) / lastWk.cents * 100) : null, rising: rising, visits: visits };
   }
   function briefingDigest(pr, pulse, pick) {
-    var lines = ['🌱 MEOD weekly briefing — ' + weekBounds().start.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })];
+    var lines = ['🌱 Tyllage weekly briefing — ' + weekBounds().start.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })];
     lines.push('');
     lines.push('Top priorities:');
     pr.slice(0, 5).forEach(function (p, i) { lines.push((i + 1) + '. ' + p.title); });
@@ -3365,7 +3365,7 @@
       h('div', { class: 'brief-pulse' },
         h('div', null, h('small', { text: 'Last 7 days' }), h('strong', { text: money(pulse.thisWk.cents) }), h('small', { text: pulse.thisWk.n + ' order(s) in Tyllage' })),
         h('div', null, h('small', { text: 'Week before' }), h('strong', { text: money(pulse.lastWk.cents) }), h('small', { text: pulse.lastWk.n + ' order(s)' }))),
-      pulse.rising.length ? h('div', { class: 'brief-rising' }, h('small', { text: 'Rising demand (MEOD Fresh history):' }),
+      pulse.rising.length ? h('div', { class: 'brief-rising' }, h('small', { text: 'Rising demand (Tyllage Fresh history):' }),
         pulse.rising.map(function (c) { return h('span', { class: 'mini-chip', text: c.product.title + ' ↑ ' + c.trendPct + '%' }); })) : null,
       h('div', { class: 'brief-visits' }, h('small', { text: 'Visits coming up' }),
         pulse.visits.length ? h('ul', null, pulse.visits.map(function (b) { return h('li', null, h('strong', { text: b.org || b.name }), ' · ' + b.pax + ' guests · ' + shortWeekday(M.clearance.parseDayKey(b.date).toISOString())); }))
@@ -3458,7 +3458,7 @@
     var units = function (list) { return list.reduce(function (s, c) { return s + Math.abs(c.gap); }, 0); };
     var confirmed = crops.reduce(function (s, c) { return s + c.confirmed; }, 0);
     append(root, h('div', { class: 'kpis' },
-      kpi('Crops tracked', String(crops.length), 'MEOD-grown, next ' + weeks + ' weeks'),
+      kpi('Crops tracked', String(crops.length), 'Tyllage-grown, next ' + weeks + ' weeks'),
       kpi('Short', String(by('short').length), units(by('short')) + ' units more demand than supply'),
       kpi('Surplus', String(by('surplus').length), units(by('surplus')) + ' units at risk of going unsold'),
       kpi('Pre-orders', String(confirmed), 'already confirmed against planned harvests')));
@@ -3500,7 +3500,7 @@
     }
     draw();
     append(root, panel(aiTitle('Supply vs demand · next ' + weeks + ' weeks'),
-      'Supply is stock plus planned harvests; demand is confirmed pre-orders plus expected sales from the last 4 weeks (MEOD Fresh history, mock). Estimates, not forecasts — confidence shows how steady sales have been.',
+      'Supply is stock plus planned harvests; demand is confirmed pre-orders plus expected sales from the last 4 weeks (Tyllage Fresh history, mock). Estimates, not forecasts — confidence shows how steady sales have been.',
       h('div', { class: 'radar-legend', 'aria-hidden': 'true' },
         h('span', null, h('i', { class: 'rb-stock' }), 'In stock'), h('span', null, h('i', { class: 'rb-harvest' }), 'Harvesting'),
         h('span', null, h('i', { class: 'rb-confirmed' }), 'Pre-ordered'), h('span', null, h('i', { class: 'rb-expected' }), 'Expected')),
@@ -3558,7 +3558,7 @@
         pickTable(pl));
     }
     drawPick();
-    append(root, panel('Harvest & pack list', 'For each delivery morning: paid and awaiting-payment orders, pre-orders harvesting that day, and approved Surprise Harvest Bags. Orders from MEOD Fresh would be added here once Shopify is connected.',
+    append(root, panel('Harvest & pack list', 'For each delivery morning: paid and awaiting-payment orders, pre-orders harvesting that day, and approved Surprise Harvest Bags. Orders from Tyllage Fresh would be added here once Shopify is connected.',
       h('div', { class: 'user-toolbar' }, dayChips), pickBox));
   }
   // Small product thumbnail for list rows.
@@ -3723,9 +3723,9 @@
   // Message bodies per nudge kind. {first_name}, {bunches_to_go} and {points} are filled per person.
   var NUDGE_BODY = {
     tier: {
-      en: function (x) { return 'Hi {first_name} 🌱 You\'re just {bunches_to_go} bunches of MEOD greens away from ' + x.next.label + (x.next.voucherCents ? ' — and a ' + money(x.next.voucherCents) + ' voucher' : '') + '.'; },
-      zh: function (x) { return '{first_name} 您好 🌱 再买 {bunches_to_go} 份 MEOD 蔬菜即可升级为 ' + x.next.label + (x.next.voucherCents ? '，并获得 ' + money(x.next.voucherCents) + ' 优惠券' : '') + '。'; },
-      ms: function (x) { return 'Hai {first_name} 🌱 Hanya {bunches_to_go} ikat sayur MEOD lagi untuk ' + x.next.label + (x.next.voucherCents ? ' — dan baucar ' + money(x.next.voucherCents) : '') + '.'; }
+      en: function (x) { return 'Hi {first_name} 🌱 You\'re just {bunches_to_go} bunches of Tyllage greens away from ' + x.next.label + (x.next.voucherCents ? ' — and a ' + money(x.next.voucherCents) + ' voucher' : '') + '.'; },
+      zh: function (x) { return '{first_name} 您好 🌱 再买 {bunches_to_go} 份 Tyllage 蔬菜即可升级为 ' + x.next.label + (x.next.voucherCents ? '，并获得 ' + money(x.next.voucherCents) + ' 优惠券' : '') + '。'; },
+      ms: function (x) { return 'Hai {first_name} 🌱 Hanya {bunches_to_go} ikat sayur Tyllage lagi untuk ' + x.next.label + (x.next.voucherCents ? ' — dan baucar ' + money(x.next.voucherCents) : '') + '.'; }
     },
     surplus: {
       en: function (x) { return 'Hi {first_name} 🌱 We harvested more ' + x.product.title + ' than expected — it\'s ' + money(x.listing.clearancePriceCents) + ' on Buy to Clear until ' + dayShort(x.listing.availableUntil) + ', with 2× reward points. Help us waste nothing!'; },
@@ -3738,19 +3738,19 @@
       ms: function (x) { return 'Hai {first_name} 🌱 ' + x.product.title + ' kami akan dituai pada ' + dayShort(M.clearance.parseDayKey(x.batch.harvestDate)) + '. Pra-pesan sebelum ' + dayShort(M.harvest.cutoff(x.batch)) + ' untuk 2× mata.'; }
     },
     points: {
-      en: function () { return 'Hi {first_name} 🌱 You have {points} reward points waiting — swap them for a voucher in your MEOD account and use it on this week\'s harvest.'; },
-      zh: function () { return '{first_name} 您好 🌱 您有 {points} 积分未使用 — 在 MEOD 账户中兑换优惠券，用于本周新鲜蔬菜。'; },
-      ms: function () { return 'Hai {first_name} 🌱 Anda ada {points} mata ganjaran — tukar kepada baucar dalam akaun MEOD anda untuk tuaian minggu ini.'; }
+      en: function () { return 'Hi {first_name} 🌱 You have {points} reward points waiting — swap them for a voucher in your Tyllage account and use it on this week\'s harvest.'; },
+      zh: function () { return '{first_name} 您好 🌱 您有 {points} 积分未使用 — 在 Tyllage 账户中兑换优惠券，用于本周新鲜蔬菜。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Anda ada {points} mata ganjaran — tukar kepada baucar dalam akaun Tyllage anda untuk tuaian minggu ini.'; }
     },
     winback: {
-      en: function () { return 'Hi {first_name} 🌱 It\'s been a while! This week\'s MEOD harvest is in, and your {points} points are still here for you.'; },
-      zh: function () { return '{first_name} 您好 🌱 好久不见！本周 MEOD 新鲜蔬菜已上架，您的 {points} 积分仍可使用。'; },
-      ms: function () { return 'Hai {first_name} 🌱 Lama tidak berjumpa! Tuaian MEOD minggu ini sudah tiba, dan {points} mata anda masih menanti.'; }
+      en: function () { return 'Hi {first_name} 🌱 It\'s been a while! This week\'s Tyllage harvest is in, and your {points} points are still here for you.'; },
+      zh: function () { return '{first_name} 您好 🌱 好久不见！本周 Tyllage 新鲜蔬菜已上架，您的 {points} 积分仍可使用。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Lama tidak berjumpa! Tuaian Tyllage minggu ini sudah tiba, dan {points} mata anda masih menanti.'; }
     },
     general: {
-      en: function () { return 'Hi {first_name} 🌱 Fresh, pesticide-free MEOD greens are in this week — and you have {points} points to use.'; },
-      zh: function () { return '{first_name} 您好 🌱 本周 MEOD 无农药新鲜蔬菜已上架 — 您还有 {points} 积分可用。'; },
-      ms: function () { return 'Hai {first_name} 🌱 Sayur MEOD segar tanpa racun perosak sudah tiba minggu ini — dan anda ada {points} mata.'; }
+      en: function () { return 'Hi {first_name} 🌱 Fresh, pesticide-free Tyllage greens are in this week — and you have {points} points to use.'; },
+      zh: function () { return '{first_name} 您好 🌱 本周 Tyllage 无农药新鲜蔬菜已上架 — 您还有 {points} 积分可用。'; },
+      ms: function () { return 'Hai {first_name} 🌱 Sayur Tyllage segar tanpa racun perosak sudah tiba minggu ini — dan anda ada {points} mata.'; }
     }
   };
   var NUDGE_KIND_LABEL = { tier: 'Tier nudge', surplus: 'Surplus offer', preorder: 'Pre-order nudge', points: 'Points reminder', winback: 'Win-back', general: 'Member message' };
@@ -4070,7 +4070,7 @@
     }
     var canManage = M.auth.can(session, 'groupbuy.manage');
 
-    append(root, h('p', { class: 'callout', text: 'Example rules, waiting for MEOD to confirm: commission = ' + (M.RULES.commissionRate * 100) +
+    append(root, h('p', { class: 'callout', text: 'Example rules, waiting for Tyllage to confirm: commission = ' + (M.RULES.commissionRate * 100) +
       '% of net merchandise (subtotal minus group discount, delivery not included). It counts once an order is paid. A refund takes the same amount back. Example: S$60 − S$3 discount = S$57 base → S$2.85.' }));
 
     append(root, panel('Group-buy events', null,
@@ -4169,7 +4169,7 @@
     var pr = M.promo.milestoneProgress(ev);
     if (!pr || pr.status === 'missed') return null;
     var text = pr.status === 'rewarded' ? 'Goal reached. Everyone who ordered got a ' + money(pr.voucherCents) + ' voucher.'
-      : pr.status === 'reached' ? 'Goal reached! MEOD is adding a ' + money(pr.voucherCents) + ' voucher for everyone who ordered.'
+      : pr.status === 'reached' ? 'Goal reached! Tyllage is adding a ' + money(pr.voucherCents) + ' voucher for everyone who ordered.'
       : (pr.target - pr.units) + ' more items by ' + shortDate(pr.endsAt) + ' and everyone who ordered gets a ' + money(pr.voucherCents) + ' voucher.';
     return h('section', { class: 'panel gb-goal' },
       h('div', { class: 'gb-goal-head' }, h('strong', { text: 'Group goal: ' + pr.units + ' of ' + pr.target + ' items' }), badge(MILESTONE_STATUS[pr.status][0], MILESTONE_STATUS[pr.status][1])),
@@ -4199,9 +4199,9 @@
     var first = M.auth.can(session, 'customers.pii') ? c.name.replace(/\s*\(demo\)/i, '').split(' ')[0] : 'there';
     var channel = h('select', { 'aria-label': 'Channel' }, h('option', { value: 'whatsapp', text: 'WhatsApp' }), h('option', { value: 'email', text: 'Email' }));
     var body = h('textarea', { rows: 10, 'aria-label': 'Message' });
-    body.value = 'Hi ' + first + ' 🌱\n\nThank you for being a regular MEOD Fresh customer! ' + (a.active - 1) + ' other neighbours in ' + a.area + ' order from us too, and we\'d love to start a ' + a.area + ' group buy — would you like to lead it?\n\n' +
+    body.value = 'Hi ' + first + ' 🌱\n\nThank you for being a regular Tyllage Fresh customer! ' + (a.active - 1) + ' other neighbours in ' + a.area + ' order from us too, and we\'d love to start a ' + a.area + ' group buy — would you like to lead it?\n\n' +
       'How it works: you share a group code, neighbours get ' + Math.round(M.RULES.groupDiscountRate * 100) + '% off, and you earn ' + Math.round(M.RULES.commissionRate * 100) + '% commission on the group\'s orders. We deliver everything to one pickup point near you.\n\n' +
-      'Reply YES and we\'ll call you to set it up, or reply with any questions.\n\n— The MEOD Farm team';
+      'Reply YES and we\'ll call you to set it up, or reply with any questions.\n\n— The Tyllage team';
     var dlg = h('dialog', { class: 'receipt-dialog reply-dialog lf-dialog', 'aria-labelledby': 'lf-title' });
     function closeDialog() { if (dlg.open) dlg.close(); dlg.remove(); }
     append(dlg,
@@ -4371,7 +4371,7 @@
   function linkedTo(u) {
     if (u.leaderId) { var l = M.byId('leaders', u.leaderId); return l ? l.name + ' · ' + l.area : u.leaderId; }
     if (u.customerId) { var c = customer(u.customerId); return c ? c.name + ' (' + c.id + ')' : u.customerId; }
-    return 'MEOD team';
+    return 'Tyllage team';
   }
 
   function usersView(root) {
@@ -4381,7 +4381,7 @@
 
     append(root, h('div', { class: 'kpis' },
       kpi('Total users', String(users.length), users.filter(function (u) { return u.disabled; }).length + ' disabled'),
-      kpi('MEOD team', String(count('admin') + count('staff')), count('admin') + ' admin · ' + count('staff') + ' staff'),
+      kpi('Tyllage team', String(count('admin') + count('staff')), count('admin') + ' admin · ' + count('staff') + ' staff'),
       kpi('Group leaders', String(count('leader'))),
       kpi('Customers', String(count('customer')))));
 
@@ -4515,7 +4515,7 @@
     return h('div', { class: 'user-cell' },
       h('span', { class: 'avatar ' + (system ? 'av-system' : 'av-' + u.role), 'aria-hidden': 'true', text: system ? (actor === 'assist-bot' ? 'AI' : 'WEB') : initials(u.name) }),
       h('span', null,
-        h('strong', { text: system ? (actor === 'assist-bot' ? 'Ask MEOD bot' : 'Public website') : u.name }),
+        h('strong', { text: system ? (actor === 'assist-bot' ? 'Ask Tyllage bot' : 'Public website') : u.name }),
         h('small', { text: system ? 'Automated' : actor })));
   }
 
@@ -4640,7 +4640,7 @@
           saveBtn),
         impact);
     }
-    return panel(aiTitle('AI assumptions'), 'The numbers behind Demand Radar, Harvest Rescue, Price Advisor, Margin Guard, B2B and Visits. They\'re demo values until MEOD enters its own. Type a new value to preview what changes before saving.',
+    return panel(aiTitle('AI assumptions'), 'The numbers behind Demand Radar, Harvest Rescue, Price Advisor, Margin Guard, B2B and Visits. They\'re demo values until Tyllage enters its own. Type a new value to preview what changes before saving.',
       h('div', { class: 'as-groups' }, groups.map(function (g) {
         return h('section', { class: 'as-group' }, h('h3', { text: g }), h('ul', { class: 'as-list' }, list.filter(function (d) { return d.group === g; }).map(row)));
       })),
@@ -4655,7 +4655,7 @@
   function unitCostPanel() {
     var prods = S().products.filter(function (p) { return !p.bagOffer; });
     var toCents = function (el) { return Math.round((parseFloat(el.value) || 0) * 100); };
-    return panel('Unit costs', 'Growing, packaging and handling cost per unit. Margin Guard uses these to stop prices going below cost. Illustrative until MEOD enters real costs.', table([
+    return panel('Unit costs', 'Growing, packaging and handling cost per unit. Margin Guard uses these to stop prices going below cost. Illustrative until Tyllage enters real costs.', table([
       { label: 'Product', render: function (p) { return h('span', { class: 'rw-tier-cell' }, thumbMini(p), h('strong', { text: p.title })); } },
       { label: 'Price', num: true, render: function (p) { return money(p.priceCents); } },
       { label: 'Costs (S$)', render: function (p) {
@@ -4690,7 +4690,7 @@
     var hours = fmt(R.humanHours.start) + ' – ' + fmt(R.humanHours.end);
     var online = M.withinHumanHours();
 
-    append(root, h('p', { class: 'callout', text: 'All values are examples until MEOD confirms them. AI assumptions and unit costs can be changed here (saved in this browser for the demo); in production they live on the server. Every change is audited.' }));
+    append(root, h('p', { class: 'callout', text: 'All values are examples until Tyllage confirms them. AI assumptions and unit costs can be changed here (saved in this browser for the demo); in production they live on the server. Every change is audited.' }));
     append(root, aiSettingsPanel());
     append(root, unitCostPanel());
 
@@ -4759,7 +4759,7 @@
     var orders = leaderOrders().filter(function (o) { return o.status !== 'cancelled'; });
     var open = leaderEvents().filter(function (e) { return e.status === 'open'; });
     append(root, overviewBand({ eyebrow: 'Group leader', name: sessionFirstName(),
-      summary: open.length ? open.length + ' group buy' + (open.length === 1 ? '' : 's') + ' open. ' + open[0].title + ' ends ' + shortWeekday(open[0].endsAt) + '; share your code to bring more neighbours in.' : 'No group buy is open right now. Ask MEOD to start one.',
+      summary: open.length ? open.length + ' group buy' + (open.length === 1 ? '' : 's') + ' open. ' + open[0].title + ' ends ' + shortWeekday(open[0].endsAt) + '; share your code to bring more neighbours in.' : 'No group buy is open right now. Ask Tyllage to start one.',
       actions: [{ label: 'Group orders', href: '#orders' }, { label: 'Commission', href: '#commission' }] }));
     append(root, h('div', { class: 'kpis' },
       kpi('Active group buys', String(leaderEvents().filter(function (e) { return e.status === 'open'; }).length)),
@@ -4773,7 +4773,7 @@
   }
 
   function leaderOrdersView(root) {
-    append(root, h('p', { class: 'callout', text: 'Members\' names and phone numbers are masked to protect their privacy. If you need contact details for pickup, ask MEOD. They will share them only where members have agreed.' }));
+    append(root, h('p', { class: 'callout', text: 'Members\' names and phone numbers are masked to protect their privacy. If you need contact details for pickup, ask Tyllage. They will share them only where members have agreed.' }));
     append(root, panel('Group orders', null,
       table([
         { label: 'Order', render: function (o) { return h('span', null, h('strong', { text: o.ref }), h('br'), h('small', { text: date(o.createdAt) })); } },
@@ -4793,7 +4793,7 @@
       append(root, h('p', { class: 'callout green', text: 'How ' + first.ref + ' was worked out: subtotal ' + money(o.subtotalCents) + ' − group discount ' + money(o.discountCents) +
         ' = eligible base ' + money(first.baseCents) + ' × ' + (first.rate * 100) + '% = ' + money(first.amountCents) + '. Delivery is not included. A refund takes back the same amount.' }));
     }
-    append(root, panel(null, 'Payouts follow the terms agreed with MEOD.', ledgerTable(entries, false)));
+    append(root, panel(null, 'Payouts follow the terms agreed with Tyllage.', ledgerTable(entries, false)));
   }
 
   /* ---------------- customer views ---------------- */
@@ -4874,7 +4874,7 @@
     var mine = S().orders.filter(function (o) { return o.customerId === c.id; });
     var last = mine[mine.length - 1];
     var nextDay = M.nextDeliveryDay(new Date()).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'short' });
-    append(root, overviewBand({ eyebrow: 'MEOD Fresh', name: sessionFirstName(),
+    append(root, overviewBand({ eyebrow: 'Tyllage Fresh', name: sessionFirstName(),
       summary: 'Next delivery: ' + nextDay + '.' + (last && ['paid', 'pending_payment'].indexOf(last.status) > -1 ? ' Your order ' + last.ref + ' is on its way.' : ' Fresh greens are picked the morning they\'re delivered.'),
       actions: [{ label: 'Shop the harvest', href: '#shop' }, { label: 'My orders', href: '#orders' }] }));
     append(root, h('div', { class: 'kpis' },
@@ -4885,7 +4885,7 @@
     append(root, picksPanel(c));
   }
 
-  /* ---------------- Grow with MEOD (customer rewards) ----------------
+  /* ---------------- Grow with Tyllage (customer rewards) ----------------
    * Built from the portal's own pieces so it matches Home and Group buy: a forest-green
    * membership card (same gradient as Smart picks), a stamp card in a white panel, line icons
    * in soft circles, numbered steps, and the standard table for tiers and history. */
@@ -4969,7 +4969,7 @@
     var tierIdx = R.tiers.indexOf(s.tier);
     append(root, h('section', { class: 'rw-card' },
       h('div', { class: 'rw-card-main' },
-        h('span', { class: 'picks-eyebrow' }, svgIcon(TIER_ICONS[s.tier.key]), 'Grow with MEOD'),
+        h('span', { class: 'picks-eyebrow' }, svgIcon(TIER_ICONS[s.tier.key]), 'Grow with Tyllage'),
         h('h2', { text: c.name }),
         h('p', { class: 'rw-card-tier', text: s.tier.label + ' member' }),
         h('div', { class: 'rw-card-meta' },
@@ -4988,7 +4988,7 @@
           onclick: function () { redeem(units); } }))));
 
     /* ---- Stamp card ---- */
-    append(root, panel('Your stamp card', 'Every bunch of MEOD-grown produce earns a stamp. Fill the card to reach the next tier.', stampCard(s)));
+    append(root, panel('Your stamp card', 'Every bunch of Tyllage-grown produce earns a stamp. Fill the card to reach the next tier.', stampCard(s)));
 
     /* ---- Smart tips + vouchers ---- */
     var TIP_ICONS = { tier: TIER_ICONS.sprout, redeem: ICON_GIFT, preorder: ICONS.clock, clearance: ICONS.tag, expiry: ICONS.clock };
@@ -5017,14 +5017,14 @@
 
     /* ---- How it works (numbered steps, like Group buy) ---- */
     append(root, panel('How it works', null, h('ol', { class: 'gb-steps rw-steps' },
-      [['Earn points', R.pointsPerDollar + ' point per S$1 on every paid order — the same Store Rewards points as MEOD Fresh.'],
+      [['Earn points', R.pointsPerDollar + ' point per S$1 on every paid order — the same Store Rewards points as Tyllage Fresh.'],
        ['Waste less, earn more', R.antiWasteMultiplier + '× points on Buy to Clear items and harvest pre-orders.'],
-       ['Collect stamps', 'Each bunch of MEOD-grown produce is a stamp. More stamps, higher tier, better perks.'],
+       ['Collect stamps', 'Each bunch of Tyllage-grown produce is a stamp. More stamps, higher tier, better perks.'],
        ['Swap for vouchers', R.redeemPoints + ' points = ' + money(R.redeemValueCents) + ' off. Refunds take back that order\'s points.']]
         .map(function (st, i) { return h('li', null, h('b', { text: String(i + 1) }), h('span', null, h('strong', { text: st[0] }), h('small', { text: st[1] }))); }))));
 
     /* ---- Tier perks + history (standard tables) ---- */
-    append(root, panel('Tier perks', 'Counted over the last 12 months. Examples for MEOD to confirm.', table([
+    append(root, panel('Tier perks', 'Counted over the last 12 months. Examples for Tyllage to confirm.', table([
       { label: 'Tier', render: function (t) { return h('span', { class: 'rw-tier-cell' }, iconCircle(TIER_ICONS[t.key], 'soft'), h('strong', { text: t.label }), t === s.tier ? badge('You', 'green') : null); } },
       { label: 'Bunches a year', num: true, render: function (t) { return t.minBunches ? t.minBunches + '+' : 'Start'; } },
       { label: 'Points', render: function (t) { return t.multiplier > 1 ? t.multiplier + '× on everything' : '1 per S$1'; } },
@@ -5126,7 +5126,7 @@
       h('div', { class: 'pd-recipe-body' },
         h('div', null, h('b', { text: 'You need' }), h('ul', null, r.ingredients.map(function (x) { return h('li', { text: x }); }))),
         h('div', null, h('b', { text: 'Steps' }), h('ol', null, r.steps.map(function (x) { return h('li', { text: x }); })))),
-      h('small', { class: 'pd-recipe-note', text: 'Recipe ideas are AI-drafted samples in this prototype — MEOD would review them before they go live.' }));
+      h('small', { class: 'pd-recipe-note', text: 'Recipe ideas are AI-drafted samples in this prototype — Tyllage would review them before they go live.' }));
   }
 
   /* ---- Ratings + reviews (customer shop) ----
@@ -5304,7 +5304,7 @@
           h('p', { class: 'pd-stock ' + s.key }, iconCircle(ICONS.box, 'bare'), stockLine),
           p.blurb ? h('p', { class: 'pd-blurb', text: p.blurb }) : null,
           h('ul', { class: 'pd-tags' },
-            p.meodGrown ? [h('li', { text: '100% pesticide-free' }), h('li', { text: 'Harvested in Kranji' })] : h('li', { text: 'Made by MEOD' }),
+            p.meodGrown ? [h('li', { text: '100% pesticide-free' }), h('li', { text: 'Harvested in Kranji' })] : h('li', { text: 'Made by Tyllage' }),
             nutrients.map(function (n) { return h('li', { class: 'nutri', text: n }); })),
           h('div', { class: 'pd-buy' },
             h('div', { class: 'qty', 'aria-label': 'Quantity' }, minus, qtyLabel, plus),
@@ -5476,7 +5476,7 @@
       var items = cartItems();
       var ev = myEvent();
       var activeEv = ev && ev.status === 'open' ? ev : null;
-      // Grow with MEOD: tier free-delivery threshold, an optional voucher (full-price lines only).
+      // Grow with Tyllage: tier free-delivery threshold, an optional voucher (full-price lines only).
       var rs = M.rewards.summary(c.id);
       var usableVouchers = M.rewards.vouchers(c.id).filter(M.rewards.usable);
       var voucherCap = M.rewards.capCents(items, Boolean(activeEv));
@@ -5585,7 +5585,7 @@
           shopView.voucherId = null;
           S().orders.push(order);
           cart = {}; saveCart();
-          commit('order.created', ref, 'Order ' + ref + ' placed. You\'ll pay securely on MEOD Fresh.');
+          commit('order.created', ref, 'Order ' + ref + ' placed. You\'ll pay securely on Tyllage Fresh.');
           location.hash = 'orders';
         } }),
         h('p', { class: 'cart-note' }, iconCircle(ICONS.clock, 'bare'), 'Delivery on Tue, Thu & Sat · free from ' + money(rs.freeFromCents) +
@@ -5702,7 +5702,7 @@
 
       append(clearanceBox,
         h('div', { class: 'clearance-top-head' }, h('h2', { text: 'Buy to Clear' }),
-          h('p', { class: 'hint', text: 'Fresh produce we have extra of, sold before it goes to waste. Illustrative prices — MEOD to confirm.' })),
+          h('p', { class: 'hint', text: 'Fresh produce we have extra of, sold before it goes to waste. Illustrative prices — Tyllage to confirm.' })),
         bagCard, clearGrid);
     }
 
@@ -5791,7 +5791,7 @@
       h('div', { class: 'receipt' },
         h('div', { class: 'r-head' },
           h('img', { src: 'assets/img/favicon.png', alt: '', width: 44, height: 44 }),
-          h('div', null, h('strong', { text: 'MEOD Farm' }), h('small', { text: '13 Neo Tiew Harvest Lane, Singapore 719838 · info@meod.com.sg' }))),
+          h('div', null, h('strong', { text: 'Tyllage' }), h('small', { text: '13 Neo Tiew Harvest Lane, Singapore 719838 · info@meod.com.sg' }))),
         h('div', { class: 'r-meta' },
           h('div', null, h('span', { text: 'Receipt' }), h('strong', { text: o.ref })),
           h('div', null, h('span', { text: 'Date' }), h('strong', { text: date(o.createdAt) })),
@@ -5811,8 +5811,8 @@
           o.refundedCents ? line('Refunded', '−' + money(o.refundedCents), 'r-refund') : null),
         h('p', { class: 'r-note', text: paid
           ? 'Thank you for supporting local, pesticide-free farming.'
-          : 'Payment pending — complete checkout on MEOD Fresh to confirm this order.' }),
-        h('p', { class: 'r-foot', text: 'Generated by the MEOD Portal (prototype).' })),
+          : 'Payment pending — complete checkout on Tyllage Fresh to confirm this order.' }),
+        h('p', { class: 'r-foot', text: 'Generated by the Tyllage Portal (prototype).' })),
       h('div', { class: 'r-actions no-print' },
         h('button', { class: 'btn btn-sm btn-outline', type: 'button', text: 'Close', onclick: function () { dlg.close(); } }),
         h('button', { class: 'btn btn-sm btn-forest', type: 'button', text: 'Print / Save as PDF', onclick: function () { window.print(); } })));
@@ -5863,7 +5863,7 @@
   function routeMap(t) {
     var wrap = h('div', { class: 'route-map ' + t.state });
     wrap.innerHTML =
-      '<svg viewBox="0 0 600 230" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Delivery route from MEOD Farm to your address">' +
+      '<svg viewBox="0 0 600 230" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Delivery route from Tyllage to your address">' +
       '<defs><pattern id="rm-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#d8e8cf" stroke-width="1"/></pattern></defs>' +
       '<rect width="600" height="230" fill="#eef6e8"/><rect width="600" height="230" fill="url(#rm-grid)"/>' +
       '<path d="M0 190 C140 170 220 210 320 175 S520 150 600 165" fill="none" stroke="#cfe2c3" stroke-width="16" stroke-linecap="round"/>' +
@@ -5873,7 +5873,7 @@
       '<path class="rm-route" d="M70 160 C170 40 300 210 400 110 S520 60 540 70" fill="none" stroke="#9fbf8f" stroke-width="5" stroke-dasharray="2 12" stroke-linecap="round" pathLength="100"/>' +
       '<path class="rm-done" d="M70 160 C170 40 300 210 400 110 S520 60 540 70" fill="none" stroke="#3f8f2f" stroke-width="6" stroke-linecap="round" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="' + (100 - t.progress * 100) + '"/>' +
       '<g transform="translate(70 160)"><circle r="20" fill="#054f12"/><path d="M-6 6c0-7 4-12 12-12 0 8-5 12-12 12zM-6 6l7-7" stroke="#e6b964" stroke-width="2.4" fill="none" stroke-linecap="round"/></g>' +
-      '<text x="70" y="200" text-anchor="middle" class="rm-label">MEOD Farm</text>' +
+      '<text x="70" y="200" text-anchor="middle" class="rm-label">Tyllage</text>' +
       '<g transform="translate(540 70)"><circle r="20" fill="#e6b964"/><path d="M-8 2l8-7 8 7v8h-16z" fill="none" stroke="#054f12" stroke-width="2.4" stroke-linejoin="round"/></g>' +
       '<text x="540" y="110" text-anchor="middle" class="rm-label">You</text>' +
       '<g class="rm-van"><circle r="24" class="rm-pulse"/><circle r="17" fill="#fff" stroke="#054f12" stroke-width="2.5"/>' +
@@ -5908,7 +5908,7 @@
     if (t.state === 'out_for_delivery') {
       side = h('div', { class: 'driver-card' },
         h('span', { class: 'avatar av-staff', 'aria-hidden': 'true', text: initials(t.driver) }),
-        h('span', { class: 'driver-text' }, h('strong', { text: t.driver }), h('small', { text: 'Your MEOD driver · ' + t.stopsAway + ' stops away' })),
+        h('span', { class: 'driver-text' }, h('strong', { text: t.driver }), h('small', { text: 'Your Tyllage driver · ' + t.stopsAway + ' stops away' })),
         h('a', { class: 'pill-btn', href: 'https://wa.me/6581330358', target: '_blank', rel: 'noopener', text: 'Message' }));
     } else if (t.state === 'delivered') {
       side = h('div', { class: 'proof-card' },
@@ -5917,7 +5917,7 @@
     } else {
       side = h('div', { class: 'proof-card' }, iconCircle(ICONS.clock, 'soft'),
         h('span', null, h('strong', { text: t.state === 'awaiting' ? 'Waiting for payment' : 'Delivery window' }),
-          h('small', { text: t.state === 'awaiting' ? 'Pay on MEOD Fresh to lock in the next delivery day.' : t.sub })));
+          h('small', { text: t.state === 'awaiting' ? 'Pay on Tyllage Fresh to lock in the next delivery day.' : t.sub })));
     }
 
     return h('div', { class: 'track-panel' },
@@ -6088,7 +6088,7 @@
     var open = S().events.filter(function (e) { return e.status === 'open' && e.kind !== 'visit' && new Date(e.endsAt).getTime() > Date.now(); });
     append(root, h('section', { class: 'panel' },
       h('h2', { text: 'Open group buys' }),
-      h('p', { class: 'hint', text: 'Codes are shared by each group\'s leader. Ask yours, or start one with MEOD.' }),
+      h('p', { class: 'hint', text: 'Codes are shared by each group\'s leader. Ask yours, or start one with Tyllage.' }),
       open.length ? h('div', { class: 'gb-list' }, open.map(function (e) {
         var l = M.byId('leaders', e.leaderId);
         var d = Math.ceil((new Date(e.endsAt) - Date.now()) / 864e5);
@@ -6255,7 +6255,7 @@
         switchRow('consentMarketing', ICONS.chat, 'WhatsApp promotions', 'Harvest updates and offers. Reply STOP to any message to opt out.'),
         switchRow('consentPersonalisation', ICONS.leaf, 'Personalised picks', 'Use your past orders to suggest products. We never guess sensitive things about you.'),
         h('div', { class: 'pref-row' }, iconCircle(ICONS.globe, 'soft'),
-          h('span', { class: 'pref-text' }, h('strong', { text: 'Preferred language' }), h('small', { text: 'Used by Ask MEOD and for messages' })),
+          h('span', { class: 'pref-text' }, h('strong', { text: 'Preferred language' }), h('small', { text: 'Used by Ask Tyllage and for messages' })),
           h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Preferred language' }, LANGS.map(function (l) {
             return h('button', { type: 'button', role: 'radio', class: c.language === l[0] ? 'on' : '', 'aria-checked': String(c.language === l[0]), text: l[1],
               onclick: function () { if (c.language === l[0]) return; c.language = l[0]; commit('profile.language', c.id, 'Language set to ' + l[1] + '.'); } });
@@ -6269,11 +6269,11 @@
         h('p', { class: 'form-note', text: c.consentTimestamp ? 'Last changed ' + new Date(c.consentTimestamp).toLocaleString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'You haven\'t changed these yet.' }))));
   }
 
-  /* ----- Ask MEOD ----- */
+  /* ----- Ask Tyllage ----- */
   function assistantView(root) {
     var c = me();
     var history = assistantView.history || (assistantView.history = [
-      { who: 'bot', text: 'Hi ' + c.name.split(' ')[0] + '! I\'m Ask MEOD 🌱 You\'re signed in, so I can check your orders as well as stock, prices and delivery.', at: new Date().toISOString() }
+      { who: 'bot', text: 'Hi ' + c.name.split(' ')[0] + '! I\'m Ask Tyllage 🌱 You\'re signed in, so I can check your orders as well as stock, prices and delivery.', at: new Date().toISOString() }
     ]);
     var online = M.withinHumanHours();
     var log = h('div', { class: 'chat-log', 'aria-live': 'polite' });
@@ -6294,7 +6294,7 @@
       if (!text) return;
       history.push({ who: 'user', text: text, at: new Date().toISOString() });
       drawLog();
-      var typing = h('div', { class: 'bubble-row bot' }, h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'M' }), h('div', { class: 'bubble typing', 'aria-label': 'Ask MEOD is typing' }, h('i'), h('i'), h('i')));
+      var typing = h('div', { class: 'bubble-row bot' }, h('span', { class: 'avatar av-bot', 'aria-hidden': 'true', text: 'M' }), h('div', { class: 'bubble typing', 'aria-label': 'Ask Tyllage is typing' }, h('i'), h('i'), h('i')));
       log.appendChild(typing);
       log.scrollTop = log.scrollHeight;
       var r = M.assist.reply(text, { channel: 'portal', customerId: session.customerId });
@@ -6317,7 +6317,7 @@
       h('section', { class: 'chat-card' },
         h('header', { class: 'chat-header' },
           h('span', { class: 'avatar av-bot big', 'aria-hidden': 'true', text: 'M' }),
-          h('div', { class: 'chat-head-text' }, h('strong', { text: 'Ask MEOD' }),
+          h('div', { class: 'chat-head-text' }, h('strong', { text: 'Ask Tyllage' }),
             h('small', null, h('span', { class: 'status-dot on', text: 'Bot online 24/7' }), ' · ', online ? 'Team online now' : 'Team back Mon–Sat 9am')),
           aiPill()),
         log, chips, form),
@@ -6657,7 +6657,7 @@
             mini('Keep old plan', function () { decideEstimate(x, false); }));
         } }
       ], held, 'Nothing waiting. Every estimate from the last round is in the plan.')));
-    append(root, panel('Today\'s round', 'Workers do this on their phones (worker@meod.test). Staff can check a batch here too.', roundChecklist()));
+    append(root, panel('Today\'s round', 'Workers do this on their phones (worker@tyllage.test). Staff can check a batch here too.', roundChecklist()));
     append(root, learningPanel());
     append(root, deadZonePanel());
     if (!canReview) append(root, h('p', { class: 'callout', text: 'Only the farm manager (admin) approves estimate changes. You can see them, their effect on orders, and the follow-up tasks.' }));
@@ -6785,8 +6785,8 @@
   }
 
   /* ---------------- Weather (NEA, data.gov.sg) ----------------
-   * The live public forecast for MEOD's area (Lim Chu Kang, west region). Only a GET to
-   * data.gov.sg: nothing about MEOD or its customers is sent. Kept for 30 minutes; if it
+   * The live public forecast for Tyllage's area (Lim Chu Kang, west region). Only a GET to
+   * data.gov.sg: nothing about Tyllage or its customers is sent. Kept for 30 minutes; if it
    * can't be reached, a clearly labelled demo forecast is used instead. */
   var WEATHER_KEY = 'meod-weather', WEATHER_AREA = 'Lim Chu Kang';
   var weatherNow = null, weatherLoading = false;
@@ -6928,7 +6928,7 @@
   }
   function seasonsView(root) {
     var list = M.seasons.outlook(160);
-    append(root, h('p', { class: 'callout', text: 'Festival dates follow Singapore\'s public holidays (Hari Raya dates depend on the moon sighting). The demand uplifts are illustrative until MEOD\'s own sales from past festivals replace them.' }));
+    append(root, h('p', { class: 'callout', text: 'Festival dates follow Singapore\'s public holidays (Hari Raya dates depend on the moon sighting). The demand uplifts are illustrative until Tyllage\'s own sales from past festivals replace them.' }));
     append(root, panel(aiTitle('Festive demand ahead'), 'For each festival: how much more of each crop people usually buy in the ' + M.seasons.WINDOW_DAYS + ' days before, what\'s planned to be harvested then, and when to sow to close the gap. Campaign Advisor suggests a festive pre-order message 3 weeks before.',
       list.length ? h('div', { class: 'fest-list' }, list.map(function (o) {
         var f = o.festival;
@@ -6941,7 +6941,7 @@
       })) : h('p', { class: 'empty', text: 'No festivals in the next few months.' })));
     append(root, marketPricePanel());
   }
-  // Supermarket price checks: where MEOD's price sits.
+  // Supermarket price checks: where Tyllage's price sits.
   var POSITION = { premium: ['Premium', 'blue'], at: ['At market', 'green'], below: ['Below market', 'amber'] };
   function marketPricePanel() {
     var rows = M.seasons.compare(30);
@@ -6958,10 +6958,10 @@
       if (!r.ok) { toast(r.error); return; }
       commit('market.price', r.record.productId, 'Price check saved.');
     });
-    return panel('Market price check', 'Prices staff spot at supermarkets and markets for a similar pack, from the last 30 days, against MEOD\'s own price. MEOD sells fresher and pesticide-free, so a premium can be fine; use this with Price Advisor, not instead of it.',
+    return panel('Market price check', 'Prices staff spot at supermarkets and markets for a similar pack, from the last 30 days, against Tyllage\'s own price. Tyllage sells fresher and pesticide-free, so a premium can be fine; use this with Price Advisor, not instead of it.',
       table([
         { label: 'Product', render: function (x) { return h('strong', { text: x.product.title }); } },
-        { label: 'MEOD', num: true, render: function (x) { return money(x.product.priceCents); } },
+        { label: 'Tyllage', num: true, render: function (x) { return money(x.product.priceCents); } },
         { label: 'Market (avg)', num: true, render: function (x) { return h('span', null, money(x.avgCents), h('br'), h('small', { text: money(x.minCents) + '–' + money(x.maxCents) + ' · ' + x.checks.length + ' check(s)' })); } },
         { label: 'Difference', num: true, render: function (x) { return (x.diffPct > 0 ? '+' : '') + x.diffPct + '%'; } },
         { label: 'Position', render: function (x) { var p = POSITION[x.position]; return h('span', { class: 'ptype' }, badge(p[0], p[1])); } },
@@ -6992,7 +6992,7 @@
     var list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
     S().campaigns.unshift({
       id: id, kind: 'festive', festival: f.key, productId: crops[0].product.id, title: f.name + ' — festive pre-orders', language: 'en',
-      message: f.name + ' is coming 🌱 Fresh ' + list + ' from MEOD for your festive cooking. Pre-order in your MEOD account for delivery on Tue, Thu or Sat before ' + shortWeekday(M.clearance.parseDayKey(f.date).toISOString()) + '. Reply STOP to opt out.',
+      message: f.name + ' is coming 🌱 Fresh ' + list + ' from Tyllage for your festive cooking. Pre-order in your Tyllage account for delivery on Tue, Thu or Sat before ' + shortWeekday(M.clearance.parseDayKey(f.date).toISOString()) + '. Reply STOP to opt out.',
       audience: festiveAudience(crops), status: 'pending_approval', createdBy: session.email, approvedBy: null, createdAt: new Date().toISOString(), sentCount: 0
     });
     commit('campaign.submitted', id, f.name + ' message drafted for ' + festiveAudience(crops).length + ' opted-in buyer(s) — waiting for admin approval.');
@@ -7148,16 +7148,16 @@
   var NAV = {
     staff: [
       { id: 'overview', group: 'Today', label: 'Overview', title: 'SalesDesk', sub: 'Today across stock, orders, support and group buys.', render: staffOverview },
-      { id: 'copilot', group: 'Today', label: 'Ask Tyllage', perm: 'copilot', title: 'Ask Tyllage', sub: 'Questions about the farm in English or 中文 — answered from MEOD\'s records.', render: copilotView },
+      { id: 'copilot', group: 'Today', label: 'Ask Tyllage', perm: 'copilot', title: 'Ask Tyllage', sub: 'Questions about the farm in English or 中文 — answered from Tyllage\'s records.', render: copilotView },
       { id: 'briefing', group: 'Today', label: 'Weekly briefing', perm: 'radar', title: 'Weekly briefing', sub: 'What matters on the farm this week, ranked by AI.', render: briefingView },
-      { id: 'pilot', group: 'Today', label: 'Pilot metrics', perm: 'pilot', title: 'Pilot metrics', sub: 'What a pilot with MEOD would measure, compared with a recorded baseline.', render: pilotView },
+      { id: 'pilot', group: 'Today', label: 'Pilot metrics', perm: 'pilot', title: 'Pilot metrics', sub: 'What a pilot with Tyllage would measure, compared with a recorded baseline.', render: pilotView },
       { id: 'ledger', group: 'Today', label: 'AI decision ledger', perm: 'ledger', title: 'AI decision ledger', sub: 'Every AI suggestion acted on: its data, calculation, who decided and what happened.', render: ledgerView },
       { id: 'lost', group: 'Farm ops', label: 'Lost demand', perm: 'lost', title: 'Lost demand', sub: 'What people asked for and couldn\'t get — so a sold-out crop isn\'t mistaken for weak demand.', render: lostDemandView },
       { id: 'radar', group: 'Farm ops', label: 'Demand Radar', perm: 'radar', title: 'Demand Radar', sub: 'Supply vs demand per crop, and what to harvest each morning.', render: radarView },
       { id: 'allocation', group: 'Farm ops', label: 'Harvest allocation', perm: 'allocation', title: 'Harvest allocation', sub: 'Where each upcoming harvest goes — trade orders, pre-orders, group buys, the shop — and what\'s left over.', render: allocationView },
       { id: 'twin', group: 'Farm ops', label: 'Decision twin', perm: 'allocation', title: 'Farm Decision Twin', sub: 'What if the harvest, demand or buyers change? Compare responses before deciding.', render: twinView },
       { id: 'rounds', group: 'Farm ops', label: 'Greenhouse rounds', perm: 'inspect', title: 'Greenhouse rounds', sub: 'Workers\' inspections, straight into the harvest plan. Big changes wait for you.', render: roundsAdminView, count: function () { return M.inspect.held().length + (S().tasks || []).filter(function (t) { return t.status === 'open'; }).length; } },
-      { id: 'seasons', group: 'Farm ops', label: 'Seasonal calendar', perm: 'harvest', title: 'Seasonal calendar', sub: 'Singapore festivals ahead, the greens they lift, when to sow, and how MEOD\'s prices compare.', render: seasonsView,
+      { id: 'seasons', group: 'Farm ops', label: 'Seasonal calendar', perm: 'harvest', title: 'Seasonal calendar', sub: 'Singapore festivals ahead, the greens they lift, when to sow, and how Tyllage\'s prices compare.', render: seasonsView,
         count: function () { return M.seasons.outlook(160).reduce(function (n, o) { return n + o.crops.filter(function (c) { return c.action === 'sow' && c.daysToSow <= 21; }).length; }, 0); } },
       { id: 'harvest', group: 'Farm ops', label: 'Harvest Planner', perm: 'harvest', title: 'Harvest Planner', sub: 'What is growing, when it is ready, and how much is already pre-ordered.', render: harvestView },
       { id: 'rescue', group: 'Farm ops', label: 'Harvest Rescue', perm: 'rescue', title: 'Harvest Rescue', sub: 'Sell harvests before their sell-by date — trade buyers first, discounts last.', render: rescueView },
@@ -7180,7 +7180,7 @@
           }
           return n;
         } },
-      { id: 'rewards', group: 'Sales', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with MEOD: tiers, points and vouchers.', render: rewardsAdminView },
+      { id: 'rewards', group: 'Sales', label: 'Rewards', perm: 'rewards', title: 'Rewards', sub: 'Grow with Tyllage: tiers, points and vouchers.', render: rewardsAdminView },
       { id: 'groupbuy', group: 'Sales', label: 'Group buys', title: 'GroupBuy', sub: 'Events, codes and leader commission.', render: groupBuyAdminView },
       { id: 'visits', group: 'Sales', label: 'Visits', perm: 'visits', title: 'Visits', sub: 'Learning journeys, their farm-shop codes, and the sales they bring in.', render: visitsView },
       { id: 'inbox', group: 'Customers', label: 'Inbox', title: 'Inbox', sub: 'Human handovers and farm-visit requests.', render: inboxView, count: function () { return S().tickets.filter(function (t) { return t.status === 'open'; }).length + S().bookings.filter(function (b) { return b.status === 'new'; }).length; } },
@@ -7194,7 +7194,7 @@
     worker: [
       { id: 'overview', label: 'Today\'s round', title: 'Greenhouse round', sub: 'Photo, condition and harvest estimate for each batch. It sends itself when you finish.', render: roundView },
       { id: 'past', label: 'Past rounds', title: 'Past rounds', sub: 'What you sent, and what the farm manager did with it.', render: pastRoundsView },
-      { id: 'signal', label: 'Signal check', title: 'Signal check', sub: 'Find the greenhouses where mobile data drops, so MEOD knows where offline saving matters.', render: signalView }
+      { id: 'signal', label: 'Signal check', title: 'Signal check', sub: 'Find the greenhouses where mobile data drops, so Tyllage knows where offline saving matters.', render: signalView }
     ],
     leader: [
       { id: 'overview', label: 'Overview', title: 'My group buys', sub: 'Share your code and see how your group is doing.', render: leaderOverview },
@@ -7208,7 +7208,7 @@
       { id: 'rewards', label: 'Rewards', title: 'Rewards', sub: 'Points, tiers and vouchers for supporting local farming.', render: rewardsView },
       { id: 'group', label: 'Group buy', title: 'Group buy', sub: 'Buy together and save.', render: customerGroupView },
       { id: 'preferences', label: 'Preferences', title: 'Preferences', sub: 'Messages, privacy and language.', render: preferencesView },
-      { id: 'assistant', label: 'Ask MEOD', title: 'Ask MEOD', sub: 'Help in English, 中文 and Bahasa Melayu.', render: assistantView }
+      { id: 'assistant', label: 'Ask Tyllage', title: 'Ask Tyllage', sub: 'Help in English, 中文 and Bahasa Melayu.', render: assistantView }
     ]
   };
 
@@ -7241,7 +7241,7 @@
     currentTitle = view.title;
     $('[data-title]').textContent = view.title;
     $('[data-subtitle]').textContent = view.sub || '';
-    document.title = view.title + ' — MEOD Portal';
+    document.title = view.title + ' — Tyllage Portal';
 
     var root = $('[data-view]');
     root.textContent = '';

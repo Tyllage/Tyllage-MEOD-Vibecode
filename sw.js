@@ -1,4 +1,4 @@
-/* MEOD Portal service worker: lets the portal open with no signal (e.g. inside a greenhouse).
+/* Tyllage Portal service worker: lets the portal open with no signal (e.g. inside a greenhouse).
  *
  * - The app's own files are fetched from the network first, so updates show up straight
  *   away, and fall back to the copy saved here when there's no signal. A request that takes

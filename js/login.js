@@ -28,9 +28,9 @@
     staff: ['Stock, orders and sync status in one view', 'Inbox for tickets and farm bookings', 'Campaign Studio, with approval before anything sends', 'Greenhouse rounds on a phone, straight into harvest plans']
   };
   var ACCOUNTS = {
-    customer: [['customer@meod.test', 'Customer', 'Aster Lim']],
-    leader: [['leader@meod.test', 'Group leader', 'Punggol'], ['leader2@meod.test', 'Group leader', 'Bukit Batok']],
-    staff: [['admin@meod.test', 'Admin', 'Full access'], ['sales@meod.test', 'Sales staff', 'No approvals'], ['worker@meod.test', 'Farm worker', 'Greenhouse rounds']]
+    customer: [['customer@tyllage.test', 'Customer', 'Aster Lim']],
+    leader: [['leader@tyllage.test', 'Group leader', 'Punggol'], ['leader2@tyllage.test', 'Group leader', 'Bukit Batok']],
+    staff: [['admin@tyllage.test', 'Admin', 'Full access'], ['sales@tyllage.test', 'Sales staff', 'No approvals'], ['worker@tyllage.test', 'Farm worker', 'Greenhouse rounds']]
   };
 
   function selectRole(role) {

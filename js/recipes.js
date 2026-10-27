@@ -1,7 +1,7 @@
-/* Tyllage Recipes — short "how to cook it" ideas for MEOD's produce.
+/* Tyllage Recipes — short "how to cook it" ideas for Tyllage's produce.
  *
  * PROTOTYPE ONLY. In production these would be drafted by a language model from the
- * product name and category, then reviewed by MEOD staff before they appear anywhere.
+ * product name and category, then reviewed by Tyllage staff before they appear anywhere.
  * Here they are a fixed sample library so the prototype works offline. Names are given
  * in English, 中文 and Bahasa Melayu so campaign drafts can add a tip in the message's
  * language. Recipes are general cooking ideas, not nutrition or health advice.

@@ -1,4 +1,4 @@
-/* Tyllage Content studio — weekly post ideas for MEOD's social media and WhatsApp channel.
+/* Tyllage Content studio — weekly post ideas for Tyllage's social media and WhatsApp channel.
  *
  * PROTOTYPE ONLY. Ideas are rule-based, built from what the farm actually has this week:
  * Demand Radar (crops to push), Harvest Planner (what's growing), recipes, praise from
@@ -22,17 +22,17 @@
     whatsapp: { label: 'WhatsApp channel', tone: 'green', day: 1, time: '9:00am' }
   };
   var CHANNELS = { social: 'Instagram & Facebook', whatsapp: 'WhatsApp channel' };
-  var BASE_TAGS = ['#MEODFarm', '#SGFresh', '#GrowLocal'];
-  var ORDER_LINE = 'Order on MEOD Fresh — delivered Tue, Thu & Sat 🚚';
+  var BASE_TAGS = ['#Tyllage', '#SGFresh', '#GrowLocal'];
+  var ORDER_LINE = 'Order on Tyllage Fresh — delivered Tue, Thu & Sat 🚚';
 
-  // "Support local" library: facts MEOD already states on its website, so nothing new is claimed.
+  // "Support local" library: facts Tyllage already states on its website, so nothing new is claimed.
   var LEARN = [
-    { id: 'imports', image: 'assets/img/hero-farm.webp', title: 'Why grow food here?', caption: 'Singapore imports over 90% of its food 🌏 Every bunch grown in Kranji is one less shipped or flown in.\n\nBy choosing local, you help Singapore grow more of its own food by 2035 — and keep farms like ours growing. 🌱\n\nOrder fresh from Kranji on MEOD Fresh.', tags: ['#SingaporeFoodStory', '#FoodSecurity', '#SupportLocal'] },
-    { id: 'sgfresh', image: 'assets/img/fresh-produce.webp', title: 'Look for the SG Fresh mark', caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on MEOD Fresh 🌱', tags: ['#SGFreshProduce', '#SupportLocal'] },
-    { id: 'pesticide', image: 'assets/img/ladybug.webp', title: 'Pesticide-free since 2014', caption: 'Over a decade of growing pesticide-free, chemical-free and GMO-free 🌿\n\nWe pair hi-tech greenhouses with the wisdom of our forefathers — so you can rinse, cook and enjoy without worry.\n\nOrder on MEOD Fresh — delivered Tue, Thu & Sat.', tags: ['#PesticideFree', '#CleanEating'] },
-    { id: 'imperfect', image: 'assets/img/farm-flatlay.webp', title: 'Imperfect veg is still good veg', caption: 'A few holes or a curly leaf? Still fresh, still delicious 🥬\n\nOur Buy to Clear deals give "imperfect" harvests a home instead of the compost heap. Less waste, better prices — everyone wins. Find them under Buy to Clear when you order on MEOD Fresh.', tags: ['#FoodWaste', '#UglyVeg', '#ZeroWaste'] },
+    { id: 'imports', image: 'assets/img/hero-farm.webp', title: 'Why grow food here?', caption: 'Singapore imports over 90% of its food 🌏 Every bunch grown in Kranji is one less shipped or flown in.\n\nBy choosing local, you help Singapore grow more of its own food by 2035 — and keep farms like ours growing. 🌱\n\nOrder fresh from Kranji on Tyllage Fresh.', tags: ['#SingaporeFoodStory', '#FoodSecurity', '#SupportLocal'] },
+    { id: 'sgfresh', image: 'assets/img/fresh-produce.webp', title: 'Look for the SG Fresh mark', caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on Tyllage Fresh 🌱', tags: ['#SGFreshProduce', '#SupportLocal'] },
+    { id: 'pesticide', image: 'assets/img/ladybug.webp', title: 'Pesticide-free since 2014', caption: 'Over a decade of growing pesticide-free, chemical-free and GMO-free 🌿\n\nWe pair hi-tech greenhouses with the wisdom of our forefathers — so you can rinse, cook and enjoy without worry.\n\nOrder on Tyllage Fresh — delivered Tue, Thu & Sat.', tags: ['#PesticideFree', '#CleanEating'] },
+    { id: 'imperfect', image: 'assets/img/farm-flatlay.webp', title: 'Imperfect veg is still good veg', caption: 'A few holes or a curly leaf? Still fresh, still delicious 🥬\n\nOur Buy to Clear deals give "imperfect" harvests a home instead of the compost heap. Less waste, better prices — everyone wins. Find them under Buy to Clear when you order on Tyllage Fresh.', tags: ['#FoodWaste', '#UglyVeg', '#ZeroWaste'] },
     { id: 'scale', image: 'assets/img/hero-farm.webp', title: '6 hectares in Kranji', caption: 'Did you know? Our farm in Kranji covers 6 hectares 🚜 — one of Singapore\'s largest efforts to grow greens locally, sustainably and at scale.\n\nCome see it for yourself on a farm visit!', tags: ['#Kranji', '#UrbanFarming', '#SingaporeFoodStory'] },
-    { id: 'seasons', image: 'assets/img/farmer-vertical.webp', title: 'How fresh is fresh?', caption: 'Supermarket greens can take days to travel here. Ours are harvested in the morning and with you within a day 🕒\n\nThat\'s why they stay crisp in the fridge for longer. Taste the difference — order on MEOD Fresh 🌱', tags: ['#FarmToTable', '#SupportLocal'] }
+    { id: 'seasons', image: 'assets/img/farmer-vertical.webp', title: 'How fresh is fresh?', caption: 'Supermarket greens can take days to travel here. Ours are harvested in the morning and with you within a day 🕒\n\nThat\'s why they stay crisp in the fridge for longer. Taste the difference — order on Tyllage Fresh 🌱', tags: ['#FarmToTable', '#SupportLocal'] }
   ];
 
   function S() { return M.state; }
@@ -70,7 +70,7 @@
     var picks = (push.length ? push : inStock).slice(0, 3).map(function (c) { return c.product; });
     if (picks.length) {
       out.push({ key: 'whatsapp|week', type: 'whatsapp', channel: 'whatsapp', product: picks[0], title: 'This week\'s harvest (WhatsApp)',
-        caption: '🌱 *MEOD Fresh — this week\'s harvest*\n' + picks.map(function (p) { return '• ' + p.title + ' — ' + money(p.priceCents); }).join('\n') +
+        caption: '🌱 *Tyllage Fresh — this week\'s harvest*\n' + picks.map(function (p) { return '• ' + p.title + ' — ' + money(p.priceCents); }).join('\n') +
           '\n\nOrder by the night before for Tue, Thu & Sat delivery. Reply STOP to leave the channel.',
         tags: [], why: 'For channel followers only. Prices come from the live catalogue, so check them before posting.' });
     }
@@ -103,7 +103,7 @@
     var praise = M.feedback ? M.feedback.items().filter(function (x) { return x.sentiment === 'pos' && x.f.source !== 'b2b'; })[0] : null;
     if (praise) {
       out.push({ key: 'love|' + praise.f.id, type: 'love', channel: 'social', product: praise.product, title: 'What our customers say', needsPermission: true,
-        caption: '💚 "' + praise.f.text + '"\n— one of our MEOD Fresh customers\n\nThank you for growing with us! Every order helps a local farm keep growing.',
+        caption: '💚 "' + praise.f.text + '"\n— one of our Tyllage Fresh customers\n\nThank you for growing with us! Every order helps a local farm keep growing.',
         tags: BASE_TAGS.concat(['#CustomerLove', '#SupportLocal']),
         why: 'From Feedback (' + M.feedback.SOURCES[praise.f.source].toLowerCase() + '). Ask the customer first — and don\'t use their name unless they agree.' });
     }
@@ -119,7 +119,7 @@
     return out.map(function (x) {
       var t = TYPES[x.type];
       x.dayKey = x.dayKey || nextDay(t.day); x.time = t.time;
-      // Product photo when MEOD has one; otherwise a farm photo that suits the post type.
+      // Product photo when Tyllage has one; otherwise a farm photo that suits the post type.
       x.image = x.image || (x.type !== 'whatsapp' && x.type !== 'story' && x.product && x.product.image) ||
         { whatsapp: 'assets/img/farm-flatlay.webp', story: 'assets/img/farmer-vertical.webp', recipe: 'assets/img/farm-flatlay.webp', love: 'assets/img/contact.webp' }[x.type] || 'assets/img/fresh-produce.webp';
       x.planned = planned[x.key] || null;
@@ -129,7 +129,7 @@
   }
   function learnIdea(l) {
     return { key: 'learn|' + l.id, type: 'learn', channel: 'social', product: null, title: l.title, image: l.image, caption: l.caption, tags: BASE_TAGS.concat(l.tags),
-      why: 'Education post about supporting local farms. Uses only facts MEOD already states on its website.', photoTip: 'A wide shot of the greenhouses works well.' };
+      why: 'Education post about supporting local farms. Uses only facts Tyllage already states on its website.', photoTip: 'A wide shot of the greenhouses works well.' };
   }
 
   // Quick checks before a caption goes out — explainable rules, not a judgement of quality.

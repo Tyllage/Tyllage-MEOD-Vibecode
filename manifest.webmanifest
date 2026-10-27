@@ -1,7 +1,7 @@
 {
-  "name": "MEOD Portal · Tyllage",
-  "short_name": "MEOD Rounds",
-  "description": "Greenhouse rounds, harvest planning and sales tools for MEOD Farm. Prototype with synthetic data.",
+  "name": "Tyllage Portal · Tyllage",
+  "short_name": "Tyllage Rounds",
+  "description": "Greenhouse rounds, harvest planning and sales tools for Tyllage. Prototype with synthetic data.",
   "start_url": "dashboard.html",
   "scope": "./",
   "display": "standalone",

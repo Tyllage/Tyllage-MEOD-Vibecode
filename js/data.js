@@ -1,7 +1,7 @@
-/* Tyllage x MEOD Farm — demo data + business rules.
+/* Tyllage — demo data + business rules.
  *
  * PROTOTYPE ONLY. Everything here is synthetic: names, phone numbers and
- * prices are made up. Live products, prices and stock would come from MEOD's
+ * prices are made up. Live products, prices and stock would come from Tyllage's
  * Shopify store through a backend; nothing here talks to a server.
  *
  * State lives in the visitor's localStorage so changes (orders, bookings,
@@ -13,7 +13,7 @@
 
   var STORAGE_KEY = 'meod-demo-state-v2';
 
-  // Illustrative commercial rules — MEOD must confirm the real values.
+  // Illustrative commercial rules — Tyllage must confirm the real values.
   var RULES = {
     commissionRate: 0.05,          // group leader commission on net merchandise
     groupDiscountRate: 0.05,       // discount when a group-buy code is used
@@ -27,7 +27,7 @@
     clearanceCandidateSoldRatio: 0.25, // ...and sold less than this share of stock in 14 days
     clearanceDefaultMinRate: 0.6,   // staff default minimum price = 60% of normal price
     minMarginRate: 0.15,            // Margin Guard: keep at least 15% margin after unit cost (illustrative)
-    // Grow with MEOD rewards. Points per dollar and redeem-for-discount mirror MEOD Fresh's
+    // Grow with Tyllage rewards. Points per dollar and redeem-for-discount mirror Tyllage Fresh's
     // existing Store Rewards (Smile.io) — real rates to be confirmed. Tiers, anti-waste
     // bonuses and tier perks are Tyllage additions. All values illustrative.
     rewards: {
@@ -77,7 +77,7 @@
     preorderCutoffHour: 22,         // harvest pre-orders close 10pm the day before harvest
     preorderDefaultShare: 0.6,      // share of a batch's expected yield opened to pre-order
     // Surprise Bag decisions (Harvest Rescue). Costs and sell-through rates are illustrative;
-    // MEOD to confirm. A bag holds a household-sized mix, never everything left over.
+    // Tyllage to confirm. A bag holds a household-sized mix, never everything left over.
     bag: {
       // A bag is filled until it meets its "worth at least" promise, up to a household-sized
       // maximum of items (about 1.2 kg small, 1.8 kg regular). More than that risks waste at home.
@@ -100,9 +100,9 @@
       minHarvestsForBias: 3,        // learning: harvests needed before suggesting a corrected estimate
       thumbSide: 96                 // photos are kept as a small thumbnail only
     },
-    // Typical sow-to-harvest days per category (illustrative — MEOD's growers to confirm).
+    // Typical sow-to-harvest days per category (illustrative — Tyllage's growers to confirm).
     growDays: { 'asian-greens': 30, lettuces: 40, fungi: 14, herbs: 45 },
-    // Days a harvest stays at its best for sale (Harvest Rescue sell-by). Illustrative — MEOD to set.
+    // Days a harvest stays at its best for sale (Harvest Rescue sell-by). Illustrative — Tyllage to set.
     shelfDays: { 'asian-greens': 4, lettuces: 5, fungi: 7, herbs: 6 }
   };
 
@@ -141,7 +141,7 @@
     ['Vege Powder', 'Mushroom & greens seasoning', 'farm-more', 1490, 9, 'Ready-to-eat', 'Dried farm veg and mushrooms ground into an everyday seasoning.', ['powder', 'seasoning', '蔬菜粉']]
   ];
 
-  // Product photos supplied by MEOD (optimised copies in assets/img).
+  // Product photos supplied by Tyllage (optimised copies in assets/img).
   var IMAGES = {
     'Xiao Bai Cai': 'assets/img/veg-xiao-bai-cai.webp',
     'Tuscan Kale': 'assets/img/veg-tuscan-kale.webp',
@@ -205,7 +205,7 @@
     function p(title) { return products.filter(function (x) { return x.title === title; })[0]; }
 
     var customers = [
-      { id: 'C-1001', name: 'Aster Lim', phone: '+65 8000 0001', email: 'customer@meod.test', language: 'en', consentMarketing: true, consentPersonalisation: true },
+      { id: 'C-1001', name: 'Aster Lim', phone: '+65 8000 0001', email: 'customer@tyllage.test', language: 'en', consentMarketing: true, consentPersonalisation: true },
       { id: 'C-1002', name: 'Bee Ling Tan', phone: '+65 8000 0002', email: 'beeling@example.test', language: 'zh', consentMarketing: true, consentPersonalisation: true },
       { id: 'C-1003', name: 'Citra Rahman', phone: '+65 8000 0003', email: 'citra@example.test', language: 'ms', consentMarketing: true, consentPersonalisation: true },
       { id: 'C-1004', name: 'Devi Kumar', phone: '+65 8000 0004', email: 'devi@example.test', language: 'ta', consentMarketing: false, consentPersonalisation: false },
@@ -248,11 +248,11 @@
     });
 
     var users = [
-      { email: 'admin@meod.test', name: 'MEOD Admin', role: 'admin' },
-      { email: 'sales@meod.test', name: 'Sales Staff', role: 'staff' },
-      { email: 'leader@meod.test', name: 'Grace Ong', role: 'leader', leaderId: 'L-1001' },
-      { email: 'leader2@meod.test', name: 'Hari Singh', role: 'leader', leaderId: 'L-1002' },
-      { email: 'customer@meod.test', name: 'Aster Lim', role: 'customer', customerId: 'C-1001' }
+      { email: 'admin@tyllage.test', name: 'Tyllage Admin', role: 'admin' },
+      { email: 'sales@tyllage.test', name: 'Sales Staff', role: 'staff' },
+      { email: 'leader@tyllage.test', name: 'Grace Ong', role: 'leader', leaderId: 'L-1001' },
+      { email: 'leader2@tyllage.test', name: 'Hari Singh', role: 'leader', leaderId: 'L-1002' },
+      { email: 'customer@tyllage.test', name: 'Aster Lim', role: 'customer', customerId: 'C-1001' }
     ];
 
     return {
@@ -265,16 +265,16 @@
       users: users,
       tickets: [
         { id: 'T-1001', customerId: 'C-1003', channel: 'whatsapp', intent: 'complaint', summary: 'Reports wilted leaves in last delivery.', status: 'open', assignee: null, createdAt: minutesAgo(95) },
-        { id: 'T-1002', customerId: 'C-1006', channel: 'web', intent: 'payment', summary: 'Asks why payment link expired.', status: 'open', assignee: 'sales@meod.test', createdAt: minutesAgo(40) }
+        { id: 'T-1002', customerId: 'C-1006', channel: 'web', intent: 'payment', summary: 'Asks why payment link expired.', status: 'open', assignee: 'sales@tyllage.test', createdAt: minutesAgo(40) }
       ],
       bookings: [
         { id: 'B-1001', name: 'Demo School Group', email: 'teacher@example.test', phone: '+65 8000 0099', experience: 'School Visit', pax: 30, date: daysFromNow(14).slice(0, 10), message: 'Primary 4 science trip.', status: 'new', createdAt: minutesAgo(300) }
       ],
       campaigns: [
-        { id: 'CP-1001', productId: p('Shiitake Mushroom').id, title: 'Mushroom Monday', message: 'Fresh shiitake harvested this morning — 5% off with your group code this week!', language: 'en', audience: ['C-1003', 'C-1001'], status: 'sent', createdBy: 'sales@meod.test', approvedBy: 'admin@meod.test', createdAt: minutesAgo(4320), sentCount: 2 }
+        { id: 'CP-1001', productId: p('Shiitake Mushroom').id, title: 'Mushroom Monday', message: 'Fresh shiitake harvested this morning — 5% off with your group code this week!', language: 'en', audience: ['C-1003', 'C-1001'], status: 'sent', createdBy: 'sales@tyllage.test', approvedBy: 'admin@tyllage.test', createdAt: minutesAgo(4320), sentCount: 2 }
       ],
       audit: [
-        { at: minutesAgo(4300), actor: 'admin@meod.test', event: 'campaign.approved', target: 'CP-1001' }
+        { at: minutesAgo(4300), actor: 'admin@tyllage.test', event: 'campaign.approved', target: 'CP-1001' }
       ],
       seq: 2000
     };
@@ -309,7 +309,7 @@
     var placed = new Date(order.createdAt);
     var now = Date.now();
     var ev = function (status, label, at, detail) { return { status: status, label: label, at: at ? new Date(at).toISOString() : null, detail: detail || '' }; };
-    var base = { trackingNo: trackingNo, carrier: 'MEOD delivery', driver: null, stopsAway: null, windowStart: null, windowEnd: null, proof: null, progress: 0 };
+    var base = { trackingNo: trackingNo, carrier: 'Tyllage delivery', driver: null, stopsAway: null, windowStart: null, windowEnd: null, proof: null, progress: 0 };
 
     if (order.status === 'cancelled' || order.status === 'refunded') {
       return Object.assign(base, { state: 'closed', headline: order.status === 'refunded' ? 'Refunded' : 'Cancelled', events: [] });
@@ -418,7 +418,7 @@
           id: 'CL-' + s.seq, productId: p.id, qty: qty, qtySold: Math.max(0, Math.round(qty * 0.3)),
           normalPriceCents: p.priceCents, clearancePriceCents: clearancePriceCents, minPriceCents: minPriceCents,
           reason: reason, availableUntil: daysFromNow(untilDays), status: 'active',
-          createdBy: 'sales@meod.test', createdAt: minutesAgo(180)
+          createdBy: 'sales@tyllage.test', createdAt: minutesAgo(180)
         });
       };
       seedListing('HK Cai Xin', 20, 250, 220, 'surplus', 3);
@@ -500,7 +500,7 @@
         var b = {
           id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(sow), harvestDate: bagDayKey(harvest),
           expectedQty: r[2], preorderCap: Math.round(r[2] * RULES.preorderDefaultShare), preorderPriceCents: p.priceCents,
-          status: r[3] || 'planned', createdBy: 'admin@meod.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
+          status: r[3] || 'planned', createdBy: 'admin@tyllage.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
         };
         if (b.status === 'harvested') { b.actualQty = 56; b.harvestedAt = harvest.toISOString(); }
         s.batches.push(b);
@@ -610,7 +610,7 @@
       s.migrations.visitsV1 = true;
     }
     if (!s.migrations.radarHistoryV1) {
-      // 8 weeks of weekly unit sales per crop across all channels, standing in for MEOD
+      // 8 weeks of weekly unit sales per crop across all channels, standing in for Tyllage
       // Fresh (Shopify) order history — the portal's own demo orders are only a small slice.
       // [title, typical units a week, trend per week (+/−)]. Synthetic, deterministic.
       s.salesHistory = { source: 'shopify-mock', weeks: 8, byProduct: {} };
@@ -641,7 +641,7 @@
         s.batches.push({
           id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(sow), harvestDate: bagDayKey(harvest),
           expectedQty: r[2], preorderCap: Math.round(r[2] * RULES.preorderDefaultShare), preorderPriceCents: p.priceCents,
-          status: 'planned', createdBy: 'admin@meod.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
+          status: 'planned', createdBy: 'admin@tyllage.test', createdAt: new Date(sow.getTime() - 864e5).toISOString()
         });
       });
       s.migrations.radarHistoryV1 = true;
@@ -726,13 +726,13 @@
           id: 'HB-' + s.seq, productId: p.id, sowDate: bagDayKey(new Date(hv.getTime() - (RULES.growDays[p.category] || 30) * 864e5)), harvestDate: bagDayKey(hv),
           expectedQty: r[2] + 4, preorderCap: 0, preorderPriceCents: p.priceCents, status: 'harvested', actualQty: r[2], toStock: r[2],
           harvestedAt: hv.toISOString(), sellBy: bagDayKey(new Date(hv.getTime() + (RULES.shelfDays[p.category] || 4) * 864e5)),
-          createdBy: 'admin@meod.test', createdAt: new Date(hv.getTime() - 40 * 864e5).toISOString()
+          createdBy: 'admin@tyllage.test', createdAt: new Date(hv.getTime() - 40 * 864e5).toISOString()
         });
       });
       s.migrations.rescueV1 = true;
     }
     if (!s.migrations.pricingV1) {
-      // Illustrative unit costs for Margin Guard (MEOD to enter real figures): growing cost as a
+      // Illustrative unit costs for Margin Guard (Tyllage to enter real figures): growing cost as a
       // share of price, plus packaging and handling per unit. Plus one pending price proposal
       // from sales staff so the admin approval step can be shown.
       s.costs = {};
@@ -744,7 +744,7 @@
       s.seq += 1;
       s.priceProposals = basil ? [{ id: 'PP-' + s.seq, kind: 'discount', productId: basil.id, fromCents: basil.priceCents, toCents: Math.round(basil.priceCents * 0.8),
         qty: 12, untilKey: bagDayKey(new Date(Date.now() + 4 * 864e5)), reason: 'Sweet Basil supply is well above demand (demand down 21%).', status: 'pending',
-        createdBy: 'sales@meod.test', createdAt: new Date(Date.now() - 3 * 36e5).toISOString(), decidedBy: null }] : [];
+        createdBy: 'sales@tyllage.test', createdAt: new Date(Date.now() - 3 * 36e5).toISOString(), decidedBy: null }] : [];
       s.migrations.pricingV1 = true;
     }
     if (!s.migrations.feedbackV1) {
@@ -762,7 +762,7 @@
       if (kl) {
         s.seq += 1;
         klBatch = { id: 'HB-' + s.seq, productId: kl.id, sowDate: dk(6 + (RULES.growDays[kl.category] || 30)), harvestDate: dk(6), expectedQty: 30, preorderCap: 0, preorderPriceCents: kl.priceCents,
-          status: 'harvested', actualQty: 28, toStock: 0, harvestedAt: at(6, 7), sellBy: dk(6 - (RULES.shelfDays[kl.category] || 4)), createdBy: 'admin@meod.test', createdAt: at(50, 10) };
+          status: 'harvested', actualQty: 28, toStock: 0, harvestedAt: at(6, 7), sellBy: dk(6 - (RULES.shelfDays[kl.category] || 4)), createdBy: 'admin@tyllage.test', createdAt: at(50, 10) };
         s.batches.push(klBatch);
       }
       var gf = (s.b2b && s.b2b.accounts || []).filter(function (a) { return /Green Fork/.test(a.name); })[0];
@@ -792,7 +792,7 @@
         var pid = r[4] ? pF(r[4]) : null;
         return { id: 'FB-' + s.seq, source: r[0], customerId: r[1], accountId: r[2] || null, who: r[3], productId: pid, deliveryKey: r[5] != null ? dk(r[5]) : null,
           batchId: r[4] === 'Kai Lan' && klBatch ? klBatch.id : null, rating: r[6], text: r[7], at: r[9] ? s.tickets.filter(function (t) { return t.id === r[9]; }).map(function (t) { return t.createdAt; })[0] || at(r[8]) : at(r[8]),
-          ticketId: r[9] || null, loggedBy: r[0] === 'chat' || r[0] === 'b2b' ? 'sales@meod.test' : null };
+          ticketId: r[9] || null, loggedBy: r[0] === 'chat' || r[0] === 'b2b' ? 'sales@tyllage.test' : null };
       });
       s.feedbackActions = [];
       s.feedbackResolved = {};
@@ -806,13 +806,13 @@
       s.seq += 2;
       s.contentPlan = [
         { id: 'PO-' + (s.seq - 1), ideaKey: 'learn|sgfresh', type: 'learn', channel: 'social', title: 'Look for the SG Fresh mark',
-          caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on MEOD Fresh 🌱',
-          tags: ['#MEODFarm', '#SGFreshProduce', '#SupportLocal'], image: 'assets/img/fresh-produce.webp', productId: null, dayKey: bagDayKey(new Date(c0.getTime() - 3 * 864e5)), time: '10:00am',
-          status: 'posted', createdBy: 'sales@meod.test', createdAt: new Date(c0.getTime() - 5 * 864e5).toISOString(), approvedBy: 'admin@meod.test', postedAt: new Date(c0.getTime() - 3 * 864e5 + 10 * 36e5).toISOString(), postedBy: 'sales@meod.test' },
+          caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on Tyllage Fresh 🌱',
+          tags: ['#Tyllage', '#SGFreshProduce', '#SupportLocal'], image: 'assets/img/fresh-produce.webp', productId: null, dayKey: bagDayKey(new Date(c0.getTime() - 3 * 864e5)), time: '10:00am',
+          status: 'posted', createdBy: 'sales@tyllage.test', createdAt: new Date(c0.getTime() - 5 * 864e5).toISOString(), approvedBy: 'admin@tyllage.test', postedAt: new Date(c0.getTime() - 3 * 864e5 + 10 * 36e5).toISOString(), postedBy: 'sales@tyllage.test' },
         shi ? { id: 'PO-' + s.seq, ideaKey: 'fresh|' + shi.id, type: 'fresh', channel: 'social', title: 'Fresh Shiitake Mushroom this week',
-          caption: 'Fresh from Kranji 🍄 Our shiitake are meaty, earthy and harvested this week.\n\nSlice and pan-fry with butter and garlic, or drop them into your next soup.\n\nOrder on MEOD Fresh — delivered Tue, Thu & Sat 🚚',
-          tags: ['#MEODFarm', '#SGFresh', '#Shiitake'], image: shi.image, productId: shi.id, dayKey: bagDayKey(new Date(c0.getTime() + 2 * 864e5)), time: '7:30pm',
-          status: 'pending', createdBy: 'sales@meod.test', createdAt: new Date(Date.now() - 2 * 36e5).toISOString(), approvedBy: null, postedAt: null } : null
+          caption: 'Fresh from Kranji 🍄 Our shiitake are meaty, earthy and harvested this week.\n\nSlice and pan-fry with butter and garlic, or drop them into your next soup.\n\nOrder on Tyllage Fresh — delivered Tue, Thu & Sat 🚚',
+          tags: ['#Tyllage', '#SGFresh', '#Shiitake'], image: shi.image, productId: shi.id, dayKey: bagDayKey(new Date(c0.getTime() + 2 * 864e5)), time: '7:30pm',
+          status: 'pending', createdBy: 'sales@tyllage.test', createdAt: new Date(Date.now() - 2 * 36e5).toISOString(), approvedBy: null, postedAt: null } : null
       ].filter(Boolean);
       s.migrations.contentV1 = true;
     }
@@ -873,8 +873,8 @@
       s.migrations.reviewsV1 = true;
     }
     if (!s.migrations.lostDemandV1) {
-      // Demo lost demand from the last few weeks: trade enquiries MEOD couldn't fill,
-      // "Notify me" taps on sold-out products, and requests for crops MEOD doesn't grow.
+      // Demo lost demand from the last few weeks: trade enquiries Tyllage couldn't fill,
+      // "Notify me" taps on sold-out products, and requests for crops Tyllage doesn't grow.
       var lp = function (title) { return s.products.filter(function (x) { return x.title === title; })[0]; };
       var acct = function (re) { return ((s.b2b && s.b2b.accounts) || []).filter(function (a) { return re.test(a.name); })[0]; };
       var t1 = new Date(); t1.setHours(0, 0, 0, 0);
@@ -901,28 +901,28 @@
         s.seq += 1;
         return { id: 'LD-' + s.seq, source: r[0], reason: r[1], productId: p ? p.id : null, cropName: r[2], qty: r[3], wantedKey: r[5] != null ? bagDayKey(new Date(t1.getTime() + r[5] * 864e5)) : null,
           customerId: r[6], accountId: r[7] ? r[7].id : null, who: r[8], note: r[9], notify: r[10], status: 'open',
-          at: new Date(t1.getTime() - r[4] * 864e5 + 11 * 36e5).toISOString(), by: r[0] === 'soldout' ? null : 'sales@meod.test' };
+          at: new Date(t1.getTime() - r[4] * 864e5 + 11 * 36e5).toISOString(), by: r[0] === 'soldout' ? null : 'sales@tyllage.test' };
       });
       // Two fulfilled ones, so the conversion rate has a starting point.
       [['Kai Lan', 8, 18, gf], ['Xiao Bai Cai', 12, 20, hc]].forEach(function (r) {
         var p = lp(r[0]); if (!p) return;
         s.seq += 1;
         s.lostDemand.push({ id: 'LD-' + s.seq, source: 'b2b', reason: 'quantity', productId: p.id, cropName: p.title, qty: r[1], wantedKey: null, customerId: null, accountId: r[3] ? r[3].id : null,
-          who: null, note: 'Filled from the next harvest.', notify: true, status: 'fulfilled', at: new Date(t1.getTime() - r[2] * 864e5).toISOString(), by: 'sales@meod.test', resolvedBy: 'sales@meod.test' });
+          who: null, note: 'Filled from the next harvest.', notify: true, status: 'fulfilled', at: new Date(t1.getTime() - r[2] * 864e5).toISOString(), by: 'sales@tyllage.test', resolvedBy: 'sales@tyllage.test' });
       });
       s.migrations.lostDemandV1 = true;
     }
     if (!s.migrations.pilotV1) {
       // A baseline recorded four weeks ago (before Tyllage's features were in use, demo values),
       // so the pilot page can show change since then.
-      s.pilotBaselines = [{ at: new Date(Date.now() - 28 * 864e5).toISOString(), by: 'admin@meod.test', note: 'Before the pilot (demo values)', days: 30,
+      s.pilotBaselines = [{ at: new Date(Date.now() - 28 * 864e5).toISOString(), by: 'admin@tyllage.test', note: 'Before the pilot (demo values)', days: 30,
         conversion: 22, enquiries: 9, converted: 2, sellThrough: 78, harvestedUnits: 410, unsold: 90, campaigns: 1, campRevenueCents: 1300, campMarginCents: 600, lostUnits: 0, minutesSaved: 0 }];
       s.imports = [];
       // Recent demo activity, so "time saved" and campaign results aren't empty on a fresh demo:
       // drafts staff used over the last few weeks, and a reorder after the Mushroom Monday campaign.
       [['booking.replied', 'B-1001', 11], ['booking.replied', 'B-2058', 15], ['b2b.contacted', 'Green Fork Bistro (demo)', 6], ['b2b.contacted', 'Harbour Catering (demo)', 9],
        ['campaign.submitted', 'Kai Lan', 12], ['rescue.alert', 'Bayam', 5], ['pricing.proposed', 'Sweet Basil', 0.2], ['briefing.sent', 'weekly', 7]].forEach(function (a) {
-        s.audit.push({ at: new Date(Date.now() - a[2] * 864e5).toISOString(), actor: 'sales@meod.test', event: a[0], target: a[1] });
+        s.audit.push({ at: new Date(Date.now() - a[2] * 864e5).toISOString(), actor: 'sales@tyllage.test', event: a[0], target: a[1] });
       });
       var cp = s.campaigns.filter(function (c) { return c.id === 'CP-1001'; })[0];
       var shiP = cp && s.products.filter(function (x) { return x.id === cp.productId; })[0];
@@ -952,16 +952,16 @@
       s.decisions.push({ id: 'DL-' + s.seq, kind: 'campaign', feature: 'Campaign Advisor', title: 'Mushroom Monday — shiitake promo to past buyers', recommendation: 'Draft promo',
         inputs: [['Shiitake supply', 'surplus of about 18'], ['Opted-in past buyers', '2']], calc: ['Promote a surplus crop to people who bought mushrooms before'],
         assumptions: ['Only opted-in customers are messaged.'], confidence: { level: 'medium', note: 'Small audience.' },
-        status: 'approved', createdAt: new Date(dNow - 3.2 * 864e5).toISOString(), createdBy: 'sales@meod.test', decidedBy: 'admin@meod.test', decidedAt: new Date(dNow - 3 * 864e5).toISOString(),
+        status: 'approved', createdAt: new Date(dNow - 3.2 * 864e5).toISOString(), createdBy: 'sales@tyllage.test', decidedBy: 'admin@tyllage.test', decidedAt: new Date(dNow - 3 * 864e5).toISOString(),
         campaignId: 'CP-1001', outcome: { text: 'Sent to 2 people; 1 reorder within a day (2 × Shiitake).', at: new Date(dNow - 2 * 864e5).toISOString() } });
       s.seq += 1;
       s.decisions.push({ id: 'DL-' + s.seq, kind: 'price', feature: 'Price Advisor', title: 'Mesclun Mix 45% off', recommendation: 'Discount',
         inputs: [['Unsold from harvest', '19'], ['Sell by', '2 days']], calc: ['45% off → S$3.25', 'Margin Guard floor S$3.54 → blocked'],
         assumptions: ['Floor = 60% of normal price.'], confidence: { level: 'high', note: 'The floor is a fixed rule.' },
-        status: 'rejected', createdAt: new Date(dNow - 6 * 864e5).toISOString(), createdBy: 'sales@meod.test', decidedBy: 'Margin Guard', decidedAt: new Date(dNow - 6 * 864e5).toISOString(),
+        status: 'rejected', createdAt: new Date(dNow - 6 * 864e5).toISOString(), createdBy: 'sales@tyllage.test', decidedBy: 'Margin Guard', decidedAt: new Date(dNow - 6 * 864e5).toISOString(),
         decisionNote: 'Blocked automatically; listed at the floor price instead', outcome: { text: 'Listed on Buy to Clear at the S$3.54 floor; offered to a trade buyer.', at: new Date(dNow - 5 * 864e5).toISOString() } });
       s.quotes = []; s.commitments = [];
-      // Visits: which past organisers agreed to hear from MEOD again (for re-invites).
+      // Visits: which past organisers agreed to hear from Tyllage again (for re-invites).
       s.bookings.forEach(function (b) { if (b.consentFollowUp == null) b.consentFollowUp = /Sunrise|Acme/.test(b.org || ''); });
       s.migrations.ledgerV1 = true;
     }
@@ -992,13 +992,13 @@
       // Greenhouse rounds: every batch gets a greenhouse, and there's a farm-worker account.
       var gh = 0;
       s.batches.forEach(function (b) { if (!b.greenhouse) b.greenhouse = greenhouseName(gh++); });
-      if (!s.users.some(function (u) { return u.email === 'worker@meod.test'; })) s.users.push({ email: 'worker@meod.test', name: 'Siti Aminah', role: 'worker' });
+      if (!s.users.some(function (u) { return u.email === 'worker@tyllage.test'; })) s.users.push({ email: 'worker@tyllage.test', name: 'Siti Aminah', role: 'worker' });
       s.inspections = s.inspections || [];
       s.rounds = s.rounds || [];
       s.migrations.inspectV1 = true;
     }
     // The demo farm worker gets a person's name (the greeting reads "Good morning, Siti").
-    s.users.forEach(function (u) { if (u.email === 'worker@meod.test' && u.name === 'Farm Worker') u.name = 'Siti Aminah'; });
+    s.users.forEach(function (u) { if (u.email === 'worker@tyllage.test' && u.name === 'Farm Worker') u.name = 'Siti Aminah'; });
     // Commitment-risk follow-up tasks and the log of every estimate change.
     s.tasks = s.tasks || [];
     s.estimateLog = s.estimateLog || [];
@@ -1028,7 +1028,7 @@
       [['Xiao Bai Cai', 'FairPrice', 295], ['Xiao Bai Cai', 'Cold Storage', 340], ['Xiao Bai Cai', 'Sheng Siong', 260], ['Kai Lan', 'FairPrice', 310], ['Kai Lan', 'Wet market', 250],
        ['Cos Lettuce', 'FairPrice', 395], ['Cos Lettuce', 'Cold Storage', 480], ['Shiitake Mushroom', 'FairPrice', 550], ['Tuscan Kale', 'Cold Storage', 690], ['Sweet Basil', 'Cold Storage', 350]].forEach(function (m, i) {
         var p = s.products.filter(function (x) { return x.title === m[0]; })[0];
-        if (p) s.marketPrices.push({ id: 'MP-' + (900 + i), productId: p.id, store: m[1], priceCents: m[2], note: 'Similar pack size (demo)', at: new Date(Date.now() - (2 + i) * dayMs).toISOString(), by: 'sales@meod.test', demo: true });
+        if (p) s.marketPrices.push({ id: 'MP-' + (900 + i), productId: p.id, store: m[1], priceCents: m[2], note: 'Similar pack size (demo)', at: new Date(Date.now() - (2 + i) * dayMs).toISOString(), by: 'sales@tyllage.test', demo: true });
       });
       s.migrations.learningV1 = true;
     }
@@ -1079,7 +1079,7 @@
     ]
   };
   function reviewerName(c) {
-    if (!c) return 'MEOD customer';
+    if (!c) return 'Tyllage customer';
     var parts = String(c.name).replace(/\s*\(demo\)\s*/i, '').trim().split(/\s+/);
     return parts[0] + (parts.length > 1 ? ' ' + parts[parts.length - 1].charAt(0) + '.' : '');
   }
@@ -1194,7 +1194,7 @@
    * Clearance stock is a discounted slice of a product's own stock.qty (not a separate
    * pool): selling a clearance line or an approved bag item decrements the real stock too,
    * so the Stock page stays the single source of truth. All prices here are illustrative —
-   * MEOD to confirm real costs before anything goes live.
+   * Tyllage to confirm real costs before anything goes live.
    */
   var CLEARANCE_REASONS = { surplus: 'Surplus', short_dated: 'Short-dated', cosmetic: 'Cosmetic' };
   function clearanceReasonLabel(reason) { return CLEARANCE_REASONS[reason] || reason; }
@@ -1672,9 +1672,9 @@
     return f;
   }
 
-  /* ---------- Grow with MEOD: rewards tiers, points and vouchers ----------
-   * Keeps MEOD Fresh's Store Rewards model (points per dollar, redeem for a discount) and
-   * adds what it doesn't have: growth-stage tiers counted in bunches of MEOD-grown produce
+  /* ---------- Grow with Tyllage: rewards tiers, points and vouchers ----------
+   * Keeps Tyllage Fresh's Store Rewards model (points per dollar, redeem for a discount) and
+   * adds what it doesn't have: growth-stage tiers counted in bunches of Tyllage-grown produce
    * (like a bubble-tea "cups" card, but for local veg), 2× points on anti-waste buys
    * (Buy to Clear, harvest pre-orders), a voucher on reaching each tier, and a lower
    * free-delivery threshold for the top tiers. Points are derived from orders every time
@@ -1698,7 +1698,7 @@
     return state.orders.filter(function (o) { return o.customerId === customerId; })
       .sort(function (a, b) { return new Date(a.createdAt) - new Date(b.createdAt); });
   }
-  // Bunches counted towards a tier: MEOD-grown items in paid/fulfilled orders within the window.
+  // Bunches counted towards a tier: Tyllage-grown items in paid/fulfilled orders within the window.
   function bunchesAt(customerId, atMs, excludeOrderId) {
     var from = atMs - RW.tierWindowDays * 864e5, n = 0;
     state.orders.forEach(function (o) {
@@ -1879,7 +1879,7 @@
   }
 
   /* ---------- Tyllage Price Advisor + Margin Guard ----------
-   * Margin Guard: every suggested price is checked against a floor — the higher of MEOD's
+   * Margin Guard: every suggested price is checked against a floor — the higher of Tyllage's
    * minimum price rule (60% of normal) and unit cost plus the minimum margin. Price Advisor:
    * rule-based suggestions from Demand Radar and Harvest Rescue (discount surplus, bundle a
    * surplus crop with a rising one, hold the price on short crops). Nothing changes a price
@@ -1902,7 +1902,7 @@
     var floor = Math.max(costFloor, ruleFloor);
     var margin = priceCents - cost.totalCents;
     var reasons = [];
-    if (priceCents < ruleFloor) reasons.push('below MEOD\'s minimum price (' + money(ruleFloor) + ', 60% of normal)');
+    if (priceCents < ruleFloor) reasons.push('below Tyllage\'s minimum price (' + money(ruleFloor) + ', 60% of normal)');
     if (priceCents < costFloor) reasons.push('margin under ' + Math.round(RULES.minMarginRate * 100) + '% after the ' + money(cost.totalCents) + ' unit cost');
     return {
       ok: reasons.length === 0, priceCents: priceCents, cost: cost, marginCents: margin, marginPct: priceCents ? Math.round(margin / priceCents * 100) : 0,
@@ -1973,7 +1973,7 @@
     return { ok: true, id: id };
   }
   // Approve or reject. An approved single-item discount becomes a Buy to Clear listing (re-checked
-  // by Margin Guard at that moment); bundles are recorded as approved for MEOD Fresh to publish.
+  // by Margin Guard at that moment); bundles are recorded as approved for Tyllage Fresh to publish.
   function decidePrice(id, approve, actor) {
     var pp = (state.priceProposals || []).filter(function (x) { return x.id === id; })[0];
     if (!pp || pp.status !== 'pending') return { ok: false, error: 'That proposal is no longer pending.' };
@@ -2291,8 +2291,8 @@
   }
 
   /* ---------- Tyllage Lost Demand Intelligence ----------
-   * Demand that never became a sale: enquiries MEOD couldn't fill ("20 bunches of basil on
-   * Tuesday?"), "Notify me" taps on sold-out products, and requests for crops MEOD doesn't
+   * Demand that never became a sale: enquiries Tyllage couldn't fill ("20 bunches of basil on
+   * Tuesday?"), "Notify me" taps on sold-out products, and requests for crops Tyllage doesn't
    * grow. Grouped per crop with a reason, so staff can tell weak demand from "we ran out".
    * Quantities are what the person asked for; nothing here is counted as a sale.
    */
@@ -2347,7 +2347,7 @@
       g.radar = c || null;
       if (!g.product) {
         g.verdict = g.peopleCount >= 3 ? 'Worth a trial' : 'Keep watching';
-        g.why = g.peopleCount + ' different ' + (g.peopleCount === 1 ? 'person' : 'people') + ' asked for ' + g.name + ', which MEOD doesn\'t grow. ' +
+        g.why = g.peopleCount + ' different ' + (g.peopleCount === 1 ? 'person' : 'people') + ' asked for ' + g.name + ', which Tyllage doesn\'t grow. ' +
           (g.peopleCount >= 3 ? 'Enough interest to consider a small trial batch.' : 'Not enough yet to plan around.');
       } else if (g.reason === 'ranout' || g.reason === 'quantity') {
         var weekly = c ? c.weekly : 0;
@@ -2357,7 +2357,7 @@
           (c && c.status === 'short' ? 'Demand Radar already shows it short: sow another batch.' : 'Recorded sales understate demand: plan a bigger batch or open pre-orders.');
       } else {
         g.verdict = 'Timing';
-        g.why = 'Wanted on days MEOD couldn\'t deliver or harvest. Consider pre-orders for those dates or a standing order.';
+        g.why = 'Wanted on days Tyllage couldn\'t deliver or harvest. Consider pre-orders for those dates or a standing order.';
       }
       g.score = g.units + g.peopleCount * 5 + (g.product ? 10 : 0);
       return g;
@@ -2428,7 +2428,7 @@
   }
 
   /* ---------- Tyllage Promotion Impact Simulator ----------
-   * Before MEOD runs a promotion, compare options side by side over the selling window:
+   * Before Tyllage runs a promotion, compare options side by side over the selling window:
    * units sold, revenue, contribution margin (revenue minus unit cost of what sells), what's
    * left unsold and its value. Simple, stated assumptions — each 10% off lifts sales by
    * RULES.promoLiftPer10 — so staff can see why one option beats another, and change them.
@@ -2482,15 +2482,15 @@
       assumptions: [
         'Normal sales: ' + (Math.round(c.weekly * 10) / 10) + ' a week (Demand Radar), so about ' + Math.round(base) + ' over ' + weeks + ' weeks.',
         'Available to sell: ' + avail + ' (stock plus the share of upcoming harvests in this window).',
-        'Each 10% off lifts sales by about ' + Math.round(lift * 100) + '% (illustrative — MEOD can change it in Settings).',
+        'Each 10% off lifts sales by about ' + Math.round(lift * 100) + '% (illustrative — Tyllage can change it in Settings).',
         'Unit cost ' + money(cost) + ' (Settings → Unit costs). Margin = revenue − unit cost of everything sold.',
         'Anything unsold at the end is shown at its full-price value — the cost of doing nothing.'
       ] };
   }
 
   /* ---------- Promotion Intelligence ----------
-   * Tyllage is MEOD's commercial partner, not a reseller: it works out *whether* a promotion
-   * is worth running, which kind fits the problem, and how much of a harvest to offer. MEOD
+   * Tyllage is Tyllage's commercial partner, not a reseller: it works out *whether* a promotion
+   * is worth running, which kind fits the problem, and how much of a harvest to offer. Tyllage
    * approves every offer, sells through its own channels and keeps its prices and customers.
    * 1. Harvest Drops: per upcoming batch, expected vs committed vs uncommitted, and three
    *    options (normal-price pre-order, bundle, small discount) with the maths shown.
@@ -2505,13 +2505,13 @@
     drop: { label: 'Harvest Drop', tone: 'green', when: 'A harvest has supply nobody has committed to yet. Offer it as a pre-order before it\'s picked.',
       alt: ['Smart bundle', 'If pre-orders are still slow a few days before the cutoff.'], avoid: ['Broad discount', 'Cuts the price for people who would buy anyway, before a normal-price pre-order has been tried.'] },
     bundle: { label: 'Smart bundle', tone: 'green', when: 'One crop is slow and another sells well. A pair at a small saving moves the slow one without cutting its own price.',
-      alt: ['Normal-price pre-order', 'If MEOD would rather not publish a bundle in MEOD Fresh.'], avoid: ['Broad discount', 'A shop-wide price cut gives margin away on every sale, not just the extra ones.'] },
+      alt: ['Normal-price pre-order', 'If Tyllage would rather not publish a bundle in Tyllage Fresh.'], avoid: ['Broad discount', 'A shop-wide price cut gives margin away on every sale, not just the extra ones.'] },
     rescue: { label: 'Rescue offer', tone: 'red', when: 'Produce that\'s already harvested is near its sell-by date. Alert past buyers first, and only then list it on Buy to Clear.',
       alt: ['Buy to Clear listing', 'If the alert hasn\'t sold it within a day. Never below the minimum price.'], avoid: ['Waiting', 'Each day closer to the sell-by date lowers what it can sell for.'] },
     group: { label: 'Group-buy milestone', tone: 'blue', when: 'A group buy orders regularly. A volume goal combines orders into one drop-off, and the reward has to cost less than the extra margin.',
       alt: ['Normal group-buy reminder', 'If the group\'s orders are already growing without a goal.'], avoid: ['A bigger group discount', 'It lowers the price of every group order, including the usual ones.'] },
     visit: { label: 'Learning-journey voucher', tone: 'blue', when: 'A group visited recently and some visitors opted in. A thank-you voucher turns a visit into produce orders.',
-      alt: ['Harvest updates only', 'If MEOD prefers no voucher. Visitors who opted in still hear about fresh harvests.'], avoid: ['Messaging visitors who didn\'t opt in', 'Not allowed: marketing needs their consent.'] },
+      alt: ['Harvest updates only', 'If Tyllage prefers no voucher. Visitors who opted in still hear about fresh harvests.'], avoid: ['Messaging visitors who didn\'t opt in', 'Not allowed: marketing needs their consent.'] },
     repeat: { label: 'Repeat-buyer reward', tone: 'amber', when: 'Members are close to a tier or have points they haven\'t used. Use the rewards they already have; no new discount.',
       alt: ['Points reminder', 'Remind them what their points are worth instead.'], avoid: ['A new voucher on top', 'They already have rewards to use; another discount only costs margin.'] },
     reactivate: { label: 'Reactivation', tone: 'amber', when: 'Past buyers who opted in haven\'t ordered for 30+ days. Tell them what\'s fresh this week.',
@@ -2614,8 +2614,8 @@
     if (rec === 'none') return promoRanking('none', reason, x.shortBy > 0 ? { alt: ['Sow another batch', 'Demand Radar shows when one would be ready.'], avoid: ['Any promotion', 'It would sell stock the farm doesn\'t have.'] } : null);
     if (rec === 'normal') return promoRanking('drop', reason, { alt: bun && bun.guard.ok ? ['Smart bundle with ' + bun.partner.title, 'If pre-orders are still slow a few days before the cutoff.'] : ['Harvest Rescue after picking', 'If pre-orders don\'t fill.'],
       avoid: ['Discount', 'Nothing suggests demand needs a lower price; it would give up ' + cut + '.'] });
-    if (rec === 'bundle') return promoRanking('bundle', reason, { alt: ['Normal-price pre-order', 'If MEOD would rather not publish a bundle in MEOD Fresh.'], avoid: ['Broad discount', 'Cutting the shop price gives up ' + cut + ' on every sale, not just the extra ones.'] });
-    return promoRanking('drop', reason, { alt: bun && bun.guard.ok ? ['Smart bundle with ' + bun.partner.title, 'Keeps this crop\'s own price if the pair appeals.'] : ['Normal-price pre-order', 'If MEOD would rather keep the price.'],
+    if (rec === 'bundle') return promoRanking('bundle', reason, { alt: ['Normal-price pre-order', 'If Tyllage would rather not publish a bundle in Tyllage Fresh.'], avoid: ['Broad discount', 'Cutting the shop price gives up ' + cut + ' on every sale, not just the extra ones.'] });
+    return promoRanking('drop', reason, { alt: bun && bun.guard.ok ? ['Smart bundle with ' + bun.partner.title, 'Keeps this crop\'s own price if the pair appeals.'] : ['Normal-price pre-order', 'If Tyllage would rather keep the price.'],
       avoid: ['A shop-wide discount', 'Keep the lower price to the drop spots only, until pre-orders close.'] });
   }
   // Approving a Harvest Drop never opens extra pre-order spots: it must fit in the spots
@@ -2740,7 +2740,7 @@
   function promoOnSend(c, recipients) {
     c.sentAt = new Date().toISOString();
     c.recipients = recipients.slice();
-    if (c.kind === 'visit-voucher') recipients.forEach(function (id) { issueVoucher(id, c.voucherCents, 'campaign:' + c.id, 'Thanks for visiting MEOD'); });
+    if (c.kind === 'visit-voucher') recipients.forEach(function (id) { issueVoucher(id, c.voucherCents, 'campaign:' + c.id, 'Thanks for visiting Tyllage'); });
   }
 
   // What a sent campaign led to: orders by its recipients within RULES.promo.resultDays.
@@ -3428,7 +3428,7 @@
    * Singapore's festivals move demand for particular greens (steamboat for Dongzhi and the
    * Chinese New Year reunion dinner, salads at Christmas, sayur for Hari Raya…). Dates are
    * Singapore's public-holiday calendar where there is one; demand uplifts are illustrative
-   * until MEOD's own sales history replaces them. */
+   * until Tyllage's own sales history replaces them. */
   var FESTIVALS = [
     { key: 'deepavali-26', name: 'Deepavali', date: '2026-11-08', uplift: 0.25, crops: ['Bayam', 'Garden Mint', 'Kangkong'], why: 'Home cooking for family visits (spinach dishes, mint chutney).' },
     { key: 'dongzhi-26', name: 'Dongzhi (Winter Solstice)', date: '2026-12-22', uplift: 0.2, crops: ['Xiao Bai Cai', 'HK Cai Xin', 'Shiitake Mushroom'], why: 'Family steamboat dinners.' },
@@ -3461,7 +3461,7 @@
     });
   }
 
-  // Supermarket price checks entered by staff, compared with MEOD's own price.
+  // Supermarket price checks entered by staff, compared with Tyllage's own price.
   var MARKET_STORES = ['FairPrice', 'Cold Storage', 'Sheng Siong', 'Giant', 'Wet market', 'Other'];
   function marketPriceAdd(x, actor) {
     var p = byId('products', x.productId);
@@ -3486,7 +3486,7 @@
   }
 
   /* ---------- Data import (Excel / CSV) ----------
-   * MEOD keeps sales and harvest records in spreadsheets. Staff upload one (CSV, or .xlsx
+   * Tyllage keeps sales and harvest records in spreadsheets. Staff upload one (CSV, or .xlsx
    * read in the browser), the columns are matched by name ("Item", "Product", "SKU" →
    * product; "Qty", "Units" → quantity…) and product names are matched to the catalogue,
    * including aliases. Staff see a preview and what didn't match before importing.
@@ -3588,7 +3588,7 @@
   }
 
   /* ---------- Pilot baseline metrics ----------
-   * The numbers a real pilot with MEOD would track, measured from the prototype's own
+   * The numbers a real pilot with Tyllage would track, measured from the prototype's own
    * records: enquiry-to-order conversion, sell-through, unsold units, campaign margin, lost
    * demand and staff time saved by drafts. "Record baseline" stores today's figures, so later
    * figures can be compared against them.
@@ -3601,7 +3601,7 @@
     var bookings = state.bookings.filter(function (b) { return inWin(b.createdAt); });
     var lost = (state.lostDemand || []).filter(function (x) { return inWin(x.at); });
     // Enquiries = visit requests plus asks a person made to staff; sold-out taps and requests
-    // for crops MEOD doesn't grow aren't enquiries staff could convert.
+    // for crops Tyllage doesn't grow aren't enquiries staff could convert.
     var asks = lost.filter(function (x) { return x.source !== 'soldout' && x.reason !== 'notgrown'; });
     var enquiries = bookings.length + asks.length;
     var converted = bookings.filter(function (b) { return b.status === 'confirmed'; }).length + asks.filter(function (x) { return x.status === 'fulfilled'; }).length;
@@ -3681,7 +3681,7 @@
       inputs: [['Stock now', c.stock], ['Harvests due in ' + RADAR_WEEKS + ' weeks', c.harvest], ['Pre-orders + trade orders', c.confirmed], ['Usual weekly sales', c.weekly], ['Trend vs 4 weeks before', (c.trendPct > 0 ? '+' : '') + c.trendPct + '%']],
       calc: ['Supply = stock ' + c.stock + ' + harvests ' + c.harvest + ' = ' + c.supply, 'Demand = confirmed ' + c.confirmed + ' + ' + c.weekly + ' a week × ' + RADAR_WEEKS + ' weeks = ' + c.demand,
         'Gap = supply − demand = ' + (c.gap > 0 ? '+' : '') + c.gap + ' (balanced within ±' + Math.round(RULES.radarTolerance * 100) + '% of demand)'],
-      assumptions: ['Weekly sales are the average of the last 4 weeks of MEOD Fresh history.', 'Harvests come in at their expected quantity.'],
+      assumptions: ['Weekly sales are the average of the last 4 weeks of Tyllage Fresh history.', 'Harvests come in at their expected quantity.'],
       confidence: { level: c.confidence, note: c.confidence === 'high' ? 'Weekly sales have been steady.' : c.confidence === 'medium' ? 'Weekly sales move around somewhat.' : 'Sales vary a lot week to week, or there is little history.' }
     };
   }
@@ -3694,7 +3694,7 @@
         'Suggested price ' + money(s.priceCents) + ' (' + s.pct + '% off)',
         'Margin Guard floor = higher of cost + ' + Math.round(RULES.minMarginRate * 100) + '% margin and ' + Math.round(RULES.clearanceDefaultMinRate * 100) + '% of normal = ' + money(g.floorCents || 0),
         g.ok ? 'Passes: ' + money(g.marginCents) + ' margin per unit (' + g.marginPct + '%)' : 'Blocked: ' + (g.reasons || []).join('; ')]),
-      assumptions: base.assumptions.concat(['Each 10% off lifts sales by about ' + Math.round(RULES.promoLiftPer10 * 100) + '%.', 'Unit costs are the ones in Settings (illustrative until MEOD enters real costs).']),
+      assumptions: base.assumptions.concat(['Each 10% off lifts sales by about ' + Math.round(RULES.promoLiftPer10 * 100) + '%.', 'Unit costs are the ones in Settings (illustrative until Tyllage enters real costs).']),
       confidence: base.confidence
     };
   }
@@ -3751,7 +3751,7 @@
     var trade = Math.round(p.priceCents * RULES.b2bPriceRate);
     var floor = guard(1).floorCents;
     var deliver = q.days.filter(function (d) { return [2, 4, 6].indexOf(d) > -1; });
-    var dayNote = q.days.length && deliver.length < q.days.length ? 'MEOD delivers Tue, Thu & Sat — offer the nearest of those.' : '';
+    var dayNote = q.days.length && deliver.length < q.days.length ? 'Tyllage delivers Tue, Thu & Sat — offer the nearest of those.' : '';
     function opt(key, title, unitsWk, unitPrice, why) {
       var g = guard(unitPrice);
       var weeklyRevenue = Math.round(unitsWk * unitPrice);
@@ -3764,7 +3764,7 @@
     if (askedUnitPrice != null && priceOk && perWeek <= spare) out.push(opt('accept', 'Accept as asked', perWeek, askedUnitPrice, 'Their price clears Margin Guard and there\'s enough spare each week.'));
     var counterPrice = Math.max(floor, askedUnitPrice != null && askedUnitPrice > trade ? askedUnitPrice : trade);
     if (!priceOk || askedUnitPrice == null) out.push(opt('price', 'Counter on price', Math.min(perWeek, Math.max(spare, 0)) || perWeek, counterPrice,
-      askedUnitPrice == null ? 'No price given — quote the trade price.' : 'Their ' + money(q.price) + (q.priceUnit === 'kg' ? '/kg' : '') + ' is below MEOD\'s floor of ' + money(Math.round(floor / kpu)) + '/kg — counter at ' + money(Math.round(counterPrice / kpu)) + '/kg.'));
+      askedUnitPrice == null ? 'No price given — quote the trade price.' : 'Their ' + money(q.price) + (q.priceUnit === 'kg' ? '/kg' : '') + ' is below Tyllage\'s floor of ' + money(Math.round(floor / kpu)) + '/kg — counter at ' + money(Math.round(counterPrice / kpu)) + '/kg.'));
     if (perWeek > spare) {
       out.push(opt('volume', 'Counter on volume', spare, priceOk ? askedUnitPrice : counterPrice, 'Only about ' + spare + ' units (' + Math.round(spare * kpu * 10) / 10 + ' kg) are spare a week right now — offer that, and grow into the rest.'));
       out.push(opt('phased', 'Start smaller, then grow', Math.round(spare * 0.8), counterPrice, 'Supply ' + Math.round(spare * 0.8 * kpu) + ' kg a week for 4 weeks while a bigger batch is sown, then step up to the full ' + q.qty + (q.unit === 'kg' ? ' kg' : '') + '.'));
@@ -3818,7 +3818,7 @@
   }
 
   /* ---------- Tyllage Farm Decision Twin ----------
-   * A model of MEOD's commercial position for one crop over the next 2 weeks — not the
+   * A model of Tyllage's commercial position for one crop over the next 2 weeks — not the
    * greenhouse. Change the harvest, demand, lose a trade buyer or a batch, and compare what
    * each response (do nothing, pre-orders, bulk trade offer, promotion, process) would earn.
    */
@@ -3921,7 +3921,7 @@
       r.answer = slow.length ? L(slow.length + ' crops are selling slower than the previous 4 weeks or have more supply than demand. Slowest: ' + slow[0].product.title + ' (' + slow[0].trendPct + '%).', '有 ' + slow.length + ' 种蔬菜比前4周卖得慢或供过于求。最慢的是 ' + slow[0].product.title + '（' + slow[0].trendPct + '%）。') : L('Nothing is selling slower than usual.', '没有比平时卖得慢的蔬菜。');
       r.cols = [L('Crop', '蔬菜'), L('Weekly sales', '每周销量'), L('Trend', '趋势'), L('Supply vs demand', '供需差')];
       r.rows = slow.map(function (c) { return [c.product.title, String(c.weekly), (c.trendPct > 0 ? '+' : '') + c.trendPct + '%', (c.gap > 0 ? '+' : '') + c.gap]; });
-      r.how = L('Average of the last 4 weeks vs the 4 before (MEOD Fresh history), and Demand Radar\'s 3-week supply minus demand.', '比较最近4周与之前4周的平均销量（MEOD Fresh 记录），以及需求雷达未来3周的供需差。');
+      r.how = L('Average of the last 4 weeks vs the 4 before (Tyllage Fresh history), and Demand Radar\'s 3-week supply minus demand.', '比较最近4周与之前4周的平均销量（Tyllage Fresh 记录），以及需求雷达未来3周的供需差。');
       r.links = [['Demand Radar', '#radar'], ['Price Advisor', '#pricing']];
     } else if (intent.key === 'unanswered') {
       var tickets = state.tickets.filter(function (t) { return t.status === 'open'; });
@@ -3976,7 +3976,7 @@
       var b2bTot = b2bWeek.reduce(function (s, o) { return s + o.totalCents; }, 0);
       r.answer = L('Last 7 days: ' + money(tot + b2bTot) + ' — ' + money(tot) + ' from ' + orders.length + ' shop order(s) and ' + money(b2bTot) + ' from ' + b2bWeek.length + ' trade delivery(ies).', '过去7天：' + money(tot + b2bTot) + '——' + orders.length + ' 笔网店订单 ' + money(tot) + '，' + b2bWeek.length + ' 笔商家订单 ' + money(b2bTot) + '。');
       r.cols = [L('Channel', '渠道'), L('Orders', '订单'), L('Net sales', '净销售额')];
-      r.rows = [[L('Shop (MEOD Fresh)', '网店'), String(orders.length), money(tot)], [L('Trade', '商家'), String(b2bWeek.length), money(b2bTot)]];
+      r.rows = [[L('Shop (Tyllage Fresh)', '网店'), String(orders.length), money(tot)], [L('Trade', '商家'), String(b2bWeek.length), money(b2bTot)]];
       r.how = L('Shop orders (not cancelled or refunded) created in the last 7 days, plus trade orders delivered.', '过去7天的网店订单（不含取消或退款）加上已送达的商家订单。');
       r.links = [['Orders', '#orders'], ['B2B buyers', '#b2b']];
     } else if (intent.key === 'harvest') {
@@ -4018,7 +4018,7 @@
    * Each recorded harvest gets a sell-by date (harvest day + the category's shelf days). Unsold
    * units are estimated first-in-first-out: what went into stock, minus regular sales of that
    * product since the harvest, capped by stock on hand. Anything already on Buy to Clear is
-   * shown separately. Rescue actions are suggestions; MEOD staff decide what's fit to sell,
+   * shown separately. Rescue actions are suggestions; Tyllage staff decide what's fit to sell,
    * and every outcome (listed, offered, alerted, processed, donated, composted) is logged.
    */
   function rescueBatches() {
@@ -4064,7 +4064,7 @@
     state.orders.forEach(function (o) { o.items.forEach(function (i) { var p = byId('products', i.productId); if (p && p.category === x.product.category) seen[o.customerId] = true; }); });
     Object.keys(seen).forEach(function (id) { var c = byId('customers', id); if (c && c.consentMarketing) optedBuyers++; });
     if (x.level === 'expired') {
-      opts.push({ key: 'check', score: 100, title: 'Check quality before selling', why: 'Past its sell-by date. MEOD staff decide if it\'s still fit to sell; if not, record it as donated or composted.' });
+      opts.push({ key: 'check', score: 100, title: 'Check quality before selling', why: 'Past its sell-by date. Tyllage staff decide if it\'s still fit to sell; if not, record it as donated or composted.' });
     }
     if (buyers.length && x.daysLeft >= 1) {
       opts.push({ key: 'b2b', score: 80 + x.daysLeft * 4, title: 'Offer to ' + buyers.length + ' trade buyer(s)', why: buyers.map(function (a) { return a.name.replace(/\s*\(demo\)/i, ''); }).slice(0, 2).join(', ') + ' already buy ' + CATEGORIES[x.product.category].label.toLowerCase() + ' — a full-price sale, no discount needed.', accountIds: buyers.map(function (a) { return a.id; }) });
@@ -4077,7 +4077,7 @@
       opts.push({ key: 'alert', score: 70 - x.daysLeft, title: 'Alert ' + optedBuyers + ' opted-in customer(s)', why: 'People who bought ' + CATEGORIES[x.product.category].label.toLowerCase() + ' before and agreed to messages. Drafted for admin approval.' });
     }
     if (PROCESS_INTO[x.product.category] && x.unsold >= 8) {
-      opts.push({ key: 'process', score: 50, title: 'Turn into ' + PROCESS_INTO[x.product.category], why: 'Larger leftovers can go into the kitchen for MEOD\'s own products instead of discounting.' });
+      opts.push({ key: 'process', score: 50, title: 'Turn into ' + PROCESS_INTO[x.product.category], why: 'Larger leftovers can go into the kitchen for Tyllage\'s own products instead of discounting.' });
     }
     return opts.sort(function (a, b) { return b.score - a.score; });
   }
@@ -4214,13 +4214,13 @@
   }
 
   /* ---------- Tyllage Demand Radar: supply vs demand per crop, plus the daily pick list ----------
-   * For each MEOD-grown crop over the next few weeks:
+   * For each Tyllage-grown crop over the next few weeks:
    *   supply    = stock on hand + expected yield of batches harvesting in the window
    *   confirmed = pre-orders already placed against those batches
    *   expected  = recent regular sales (28-day weekly average) × weeks in the window
    *   gap       = supply − (confirmed + expected)  → surplus / balanced / short
    * Confidence reflects how much order history there is. PROTOTYPE: simple, explainable
-   * arithmetic — not a trained forecast — so every number can be traced. MEOD staff decide.
+   * arithmetic — not a trained forecast — so every number can be traced. Tyllage staff decide.
    */
   var RADAR_WEEKS = 3;
   function radarCrops() {
@@ -4241,7 +4241,7 @@
       // Recurring commitments from accepted quotes are confirmed demand as well.
       b2bUnits += commitmentUnits(p.id, bagDayKey(new Date()), bagDayKey(new Date(until)));
       var confirmed = preordered + b2bUnits;
-      // Weekly sales history (MEOD Fresh / Shopify mock): last 4 weeks set the pace, the 4
+      // Weekly sales history (Tyllage Fresh / Shopify mock): last 4 weeks set the pace, the 4
       // before give the trend, and week-to-week wobble sets the confidence.
       var weeks = (state.salesHistory && state.salesHistory.byProduct[p.id]) || [];
       var avg = function (a) { return a.length ? a.reduce(function (s, x) { return s + x; }, 0) / a.length : 0; };

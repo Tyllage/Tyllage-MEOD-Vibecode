@@ -17,13 +17,13 @@ Include:
 - steps to reproduce
 - the impact you expect
 
-We aim to acknowledge reports within **3 working days**. If MEOD data or systems could be affected, MEOD will be told as well.
+We aim to acknowledge reports within **3 working days**. If Tyllage data or systems could be affected, Tyllage will be told as well.
 
 If you think real customer data has leaked, follow the Deployment Plan §10:
 
 1. Disable the affected integration.
 2. Rotate secrets.
-3. Inform MEOD so they can run their response procedure.
+3. Inform Tyllage so they can run their response procedure.
 
 ## Supported versions
 
@@ -49,7 +49,7 @@ Only the latest commit on `main` is maintained.
 | Audit | Editable client log | Append-only server log |
 | AI | Rule-based mock. Nothing is sent to an AI service. Suggestions need a person to act, price and campaign approvals need a *different* admin, and posts need someone other than the writer (all checked in the browser only) | OpenAI project key with spend limits; send minimum fields; redact PII; AI never writes to the DB or changes prices; approvals enforced on the server |
 | Ask Tyllage | Answers from whatever is in the browser's demo data; any staff member sees the same answers | Answer only from data the asking user's role may see (masked PII for staff); log questions and answers |
-| Voice input | Ask Tyllage uses the browser's speech recognition. In Chrome and Edge, the audio is sent to Google's or Microsoft's speech service | Tell staff before they speak; never dictate customer details; consider a speech service under MEOD's own data agreement |
+| Voice input | Ask Tyllage uses the browser's speech recognition. In Chrome and Edge, the audio is sent to Google's or Microsoft's speech service | Tell staff before they speak; never dictate customer details; consider a speech service under Tyllage's own data agreement |
 | Data import | Excel and CSV files are parsed in the browser and written to `localStorage` | Upload to the server; check type and size, validate every row, de-duplicate, and log who imported what |
 | Third-party scripts | SheetJS (`xlsx` 0.18.5) and `qrcodejs` 1.0.0 load from cdnjs on demand, **without** Subresource Integrity. SheetJS 0.18.5 has known issues when reading crafted files (prototype pollution, CVE-2023-30533; ReDoS, CVE-2024-22363) | Self-host a patched SheetJS (0.20.2 or later, from SheetJS's own CDN) or parse on the server; pin every script with an `integrity` hash; only import files from trusted sources until then |
 | Decision ledger | Editable client log of AI suggestions and decisions | Append-only server log, kept with the Audit log |
@@ -66,13 +66,13 @@ Set these as environment variables on the **backend** host, never in the repo. G
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `JWT_SECRET`, `SESSION_SECRET`
 - `PUBLIC_SITE_URL`, `CORS_ORIGIN`
-- Delivery provider credentials, if MEOD uses a courier or driver app (for example `DELIVERY_API_KEY`, `DELIVERY_WEBHOOK_SECRET`)
+- Delivery provider credentials, if Tyllage uses a courier or driver app (for example `DELIVERY_API_KEY`, `DELIVERY_WEBHOOK_SECRET`)
 
 ## Reports from outside the team
 
 We welcome responsible security reports from anyone. Reporting a vulnerability does not give you any right to use, copy or modify the code (see [LICENSE](LICENSE)). Please:
 
-- test only against the public demo, never against MEOD's real systems or data;
+- test only against the public demo, never against Tyllage's real systems or data;
 - don't access, change or keep anyone else's data;
 - don't publish details until we've fixed the issue or agreed a date with you.
 

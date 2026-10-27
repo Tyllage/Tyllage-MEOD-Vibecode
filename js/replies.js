@@ -4,7 +4,7 @@
  * keyword matching, and draft() fills a template. In the live version a language model
  * would do both from the same booking fields; the shape of what they return would stay the
  * same. Nothing is ever sent from here: staff review, edit and press Send themselves.
- * Session times, what's included and directions are illustrative, for MEOD to confirm.
+ * Session times, what's included and directions are illustrative, for Tyllage to confirm.
  */
 (function () {
   'use strict';
@@ -110,13 +110,13 @@
     var type = M.GROUP_TYPES[typeKey];
     var who = cleanName(b.org) || 'your group';
     var hello = (formal ? 'Dear ' : 'Hi ') + greetingName(b) + ',';
-    var signoff = (formal ? 'Yours sincerely,' : 'Warm regards,') + '\nMEOD Farm Visits Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
+    var signoff = (formal ? 'Yours sincerely,' : 'Warm regards,') + '\nTyllage Visits Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
     var pct = Math.round(M.RULES.visitFundRate * 100);
     var subject, parts = [hello];
 
     if (kind === 'confirm') {
-      subject = 'Your MEOD Farm visit on ' + shortDay(M.clearance.parseDayKey(b.date)) + ' is confirmed';
-      parts.push((formal ? 'Thank you for your enquiry. We are pleased to confirm ' : 'Thanks so much for choosing MEOD Farm! We\'re happy to confirm ') +
+      subject = 'Your Tyllage visit on ' + shortDay(M.clearance.parseDayKey(b.date)) + ' is confirmed';
+      parts.push((formal ? 'Thank you for your enquiry. We are pleased to confirm ' : 'Thanks so much for choosing Tyllage! We\'re happy to confirm ') +
         (b.org ? possessive(who) + ' ' : 'your ') + b.experience.toLowerCase() + ' for ' + b.pax + ' guests on ' + longDay(b.date) + '.');
       var slots = slotsFor(b, info);
       parts.push((formal ? 'Programme' : 'Here\'s the plan') + ':\n' + bullets(
@@ -130,8 +130,8 @@
       if (info.asks.length) parts.push((formal ? 'To help us prepare, could you kindly let us know:' : 'To help us get ready, could you let us know:') + '\n' + bullets(info.asks));
       parts.push(formal ? 'We look forward to welcoming you.' : 'We can\'t wait to show you around!');
     } else if (kind === 'details') {
-      subject = 'About your MEOD Farm visit on ' + shortDay(M.clearance.parseDayKey(b.date));
-      parts.push((formal ? 'Thank you for your interest in visiting MEOD Farm.' : 'Thanks for your interest in visiting MEOD Farm!') +
+      subject = 'About your Tyllage visit on ' + shortDay(M.clearance.parseDayKey(b.date));
+      parts.push((formal ? 'Thank you for your interest in visiting Tyllage.' : 'Thanks for your interest in visiting Tyllage!') +
         ' We\'d love to host ' + (b.org ? who : 'your group') + ' for a ' + b.experience.toLowerCase() + ' on ' + longDay(b.date) + '.');
       var asks = info.asks.slice();
       if (asks.indexOf('your preferred start time (morning or afternoon)') === -1 && !info.morning) asks.push('your preferred start time (morning or afternoon)');
@@ -140,7 +140,7 @@
       parts.push(formal ? 'Once we have these details, we will confirm your booking.' : 'Once we hear back, we\'ll confirm everything and send your group\'s farm-shop code.');
     } else {
       var alts = altDates(b);
-      subject = 'Other dates for your MEOD Farm visit';
+      subject = 'Other dates for your Tyllage visit';
       parts.push((formal ? 'Thank you for your enquiry. Unfortunately, we are fully booked on ' : 'Thanks for reaching out! Unfortunately we\'re fully booked on ') + longDay(b.date) + '.');
       parts.push((formal ? 'We would be glad to offer one of these dates instead:' : 'We\'d love to host you on one of these dates instead:') + '\n' + bullets(alts.map(function (d) { return d + ', same programme for ' + b.pax + ' guests'; })));
       parts.push(formal ? 'Please let us know which suits you, and we will confirm straight away.' : 'Just reply with the one that works and we\'ll confirm straight away.');

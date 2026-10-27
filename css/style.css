@@ -1,4 +1,4 @@
-/* MEOD Farm x Tyllage — public site styles
+/* Tyllage — public site styles
    Palette sampled from meod.com.sg: forest, gold, berry, stony. */
 :root {
   --forest: #054f12;
@@ -263,7 +263,7 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(230,185,100,
   html { scroll-behavior: auto; }
 }
 
-/* Ask MEOD assistant widget */
+/* Ask Tyllage assistant widget */
 .assist-fab {
   position: fixed; right: 20px; bottom: 20px; z-index: 60;
   width: 62px; height: 62px; border-radius: 50%; border: 0; cursor: pointer;
@@ -316,7 +316,7 @@ input:focus, select:focus, textarea:focus { outline: 3px solid rgba(230,185,100,
   :root { --max: 1360px; }
 }
 
-/* Scroll-to-top: centred above the Ask MEOD button */
+/* Scroll-to-top: centred above the Ask Tyllage button */
 .to-top {
   position: fixed; z-index: 59; right: 27px; bottom: 96px;
   width: 48px; height: 48px; border-radius: 50%; cursor: pointer;

@@ -3030,7 +3030,7 @@
   }
   function b2bDraft(kind, x) {
     var a = x.account, l = x.lead, name = firstName(a ? a.contact : l ? l.name : '');
-    var sign = '\n\nThank you,\nTyllage Trade Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
+    var sign = '\n\nThank you,\nTyllage Trade Team\nWhatsApp +65 8000 0000 (demo) · info@tyllage.test';
     if (kind === 'missing') return { subject: 'Your usual order for ' + b2bDay(x.dayKey), body: 'Hi ' + name + ',\n\nJust checking in on your usual order for ' + b2bDay(x.dayKey) + '. Shall we prepare the same as usual (' + usualList(a) + ')?\n\nReply to confirm, or let us know any changes and we\'ll adjust.' + sign };
     if (kind === 'declining') return { subject: 'How are the greens working for you?', body: 'Hi ' + name + ',\n\nWe noticed your recent orders have been a little lighter, and wanted to check everything is going well — with the produce, deliveries or your menu.\n\nWe\'re happy to adjust quantities, change your delivery days, or suggest what\'s in season.' + sign };
     if (kind === 'lapsed') return { subject: 'We\'ve missed you at Tyllage', body: 'Hi ' + name + ',\n\nWe haven\'t seen your order for a few weeks and wanted to check in. Your usual (' + usualList(a) + ') is growing well this week.\n\nWould you like us to restart your standing order, or adjust it?' + sign };
@@ -5791,7 +5791,7 @@
       h('div', { class: 'receipt' },
         h('div', { class: 'r-head' },
           h('img', { src: 'assets/img/favicon.png', alt: '', width: 44, height: 44 }),
-          h('div', null, h('strong', { text: 'Tyllage' }), h('small', { text: '13 Neo Tiew Harvest Lane, Singapore 719838 · info@meod.com.sg' }))),
+          h('div', null, h('strong', { text: 'Tyllage' }), h('small', { text: 'Demo address, Singapore · info@tyllage.test' }))),
         h('div', { class: 'r-meta' },
           h('div', null, h('span', { text: 'Receipt' }), h('strong', { text: o.ref })),
           h('div', null, h('span', { text: 'Date' }), h('strong', { text: date(o.createdAt) })),
@@ -5909,7 +5909,7 @@
       side = h('div', { class: 'driver-card' },
         h('span', { class: 'avatar av-staff', 'aria-hidden': 'true', text: initials(t.driver) }),
         h('span', { class: 'driver-text' }, h('strong', { text: t.driver }), h('small', { text: 'Your Tyllage driver · ' + t.stopsAway + ' stops away' })),
-        h('a', { class: 'pill-btn', href: 'https://wa.me/6581330358', target: '_blank', rel: 'noopener', text: 'Message' }));
+        h('a', { class: 'pill-btn', href: '#', text: 'Message (demo)' }));
     } else if (t.state === 'delivered') {
       side = h('div', { class: 'proof-card' },
         h('div', { class: 'proof-photo', 'aria-hidden': 'true' }, iconCircle('<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>', 'soft')),
@@ -6332,7 +6332,7 @@
         h('section', { class: 'panel human-card' },
           h('h2', { text: 'Need a person?' }),
           h('p', { class: 'hint', text: 'Complaints, refunds and payment questions go straight to our team. ' + (online ? 'We\'re online now.' : 'We\'ll reply when we\'re back (Mon–Sat, 9am–6pm).') }),
-          h('a', { class: 'btn btn-sm btn-forest', href: 'https://wa.me/6581330358', target: '_blank', rel: 'noopener', text: 'WhatsApp the team' })))));
+          h('a', { class: 'btn btn-sm btn-forest', href: '#', text: 'WhatsApp the team (demo)' })))));
   }
 
   /* ---------------- routing ---------------- */

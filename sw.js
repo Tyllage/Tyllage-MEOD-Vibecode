@@ -7,11 +7,12 @@
  * - Weather (data.gov.sg) isn't cached here: the portal keeps its own labelled copy of the
  *   last forecast. Inspection data lives in the browser's storage, not in this cache.
  * Bump VERSION when the list of files below changes. */
-var VERSION = 'meod-v1';
+var VERSION = 'tyllage-v1';
 var SHELL = [
   'portal.html', 'dashboard.html', 'manifest.webmanifest',
   'css/style.css', 'css/portal.css',
   'js/data.js', 'js/assist.js', 'js/auth.js', 'js/login.js', 'js/grade.js', 'js/recipes.js', 'js/content.js', 'js/replies.js', 'js/portal.js', 'js/pwa.js',
+  'assets/tyllage-logo-white.png',
   'assets/img/favicon.png', 'assets/icons/icon-192.png', 'assets/icons/icon-512.png',
   // Demo photos used by the inspection's "No plants nearby?" buttons.
   'assets/img/veg-mesclun.webp', 'assets/img/veg-tuscan-kale.webp', 'assets/img/veg-xiao-bai-cai.webp'

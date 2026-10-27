@@ -1143,7 +1143,11 @@
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        var parsed = JSON.parse(raw);
+        // Demo accounts moved from @meod.test to @tyllage.test; carry saved data across.
+        var parsed = JSON.parse(raw.replace(/@meod\.test/g, '@tyllage.test'));
+        if (parsed && Array.isArray(parsed.users)) {
+          parsed.users.forEach(function (u) { if (u && u.name) u.name = u.name.replace(/\bMEOD\b/g, 'Tyllage'); });
+        }
         if (parsed && parsed.version === 2) return migrate(parsed);
       }
     } catch (e) { /* storage blocked or corrupt — fall back to seed */ }

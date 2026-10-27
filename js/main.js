@@ -89,7 +89,7 @@
     if (chips.childElementCount) body.appendChild(chips);
     var line = el('div', { class: 'price-line' });
     line.appendChild(el('span', { class: 'price' }, M.money(p.priceCents)));
-    line.appendChild(el('a', { class: 'tile-buy', href: 'https://meodfresh.com/', target: '_blank', rel: 'noopener', 'aria-label': 'Buy ' + p.title + ' on Tyllage Fresh' }, 'Buy ↗'));
+    line.appendChild(el('a', { class: 'tile-buy', href: '#', 'aria-label': 'Buy ' + p.title + ' on Tyllage Fresh (demo)' }, 'Buy ↗'));
     body.appendChild(line);
     tile.appendChild(body);
     return tile;

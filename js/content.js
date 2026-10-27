@@ -29,9 +29,9 @@
   var LEARN = [
     { id: 'imports', image: 'assets/img/hero-farm.webp', title: 'Why grow food here?', caption: 'Singapore imports over 90% of its food 🌏 Every bunch grown in Kranji is one less shipped or flown in.\n\nBy choosing local, you help Singapore grow more of its own food by 2035 — and keep farms like ours growing. 🌱\n\nOrder fresh from Kranji on Tyllage Fresh.', tags: ['#SingaporeFoodStory', '#FoodSecurity', '#SupportLocal'] },
     { id: 'sgfresh', image: 'assets/img/fresh-produce.webp', title: 'Look for the SG Fresh mark', caption: 'Spot this mark? 🔍 SG Fresh Produce means it was grown right here in Singapore, to a quality standard.\n\nOur greens are SG Fresh certified — harvested in Kranji, at your door within a day. Order on Tyllage Fresh 🌱', tags: ['#SGFreshProduce', '#SupportLocal'] },
-    { id: 'pesticide', image: 'assets/img/ladybug.webp', title: 'Pesticide-free since 2014', caption: 'Over a decade of growing pesticide-free, chemical-free and GMO-free 🌿\n\nWe pair hi-tech greenhouses with the wisdom of our forefathers — so you can rinse, cook and enjoy without worry.\n\nOrder on Tyllage Fresh — delivered Tue, Thu & Sat.', tags: ['#PesticideFree', '#CleanEating'] },
+    { id: 'pesticide', image: 'assets/img/ladybug.webp', title: 'Pesticide-free, by design', caption: 'Grown pesticide-free, chemical-free and GMO-free 🌿\n\nWe pair hi-tech greenhouses with the wisdom of our forefathers — so you can rinse, cook and enjoy without worry.\n\nOrder on Tyllage Fresh — delivered Tue, Thu & Sat.', tags: ['#PesticideFree', '#CleanEating'] },
     { id: 'imperfect', image: 'assets/img/farm-flatlay.webp', title: 'Imperfect veg is still good veg', caption: 'A few holes or a curly leaf? Still fresh, still delicious 🥬\n\nOur Buy to Clear deals give "imperfect" harvests a home instead of the compost heap. Less waste, better prices — everyone wins. Find them under Buy to Clear when you order on Tyllage Fresh.', tags: ['#FoodWaste', '#UglyVeg', '#ZeroWaste'] },
-    { id: 'scale', image: 'assets/img/hero-farm.webp', title: '6 hectares in Kranji', caption: 'Did you know? Our farm in Kranji covers 6 hectares 🚜 — one of Singapore\'s largest efforts to grow greens locally, sustainably and at scale.\n\nCome see it for yourself on a farm visit!', tags: ['#Kranji', '#UrbanFarming', '#SingaporeFoodStory'] },
+    { id: 'scale', image: 'assets/img/hero-farm.webp', title: 'A demo farm running on Tyllage', caption: 'Did you know? Our demo farm shows how local growers can grow greens locally, sustainably and at scale 🚜\n\nCome see it for yourself on a farm visit!', tags: ['#UrbanFarming', '#SingaporeFoodStory'] },
     { id: 'seasons', image: 'assets/img/farmer-vertical.webp', title: 'How fresh is fresh?', caption: 'Supermarket greens can take days to travel here. Ours are harvested in the morning and with you within a day 🕒\n\nThat\'s why they stay crisp in the fridge for longer. Taste the difference — order on Tyllage Fresh 🌱', tags: ['#FarmToTable', '#SupportLocal'] }
   ];
 
@@ -112,7 +112,7 @@
     out.push(learnIdea(lesson));
     // 7. Visit the farm — fill learning journeys and farm visits.
     out.push({ key: 'visit|week', type: 'visit', channel: 'social', product: null, title: 'Come visit the farm', image: 'assets/img/hero-farm.webp',
-      caption: 'Ever wondered where your vegetables come from? 🚜 Our learning journeys take schools, families and teams through the greenhouses — and you get to harvest your own greens.\n\nBook a visit at meod.com.sg/experiences 🌱',
+      caption: 'Ever wondered where your vegetables come from? 🚜 Our learning journeys take schools, families and teams through the greenhouses — and you get to harvest your own greens.\n\nBook a visit on our Experiences page 🌱',
       tags: BASE_TAGS.concat(['#LearningJourney', '#FarmVisit', '#SingaporeFoodStory']), why: 'Farm visits teach where food comes from and lead to farm-shop sales.' });
     var planned = {};
     (S().contentPlan || []).forEach(function (c) { if (c.status !== 'removed') planned[c.ideaKey] = c; });

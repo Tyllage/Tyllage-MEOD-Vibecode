@@ -110,7 +110,7 @@
     var type = M.GROUP_TYPES[typeKey];
     var who = cleanName(b.org) || 'your group';
     var hello = (formal ? 'Dear ' : 'Hi ') + greetingName(b) + ',';
-    var signoff = (formal ? 'Yours sincerely,' : 'Warm regards,') + '\nTyllage Visits Team\nWhatsApp +65 8133 0358 · info@meod.com.sg';
+    var signoff = (formal ? 'Yours sincerely,' : 'Warm regards,') + '\nTyllage Visits Team\nWhatsApp +65 8000 0000 (demo) · info@tyllage.test';
     var pct = Math.round(M.RULES.visitFundRate * 100);
     var subject, parts = [hello];
 
@@ -123,7 +123,7 @@
         slots.map(function (s, i) { return (slots.length > 1 ? 'Session ' + (i + 1) + ': ' : '') + s + (slots.length > 1 ? ' (up to ' + M.RULES.visitSessionMax + ' guests)' : ''); })
           .concat(INCLUDED[typeKey]).concat(info.lines)));
       parts.push('On the day:\n' + bullets([
-        'Address: 13 Neo Tiew Harvest Lane, Singapore 719838',
+        'Address: Demo address, Singapore',
         'Please bring water, a hat and covered shoes — part of the visit is outdoors',
         'Your group\'s farm shop: guests scan a QR code to order fresh produce with ' + Math.round(M.RULES.groupDiscountRate * 100) + '% off, and ' + pct + '% of the group\'s orders goes to your ' + type.fund + '. Your code: ' + CODE_TOKEN
       ]));

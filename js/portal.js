@@ -7215,6 +7215,12 @@
   var area = M.auth.ROLE_HOME[session.role];
   var items = NAV[area].filter(function (v) { return !v.perm || M.auth.can(session, v.perm); });
 
+  // Presentation mode: these tabs are hidden from the nav but still open by URL.
+  // To show everything again, open the portal with ?all=1 once (or empty this list).
+  var PRESENTATION_HIDE = ['briefing', 'pilot', 'b2b', 'inbox', 'feedback', 'customers', 'import', 'users', 'audit'];
+  try { if (/[?&]all=1/.test(location.search)) localStorage.setItem('tyllage-show-all', '1'); if (/[?&]all=0/.test(location.search)) localStorage.removeItem('tyllage-show-all'); } catch (e) {}
+  var showAll = false; try { showAll = localStorage.getItem('tyllage-show-all') === '1'; } catch (e) {}
+
   function render() {
     var id = location.hash.slice(1) || 'overview';
     var view = items.filter(function (v) { return v.id === id; })[0] || items[0];
@@ -7223,6 +7229,7 @@
     side.textContent = ''; mob.textContent = '';
     var lastGroup = null;
     items.forEach(function (v) {
+      if (!showAll && PRESENTATION_HIDE.indexOf(v.id) > -1 && v !== view) return;
       var n = v.count ? v.count() : 0;
       var current = v === view ? 'page' : null;
       // Staff links are grouped under headings (Today, Farm ops, Sales, Customers, Admin).

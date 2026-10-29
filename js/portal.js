@@ -7217,7 +7217,7 @@
 
   // Presentation mode: these tabs are hidden from the nav but still open by URL.
   // To show everything again, open the portal with ?all=1 once (or empty this list).
-  var PRESENTATION_HIDE = ['briefing', 'pilot', 'b2b', 'inbox', 'feedback', 'customers', 'import', 'users', 'audit'];
+  var PRESENTATION_HIDE = ['briefing', 'pilot', 'b2b', 'inbox', 'feedback', 'customers', 'import', 'users', 'audit', 'twin'];
   try { if (/[?&]all=1/.test(location.search)) localStorage.setItem('tyllage-show-all', '1'); if (/[?&]all=0/.test(location.search)) localStorage.removeItem('tyllage-show-all'); } catch (e) {}
   var showAll = false; try { showAll = localStorage.getItem('tyllage-show-all') === '1'; } catch (e) {}
 
